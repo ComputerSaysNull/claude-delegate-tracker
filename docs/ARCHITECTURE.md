@@ -73,6 +73,8 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
 | `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and `cluster` and `health` events with the figures and the health report the same way. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
+The page closes its SSE connections when it is hidden, and reloads if the browser brings it back from its back/forward cache: over HTTP/1.1 a browser allows six connections per host, and cached pages holding theirs stalled every new page.
+
 Each `stream` event carries a number one above the last. The page fetches `/api/streams/<name>` whole when the SSE stream opens or reopens, and again whenever a number is skipped, rather than replaying.
 
 All routes are GET-only, with no CORS headers: any other method gets `405`, and a request whose `Host` is not a loopback name or in `ALLOWED_HOSTS` gets `403` before any route runs. Any other path serves the built page (`dist/web`), so a deep link opens the page. The page keeps no state the backend doesn't have.

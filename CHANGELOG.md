@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #10 — 2026-10-03 — fix: close the page's live connections when you leave it
+
+### Fixed
+
+- **Pages stalled on "Loading…" after a few visits**: going from the list to a delegation
+  and on to the next, the fourth page never loaded. The browser keeps a page you leave in
+  its back/forward cache, and with it that page's live connections; over HTTP/1.1 it allows
+  six per host, so after three pages there was none left. The page now closes its live
+  connections when it is hidden, and reloads when it comes back from that cache.
+
 ## #9 — 2026-10-03 — feat: warn on the page when what it shows can't be trusted
 
 ### Added
