@@ -9,6 +9,21 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #4 — 2026-10-03 — feat: show the delegation list on the page, updating live
+
+### Added
+
+- **The delegation list on the page**: one card per delegation, newest first, with a
+  coloured state badge, the title, then kind, model, effort, turns and elapsed time, the
+  start time in local time, the quiet or queued age, and why a stream failed or was cut off.
+  A missing piece is left out, never shown as `null` or `0`. The page says when the list is
+  capped, and when the folder can't be read (the last list stays). Cards stack on a phone.
+- **Live updates** over Server-Sent Events at `/api/updates`: the whole list on connect,
+  then again on every change, and a `: ping` comment every 15 s so a proxy keeps the
+  connection open. The browser reconnects by itself, and the first event after that is the
+  whole list again, so nothing is replayed. A lost connection shows a note and keeps the
+  last list.
+
 ## #3 — 2026-10-03 — feat: derive the delegation list from the transcript folder
 
 ### Added

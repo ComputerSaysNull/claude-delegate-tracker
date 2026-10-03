@@ -25,6 +25,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     isReadableDir: () => true,
     now: () => new Date("2026-10-03T12:00:00Z"),
     streams: () => LIST,
+    subscribe: () => () => {},
     ...overrides,
   });
 }
@@ -139,6 +140,58 @@ describe("app", () => {
     expect(await (await app.request("/api/streams", goodHost)).json()).toEqual(LIST);
     list = { ...LIST, total: 3, capped: true };
     expect(await (await app.request("/api/streams", goodHost)).json()).toEqual(list);
+  });
+
+  it("streams the list at /api/updates", async () => {
+    const res = await makeApp().request("/api/updates", goodHost);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const reader = res.body!.getReader();
+    const { value } = await reader.read();
+    const text = new TextDecoder().decode(value);
+    expect(text).toContain("event: list");
+    expect(text).toContain(JSON.stringify(LIST));
+    await reader.cancel();
+  });
+
+  it("delivers a later list through subscribe as another list event", async () => {
+    let listener: ((list: ListResponse) => void) | undefined;
+    const app = makeApp({
+      subscribe: (l) => {
+        listener = l;
+        return () => {};
+      },
+    });
+    const res = await app.request("/api/updates", goodHost);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    const changed = { ...LIST, total: 7 };
+    listener!(changed);
+    let text = "";
+    while (!text.includes('"total":7')) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    expect(text).toContain("event: list");
+    expect(text).toContain(JSON.stringify(changed));
+    await reader.cancel();
+  });
+
+  it("unsubscribes when the client disconnects", async () => {
+    const unsubscribe = vi.fn();
+    const app = makeApp({ subscribe: () => unsubscribe });
+    const res = await app.request("/api/updates", goodHost);
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("rejects a foreign host for /api/updates", async () => {
+    const res = await makeApp().request("/api/updates", { headers: { host: "evil.example" } });
+    expect(res.status).toBe(403);
   });
 
   it("returns 404 for non-api paths when staticRoot is null", async () => {

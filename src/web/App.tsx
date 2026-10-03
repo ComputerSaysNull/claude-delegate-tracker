@@ -1,5 +1,7 @@
-// Shows the delegation tracker's backend health, refreshed every 5 seconds.
+// Shows the tracker's backend health and the live delegation list.
 import { useEffect, useState } from "react";
+import { DelegationList } from "./DelegationList.tsx";
+import { useLiveList } from "./useLiveList.ts";
 
 type Health = {
   checkedAt: string;
@@ -11,6 +13,7 @@ type Status = "readable" | "not readable" | "not set";
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState(false);
+  const { list, connected } = useLiveList();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,6 +70,12 @@ export default function App() {
           The tracker backend is unreachable
         </p>
       )}
+      {!connected && list !== null && (
+        <p className="mt-4 rounded border border-amber-500 bg-amber-100 px-3 py-2 text-sm text-amber-700 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-300">
+          Live updates paused; reconnecting…
+        </p>
+      )}
+      <DelegationList list={list} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 // A Hono app that serves the built page and a health endpoint, gated by a host allow-list.
 import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ListResponse } from "./poller.ts";
@@ -12,9 +13,12 @@ export interface AppDeps {
   isReadableDir: (dir: string) => boolean;
   now: () => Date;
   streams: () => ListResponse;
+  subscribe: (listener: (list: ListResponse) => void) => () => void;
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+export const PING_MS = 15_000;
 
 function hostAllowed(host: string, allowedHosts: string[]): boolean {
   let h = host;
@@ -31,7 +35,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, isReadableDir, now, streams } = deps;
+  const { settings, staticRoot, isReadableDir, now, streams, subscribe } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -62,6 +66,28 @@ export function createApp(deps: AppDeps): Hono {
 
   // The list rows, already derived by the poller; the page only lays them out.
   app.get("/api/streams", (c) => c.json(streams()));
+
+  // Stream the list to the page so it updates without a reload.
+  app.get("/api/updates", (c) =>
+    streamSSE(c, async (stream) => {
+      stream.writeSSE({ event: "list", data: JSON.stringify(streams()) });
+      const unsubscribe = subscribe((list) => {
+        stream.writeSSE({ event: "list", data: JSON.stringify(list) });
+      });
+
+      let timer: ReturnType<typeof setInterval> | null = null;
+      const disconnected = new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          unsubscribe();
+          if (timer !== null) clearInterval(timer);
+          resolve();
+        });
+      });
+      timer = setInterval(() => stream.write(": ping\n\n"), PING_MS);
+
+      await disconnected;
+    })
+  );
 
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 
