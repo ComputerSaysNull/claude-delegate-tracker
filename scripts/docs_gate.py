@@ -1,0 +1,1793 @@
+#!/usr/bin/env python
+"""One gate, two callers: a pre-commit hook and a CI job.
+
+Same checks either way -- the hook gives fast feedback while you work, CI is the
+authority that `--no-verify` cannot walk past. Keeping it one implementation is the
+point; two copies of a policy is how the policy starts disagreeing with itself.
+
+    python scripts/docs_gate.py --mode pre-commit      # staged changes
+    python scripts/docs_gate.py --mode ci              # origin/main..HEAD
+
+BLOCK findings fail the run. WARN findings print and pass. A BLOCK can be waived with a
+commit-message trailer, which is deliberately visible rather than silent:
+
+    Docs-Gate-Skip: owning-doc -- pure rename, no behaviour change
+
+Checks are added as the artefacts they police arrive. A check whose input does not exist
+yet reports SKIP with the reason, rather than passing silently -- an invisible no-op
+check is worse than an absent one, because it is trusted.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import atexit
+import fnmatch
+import io
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import tokenize
+import tomllib
+from dataclasses import dataclass
+from pathlib import Path
+
+
+# See JOURNAL 2026-08-25: a tool that compares committed artefacts against live source
+# must never read a cached compile of that source. (mtime, size) validation misses a
+# same-length edit inside one timestamp tick.
+sys.pycache_prefix = tempfile.mkdtemp(prefix="cdl-gate-pyc-")
+# ...and removed when this process exits. The redirect was right and the cleanup was
+# missing: this runs on every commit, and by 2026-09-10 /tmp held 2,268 of these
+# directories totalling 3.5 GB, the oldest dated 25 August. `atexit` rather than a context
+# manager because the directory has to outlive every import below it. The same three lines
+# are in each of the four scripts that redirect the cache -- they share no module on
+# purpose, so that the gate runs from a bare clone with nothing installed.
+atexit.register(shutil.rmtree, sys.pycache_prefix, ignore_errors=True)
+
+ROOT = Path(__file__).resolve().parent.parent
+BLOCK, WARN, SKIP = "BLOCK", "WARN", "SKIP"
+
+EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+# Paths where a third party's address is legitimate and expected.
+EMAIL_EXEMPT_GLOBS = ("LICENSE", "NOTICE", "docs/audits/*", "docs/reviews/*",
+                      "docs/specs/archive/*")
+
+# Host-identifier shapes. These are patterns, never literals: a committed file listing
+# the strings you do not want committed is itself the leak. The literals live in an
+# untracked security/forbidden_strings.txt, mirrored as a CI secret.
+HOST_PATTERNS: list[tuple[str, str]] = [
+    (r"\b10(?:\.\d{1,3}){3}\b", "RFC1918 10.x address"),
+    (r"\b192\.168(?:\.\d{1,3}){2}\b", "RFC1918 192.168.x address"),
+    (r"\b172\.(?:1[6-9]|2\d|3[01])(?:\.\d{1,3}){2}\b", "RFC1918 172.16-31.x address"),
+    (r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])(?:\.\d{1,3}){2}\b",
+     "CGNAT 100.64/10 address (overlay VPN range)"),
+    # Private-DNS suffixes generally, not one vendor: wider protection, and
+    # it does not advertise which kind of network sits behind it.
+    (r"\b[a-z0-9-]+\.(ts\.net|internal|lan|home\.arpa|localdomain)\b",
+     "private-network hostname"),
+]
+
+# `host:port` is only a leak when the host is a real name. Placeholders and loopback are
+# how the examples are supposed to read.
+HOSTPORT_RE = re.compile(r"\b([a-z][a-z0-9][a-z0-9.-]{1,40}):(\d{4,5})\b", re.IGNORECASE)
+# Names only. HOSTPORT_RE starts with [a-z], so a numeric host never reaches this set --
+# entries like "127.0.0.1" sat here looking load-bearing and were unreachable, one of them
+# written twice. Loopback in an example is allowed because the pattern cannot match it,
+# not because it is listed.
+HOSTPORT_ALLOWED = {
+    "localhost", "example.com", "example.org",
+    "your-head-node", "head", "host", "hostname", "some-host",
+}
+
+# Extensions that are certainly binary. Everything else is scanned, including file types
+# nobody thought of. This used to be an allowlist of "text" suffixes, which was fail-OPEN:
+# a host literal in a .rst, .ts or .sql file passed silently because the extension was not
+# on the list. An unknown extension must be scanned, not skipped.
+BINARY_SUFFIXES = {
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".webp", ".svgz",
+    ".pdf", ".zip", ".gz", ".bz2", ".xz", ".tar", ".7z", ".whl", ".jar",
+    ".exe", ".dll", ".so", ".dylib", ".bin", ".o", ".a", ".class", ".pyc", ".pyd",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".webm",
+    ".db", ".sqlite", ".sqlite3", ".mo",
+}
+MAX_SCAN_BYTES = 2_000_000
+
+
+@dataclass
+class Finding:
+    level: str
+    check: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"{self.level:5} [{self.check}] {self.message}"
+
+
+class GitFailed(RuntimeError):
+    """A command a check stands on failed, so that check cannot say what it saw."""
+
+
+def run(*args: str, required: bool = False) -> str:
+    """Run a command in the repository and return its stdout.
+
+    The encoding is explicit because `text=True` alone decodes with the *ambient* codec,
+    which is cp1252 on Windows. Git output routinely carries characters it has no byte for
+    -- `❌` is `E2 9D 8C`, and `0x9D` is undefined there -- and the decode happens on
+    subprocess's own reader thread, so the `UnicodeDecodeError` kills that thread without
+    reaching the caller: `returncode` is 0, `stdout` is **None**, and the next `.strip()`
+    raises an `AttributeError` nowhere near the cause.
+
+    `errors="replace"` rather than strict, because a gate that loses one character is worth
+    more than one that loses a whole commit message. And `or ""` because a failed command
+    has no stdout at all -- a real answer for a guard that asks whether something exists,
+    and a lie for a check that reads empty as clean, which is what `required` is for.
+    """
+    proc = subprocess.run(
+        args, cwd=ROOT, capture_output=True, text=True, check=False,
+        encoding="utf-8", errors="replace",
+    )
+    if required and proc.returncode != 0:
+        raise GitFailed(
+            f"`{' '.join(args)}` exited {proc.returncode}: "
+            f"{(proc.stderr or '').strip()[:200]}"
+        )
+    return (proc.stdout or "").strip()
+
+
+def git(*args: str) -> str:
+    """`run("git", ...)` for a check whose empty answer means clean, so a failure raises."""
+    return run("git", *args, required=True)
+
+
+DEFAULT_RANGE = "origin/main...HEAD"
+
+
+def pr_range(diff_range: str | None) -> str | None:
+    """The range to read, or None when it is the default and the default does not exist.
+
+    A range someone passed is required, so a bad one blocks: CI always passes one. The
+    default is only a guess, and a fresh clone or a throwaway repository has no
+    `origin/main` to guess with -- that is "cannot tell", which the caller reports as a
+    SKIP, never the clean result an empty diff would have implied.
+    """
+    if diff_range:
+        return diff_range
+    if run("git", "rev-parse", "--verify", "--quiet", "origin/main"):
+        return DEFAULT_RANGE
+    return None
+
+
+def _no_range(check: str) -> Finding:
+    return Finding(SKIP, check, "no origin/main to compare against and no --diff given; "
+                                "CI passes one.")
+
+
+# Written by the prepare-commit-msg hook when git says the message was reused from HEAD.
+# That covers `git commit --amend` and `git commit -C HEAD`, which are indistinguishable
+# from a hook's arguments -- both arrive as source="commit", sha="HEAD", and neither sets
+# GIT_REFLOG_ACTION. Measured, not assumed.
+REUSED_MSG_MARKER = ROOT / ".git" / "docs-gate-reused-message"
+
+
+def message_reused_from_head() -> bool:
+    """True if this commit's message came from HEAD. Consumes the marker.
+
+    Consumed rather than merely read: a marker surviving an aborted commit would change
+    how the *next* one is judged. The hook rewrites it on every commit anyway, so this is
+    belt and braces on a check whose failure mode is a wrong verdict.
+    """
+    if not REUSED_MSG_MARKER.exists():
+        return False
+    REUSED_MSG_MARKER.unlink()
+    return True
+
+
+def files_against_previous_commit() -> list[str] | None:
+    """The staged set diffed against HEAD~1, which is an amend's real parent.
+
+    None when HEAD has no parent: amending a root commit has nothing to compare against,
+    and inventing an empty tree here would quietly widen the set instead of saying so.
+    """
+    if not run("git", "rev-parse", "--verify", "--quiet", "HEAD~1"):
+        return None
+    out = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "HEAD~1")
+    return [line for line in out.splitlines() if line]
+
+
+def changed_files(mode: str, diff_range: str | None) -> list[str]:
+    # commit-msg sees the same staged index as pre-commit: the hook runs before the commit
+    # object exists, so the index still is the change under consideration. Falling through
+    # to the CI branch here would diff against origin/main and, with no upstream, scan
+    # every tracked file -- a whole-repo audit wearing the costume of a per-commit check.
+    if mode in ("pre-commit", "commit-msg"):
+        out = git("diff", "--cached", "--name-only", "--diff-filter=ACMR")
+    else:
+        rng = pr_range(diff_range)
+        out = git("diff", "--name-only", "--diff-filter=ACMR", rng) if rng else ""
+        if not out:  # first push, or no upstream yet: fall back to everything tracked
+            out = git("ls-files")
+    return [line for line in out.splitlines() if line]
+
+
+def scannable_files_with_skips() -> tuple[list[Path], list[Finding]]:
+    """Every tracked file that is not provably binary, and what was left out.
+
+    Binary detection is by content, not just extension: a NUL byte in the first 8 KiB.
+    Extension alone is a guess, and guessing wrong here means skipping a file that holds
+    the thing being looked for.
+
+    The other two exclusions are *returned* rather than swallowed. A file over the byte
+    cap and a file that cannot be opened were both skipped with a bare `continue`, so the
+    email and host-identifier checks reported a clean pass over ground they had never
+    covered -- a check that cannot fail, which CLAUDE.md names as worse than no check at
+    all. Binary stays silent because excluding it is the intent, not a gap.
+    """
+    skips: list[Finding] = []
+    files = []
+    for r in git("ls-files").splitlines():
+        p = ROOT / r
+        if not p.exists() or p.suffix.lower() in BINARY_SUFFIXES:
+            continue
+        try:
+            size = p.stat().st_size
+            if size > MAX_SCAN_BYTES:
+                skips.append(Finding(WARN, "scan-coverage",
+                    f"{rel(p)} was not scanned for content: {size} bytes is over the "
+                    f"{MAX_SCAN_BYTES}-byte cap. A host identifier or a non-allowlisted "
+                    f"address inside it passes unseen."))
+                continue
+            with open(p, "rb") as fh:
+                if b"\x00" in fh.read(8192):
+                    continue
+        except OSError as e:
+            skips.append(Finding(WARN, "scan-coverage",
+                f"{rel(p)} is tracked but could not be read "
+                f"({e.strerror or e}), so it was not scanned for content."))
+            continue
+        files.append(p)
+    return files, skips
+
+
+def scannable_files() -> list[Path]:
+    """The paths alone, for the scanners that read files rather than report coverage."""
+    return scannable_files_with_skips()[0]
+
+
+def rel(p: Path) -> str:
+    return p.relative_to(ROOT).as_posix()
+
+
+def load_lines(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    return [
+        ln.strip()
+        for ln in path.read_text(encoding="utf-8").splitlines()
+        if ln.strip() and not ln.strip().startswith("#")
+    ]
+
+
+# --------------------------------------------------------------------------- checks
+
+
+def check_commit_identity(mode: str, diff_range: str | None) -> list[Finding]:
+    """The check that actually protects a public repo.
+
+    Content scanners never see the author field, and the global identity on a work
+    machine is usually the work address. This is ~15 lines and it is the difference
+    between a private address staying private and it being on every commit forever.
+    """
+    allowed = set(load_lines(AUTHOR_ALLOWLIST_FILE))
+    if not allowed:
+        return [Finding(BLOCK, "identity",
+                        "security/allowed_emails.txt lists no addresses, so no commit "
+                        "author can be validated. Add the intended address.")]
+    if mode == "pre-commit":
+        pairs = [(run("git", "config", "user.email"), "pending commit")]
+    else:
+        rng = pr_range(diff_range)
+        if rng is None:
+            return [_no_range("identity")]
+        # --no-merges: for a pull_request event, Actions checks out a synthetic merge
+        # commit authored by GitHub itself (noreply@github.com). That is not a
+        # contribution, and flagging it would block every pull request forever. This
+        # project squash-merges, so real merge commits do not appear in history either.
+        raw = git("log", "--no-merges", "--format=%ae%x00%ce%x00%h", rng)
+        pairs = []
+        for line in raw.splitlines():
+            if not line:
+                continue
+            ae, ce, sha = line.split("\x00")
+            pairs.append((ae, sha))
+            # GitHub is the committer on every squash merge it performs. That
+            # is its machinery, not an identity claim, so it is permitted as a
+            # committer and still refused as an author -- the author field is
+            # the claim that matters.
+            if ce not in (ae, "noreply" + "@github.com"):
+                pairs.append((ce, f"{sha} (committer)"))
+    out = []
+    for addr, where in pairs:
+        if addr and addr not in allowed:
+            out.append(Finding(
+                BLOCK, "identity",
+                f"{where}: author {addr!r} is not in security/allowed_emails.txt. "
+                f"This repo is public. Check `git config user.email` inside the repo, "
+                f"and that the includeIf in ~/.gitconfig names this directory."))
+    return out
+
+
+# Addresses that identify nobody live in a data file, not here: gitleaks needs the same
+# set, and a second hand-maintained copy is the drift this project exists to prevent.
+# scripts/gen_gitleaks_config.py renders .gitleaks.toml from these same lists.
+CONTENT_SAFE_FILE = ROOT / "security" / "content_safe_emails.txt"
+AUTHOR_ALLOWLIST_FILE = ROOT / "security" / "allowed_emails.txt"
+
+
+# RFC 2606 reserves these domains for documentation and examples. An address there
+# identifies nobody by construction, so this is a rule rather than a list -- listing
+# individual example addresses invites an endless queue of one-line additions, each of
+# which is a chance to add a real one by mistake.
+RESERVED_EMAIL_DOMAINS = ("example.com", "example.org", "example.net", "example.edu")
+
+
+def is_content_safe(addr: str) -> bool:
+    if addr in content_safe_emails():
+        return True
+    return addr.lower().rsplit("@", 1)[-1] in RESERVED_EMAIL_DOMAINS
+
+
+def content_safe_emails() -> set[str]:
+    return set(load_lines(CONTENT_SAFE_FILE))
+
+
+def check_emails_in_files() -> list[Finding]:
+    allowed = set(load_lines(AUTHOR_ALLOWLIST_FILE)) | content_safe_emails()
+    out = []
+    for p in scannable_files():
+        r = rel(p)
+        if any(fnmatch.fnmatch(r, g) for g in EMAIL_EXEMPT_GLOBS):
+            continue
+        for i, line in enumerate(p.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for m in EMAIL_RE.finditer(line):
+                if m.group(0) not in allowed and not is_content_safe(m.group(0)):
+                    out.append(Finding(
+                        BLOCK, "email-content",
+                        f"{r}:{i} contains {m.group(0)!r}, which is neither in "
+                        f"security/allowed_emails.txt nor a known-generic address. "
+                        f"Allowlisted, not denylisted, so an address nobody thought to "
+                        f"list is still caught."))
+    return out
+
+
+def check_conflict_markers() -> list[Finding]:
+    """An unfinished merge, left in a tracked file.
+
+    Two of git's three markers are blocked: the opener and the closer, each seven of one
+    sign followed by a space. The separator is deliberately *not*, because a line of seven
+    or more equals signs is a valid setext Markdown H1 underline. There are none in this
+    tree today, which is exactly what makes it dangerous -- a check on that form would pass
+    review and then fire on the first ordinary heading somebody writes. The two forms kept
+    have no meaning in Markdown at all, and no merge leaves one without the other.
+
+    Markdown is the reason this exists. In a `.py` file an unresolved conflict fails to
+    parse and someone notices in seconds; in Markdown it renders as nonsense and reaches
+    `main`, which it has done twice. Nothing else looks -- the gate checks who owns a
+    document and how long it is, never what is in it.
+
+    This function's own source does not trip it: the literals below are compared with
+    `str.startswith` against a whole line, and every line here that contains one begins
+    with indentation. Worth stating, because a check that flags the file defining it is a
+    shape this project has already shipped once.
+    """
+    markers = ("<" * 7 + " ", ">" * 7 + " ")
+    out = []
+    for p in scannable_files():
+        r = rel(p)
+        for i, line in enumerate(
+            p.read_text(encoding="utf-8", errors="replace").splitlines(), 1
+        ):
+            if line.startswith(markers):
+                out.append(Finding(
+                    BLOCK, "conflict-marker",
+                    f"{r} line {i} is a git conflict marker: {line.strip()[:40]!r}. A "
+                    f"merge was left unfinished. Resolve it and remove every marker line "
+                    f"-- and check the whole file rather than this one line, because a "
+                    f"resolver that fixed the first conflict and committed the rest "
+                    f"verbatim is how these reached main before."))
+    return out
+
+
+# A body is re-read on every invocation, so what it says is paid for every run. These are
+# the two shapes of history cheap enough to spot mechanically: a date, and a pull request
+# or issue number. An `ADR-NNNN` is deliberately absent -- it is a pointer to a decision
+# rather than a narrative about one, and it earns its few characters.
+BODY_HISTORY = (
+    (re.compile(r"\b20\d\d-\d\d-\d\d\b"), "a date"),
+    (re.compile(r"(?<![\w/])#\d{2,}\b"), "a pull request or issue number"),
+)
+
+# Where bodies live. `.claude/` is this repository's own agents and skills; the packaged
+# directory ships into somebody else's project, where the same cost applies to a reader
+# who has no access to this history at all.
+BODY_DIRS = (".claude", "src/claude_delegate_local/skills")
+
+
+def _body_prose_lines(text: str):
+    """Yield (line number, line) for the prose of a body, and nothing else.
+
+    Two exemptions, both load-bearing. Frontmatter carries `description`, a one-line
+    summary a client displays, which cannot be reflowed to dodge a checker. A fenced block
+    carries examples, and `test-writer`'s asserts against a deliberately fictional
+    `ADR-0099` -- flagging it would force the example to be broken to satisfy the check.
+    """
+    lines = text.splitlines()
+    i, n = 0, len(lines)
+    # Frontmatter only when the file opens with it; a stray `---` further down is a rule.
+    if lines and lines[0].strip() == "---":
+        i = 1
+        while i < n and lines[i].strip() != "---":
+            i += 1
+        i += 1
+    fenced = False
+    while i < n:
+        line = lines[i]
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+        elif not fenced:
+            yield i + 1, line
+        i += 1
+
+
+def check_body_history() -> list[Finding]:
+    """History in a file that is re-read on every invocation.
+
+    CONTRIBUTING.md states the rule; this makes it enforceable. An audit would find these
+    too, but it runs a few times a month against a habit that produces several instances an
+    hour, so the correction has to arrive at commit time to change anything.
+
+    Tracked documents are deliberately out of scope. CHANGELOG.md, JOURNAL.md and
+    DECISIONS.md exist to hold exactly what this refuses, and a check that read them would
+    be asking the project to delete its own record.
+    """
+    out = []
+    for d in BODY_DIRS:
+        base = ROOT / d
+        if not base.is_dir():
+            continue
+        for p in sorted(base.rglob("*.md")):
+            r = rel(p)
+            text = p.read_text(encoding="utf-8", errors="replace")
+            for i, line in _body_prose_lines(text):
+                for pattern, what in BODY_HISTORY:
+                    m = pattern.search(line)
+                    if not m:
+                        continue
+                    out.append(Finding(
+                        BLOCK, "body-history",
+                        f"{r} line {i} carries {what}, {m.group(0)!r}. A body is re-read on "
+                        f"every invocation, so its history is paid for on every run and "
+                        f"buys nothing a reader can act on. State the rule here and put the "
+                        f"incident in CHANGELOG.md, which is read once by whoever asks why. "
+                        f"Frontmatter and fenced blocks are exempt; an ADR number is not "
+                        f"matched, being a pointer rather than a narrative."))
+                    break
+    return out
+
+
+# A literal prefixed with "word:" is matched case-sensitively on word boundaries
+# instead of case-insensitively as a substring. It exists for the case the plain form
+# cannot serve: a name that is also an ordinary programming word.
+#
+# The reasoning that first rejected this was wrong, and wrong in an instructive way. A
+# common surname looked unusably noisy because it appeared hundreds of times -- but every
+# one of those was inside a virtualenv, which is not tracked and is never scanned. Over
+# the files the gate actually reads, the capitalised whole word appeared zero times. The
+# measurement was of the wrong population.
+WORD_PREFIX = "word:"
+
+
+def _word_pattern(literal: str) -> str:
+    return r"(?<![A-Za-z0-9_])" + re.escape(literal) + r"(?![A-Za-z0-9_])"
+
+
+def split_literals(literals: list[str]) -> tuple[list[str], list[str]]:
+    """Into (loose, word-boundary). Loose is the default and covers hostnames."""
+    loose, words = [], []
+    for lit in literals:
+        (words if lit.startswith(WORD_PREFIX) else loose).append(
+            lit[len(WORD_PREFIX):].strip() if lit.startswith(WORD_PREFIX) else lit)
+    return loose, words
+
+
+# Large, machine-written, and holding only public registry URLs, so the host scan skips it
+# by name rather than tripping over its size on every run. gitleaks still scans it.
+HOST_SCAN_SKIP = {"package-lock.json"}
+
+
+def check_host_identifiers() -> list[Finding]:
+    all_literals = load_lines(ROOT / "security" / "forbidden_strings.txt")
+    literals, word_literals = split_literals(all_literals)
+    out = []
+    for p in scannable_files():
+        r = rel(p)
+        if r in HOST_SCAN_SKIP:
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        for i, line in enumerate(text.splitlines(), 1):
+            for pat, label in HOST_PATTERNS:
+                m = re.search(pat, line, re.IGNORECASE)
+                if m:
+                    out.append(Finding(BLOCK, "host-identifier",
+                                       f"{r}:{i} looks like a {label}: {m.group(0)!r}. "
+                                       f"Hosts are configuration, never literals."))
+            for hit in hostport_leaks(line):
+                out.append(Finding(
+                    BLOCK, "host-identifier",
+                    f"{r}:{i} contains {hit!r}. A hostname is as identifying "
+                    f"as an address. Use a placeholder in examples."))
+            # Compare with whitespace normalised, so "Ada  Lovelace" matches
+            # "Ada Lovelace". Harmless for single-word entries, which contain no
+            # whitespace to collapse. Without this the line pass missed the case and the
+            # whole-file pass then suppressed it as an apparent duplicate -- a dedup
+            # guard hiding a genuine finding.
+            flat_line = " ".join(line.split()).lower()
+            for lit in literals:
+                if " ".join(lit.split()).lower() in flat_line:
+                    out.append(Finding(BLOCK, "host-identifier",
+                                       f"{r}:{i} matches an entry in the local "
+                                       f"forbidden_strings list."))
+            for lit in word_literals:
+                if re.search(_word_pattern(lit), line):
+                    out.append(Finding(BLOCK, "host-identifier",
+                                       f"{r}:{i} matches a word-boundary entry in the "
+                                       f"local forbidden_strings list."))
+    # Multi-word literals need a second pass. A name is written across a line break,
+    # or with a double space, far more often than a hostname is -- and the line-by-line
+    # pass above cannot see either. Normalising all whitespace to single spaces catches
+    # both. Single-token literals are already handled and are skipped here.
+    multiword = [lit for lit in literals if len(lit.split()) > 1]
+    if multiword:
+        for p2 in scannable_files():
+            r2 = rel(p2)
+            if r2 in HOST_SCAN_SKIP:
+                continue
+            flat = " ".join(p2.read_text(encoding="utf-8", errors="replace").split()).lower()
+            for lit in multiword:
+                norm = " ".join(lit.split()).lower()
+                if norm in flat and not any(
+                    norm in " ".join(ln.split()).lower()
+                    for ln in p2.read_text(encoding="utf-8", errors="replace").splitlines()
+                ):
+                    out.append(Finding(
+                        BLOCK, "host-identifier",
+                        f"{r2} contains a multi-word entry from the local "
+                        f"forbidden_strings list, split across lines or spacing."))
+    if not literals:
+        out.append(Finding(SKIP, "host-identifier",
+                           "security/forbidden_strings.txt absent, so only the committed "
+                           "patterns ran. Create it locally (untracked) with your host's "
+                           "literal names for exact matching."))
+    return out
+
+
+# Files that must never be tracked under any circumstances, whatever .gitignore says.
+# Belt and braces on purpose: .gitignore is one edit away from not covering something,
+# and `git add -f` ignores it entirely.
+NEVER_TRACK = {
+    "security/forbidden_strings.txt",
+    ".env",
+    "models.toml",
+    "CLAUDE.local.md",
+    "initial-spec.local.md",
+}
+
+
+def check_never_tracked() -> list[Finding]:
+    """A second, independent layer under .gitignore.
+
+    The file listing host literals must not enter the repository even if .gitignore is
+    edited, even if someone uses `git add -f`, and even when it is empty -- an empty one
+    committed today gets populated tomorrow in a commit nobody looks at twice.
+    """
+    tracked = set(git("ls-files").splitlines())
+    staged = set(git("diff", "--cached", "--name-only").splitlines())
+    out = []
+    for path in sorted(NEVER_TRACK & (tracked | staged)):
+        out.append(Finding(
+            BLOCK, "never-track",
+            f"{path} is tracked or staged and must never be. It holds machine-specific "
+            f"values that identify you. Run: git rm --cached {path}"))
+    return out
+
+
+def check_commit_message(mode: str, diff_range: str | None,
+                         message_file: str | None = None) -> list[Finding]:
+    """Scan the commit message itself.
+
+    CLAUDE.md stated the gate blocked host literals in "code, docs, tests or a commit
+    message". It did not: the only place the message was read was to parse waiver
+    trailers. A document promising protection that does not exist is worse than no
+    promise, because it is relied upon. A message is also the easiest place to leak a
+    hostname -- you are describing the thing you were just debugging.
+    """
+    if mode == "commit-msg":
+        if not message_file:
+            return [Finding(BLOCK, "commit-message",
+                            "commit-msg mode requires --message-file.")]
+        f = Path(message_file)
+        raw = f.read_text(encoding="utf-8", errors="replace") if f.exists() else None
+        texts = [("pending commit", raw)] if raw is not None else []
+    elif mode == "pre-commit":
+        # Nothing to read. git writes .git/COMMIT_EDITMSG *after* the pre-commit hook
+        # returns, so reading it here inspects the PREVIOUS commit's message -- the check
+        # passed on text nobody was proposing to commit. The real scan runs at commit-msg.
+        return [Finding(SKIP, "commit-message",
+                        "the message does not exist yet at pre-commit; scanned by the "
+                        "commit-msg hook, which is handed the real file.")]
+    else:
+        rng = pr_range(diff_range)
+        if rng is None:
+            return [_no_range("commit-message")]
+        raw = git("log", "--no-merges", "--format=%h%x1f%B%x1e", rng)
+        texts = []
+        for chunk in raw.split(chr(30)):
+            if chr(31) in chunk:
+                sha, body = chunk.split(chr(31), 1)
+                texts.append((sha.strip(), body))
+
+    out = []
+    for where, text in texts:
+        # A comment line in a commit template is not part of the message.
+        body = chr(10).join(ln for ln in text.splitlines() if not ln.startswith("#"))
+        # The second surface. A squash of a single-commit branch takes its subject from
+        # here rather than from the pull request title, so checking only the title would
+        # leave exactly half of what reaches main unchecked -- which is how "M1: ..." and
+        # "M3: ..." both landed while every title around them was well formed.
+        subject = next((ln for ln in body.splitlines() if ln.strip()), "")
+        finding = conventional_subject_finding(f"{where}: the subject", subject)
+        if finding:
+            out.append(finding)
+        # The same scan the pull request title and body get. A commit message is no less
+        # public once it is pushed, and it used to get a near-copy of this that had
+        # drifted -- the copy never learned about host:port.
+        out += scan_text(f"{where}: the message", body, "commit-message")
+    return out
+
+
+def hostport_leaks(text: str) -> list[str]:
+    """Every `host:port` in `text` whose host is a real name rather than a placeholder.
+
+    One predicate, used by the file scan and by `scan_text`, so the surfaces cannot
+    disagree about what a leak is. They did disagree, for long enough to matter: this ran
+    against tracked files only, and the same string was refused in one place and accepted
+    in another.
+    """
+    out = []
+    for m in HOSTPORT_RE.finditer(text):
+        host = m.group(1).lower()
+        if host not in HOSTPORT_ALLOWED and not host.startswith("your-"):
+            out.append(m.group(0))
+    return out
+
+
+def scan_text(label: str, text: str, check: str = "public-text") -> list[Finding]:
+    """Run the identifier checks over arbitrary text.
+
+    The single implementation for the commit message and for a pull request title and
+    body. It was documented as that before it was one: another caller carried a second
+    copy that had drifted and no longer ran everything this does. `check` and `label` are
+    the only things that differed, so they are the only things parameterised.
+
+    Extend this rather than adding a check beside it. Two copies cannot be kept in step by
+    intention alone -- that is what the previous pair proved, over months, unnoticed.
+
+    A pull request body is a public surface written outside git entirely, so no hook and
+    no file check can see it -- which is exactly how a specimen got published once despite
+    every other check passing.
+    """
+    loose, words = split_literals(
+        load_lines(ROOT / "security" / "forbidden_strings.txt"))
+    allowed = set(load_lines(AUTHOR_ALLOWLIST_FILE))
+    flat = " ".join(text.split()).lower()
+    out = []
+    for lit in loose:
+        if " ".join(lit.split()).lower() in flat:
+            out.append(Finding(BLOCK, check,
+                               f"{label} contains an entry from the local "
+                               f"forbidden_strings list."))
+            break
+    for lit in words:
+        if re.search(_word_pattern(lit), text):
+            out.append(Finding(BLOCK, check,
+                               f"{label} contains a word-boundary entry from the local "
+                               f"forbidden_strings list."))
+            break
+    for pat, lbl in HOST_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            out.append(Finding(BLOCK, check,
+                               f"{label} contains what looks like a {lbl}: "
+                               f"{m.group(0)!r}."))
+    for hit in hostport_leaks(text):
+        out.append(Finding(BLOCK, check,
+                           f"{label} contains {hit!r}. A hostname is as identifying as "
+                           f"an address. Use a placeholder."))
+    for m in EMAIL_RE.finditer(text):
+        if m.group(0) not in allowed and not is_content_safe(m.group(0)):
+            out.append(Finding(BLOCK, check,
+                               f"{label} contains {m.group(0)!r}, which is not an "
+                               f"allowlisted address."))
+    return out
+
+
+# The authority for the commit/title prefix. CONTRIBUTING.md names the same six in prose
+# for a human to read; `test_contributing_lists_exactly_the_gated_types` asserts the two
+# agree, so the second copy cannot drift quietly the way an unchecked one would.
+CONVENTIONAL_TYPES = ("feat", "fix", "docs", "test", "refactor", "chore")
+CONVENTIONAL_SUBJECT = re.compile(
+    r"^(?:" + "|".join(CONVENTIONAL_TYPES) + r")(?:\([^)]+\))?!?: \S")
+# A merge or a revert is generated by git, not written by anyone, so it is not held to a
+# convention nobody had the chance to apply.
+GENERATED_SUBJECT = re.compile(r"^(?:Merge |Revert )")
+
+
+def conventional_subject_finding(where: str, subject: str) -> Finding | None:
+    """One place decides what a well-formed subject is, for both surfaces it is checked on."""
+    if not subject.strip() or GENERATED_SUBJECT.match(subject):
+        return None
+    if CONVENTIONAL_SUBJECT.match(subject):
+        return None
+    return Finding(
+        BLOCK, "conventional-subject",
+        f"{where} is not a Conventional Commit: {subject[:60]!r}. Expected one of "
+        f"{', '.join(CONVENTIONAL_TYPES)} followed by ': '. The milestone belongs in the "
+        f"body or in PLAN.md, not in the subject -- 'M1: ...' reached main twice before "
+        f"this check existed.")
+
+
+def check_pr_text(event_path: str | None) -> list[Finding]:
+    """Scan a pull request title and body from the Actions event payload."""
+    if not event_path or not Path(event_path).exists():
+        return [Finding(SKIP, "public-text",
+                        "no pull request event payload; title and body not scanned.")]
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return [Finding(WARN, "public-text", f"could not read the event payload: {e}")]
+    pr = payload.get("pull_request") or {}
+    out = []
+    title = pr.get("title") or ""
+    out += scan_text("the pull request title", title)
+    out += scan_text("the pull request body", pr.get("body") or "")
+    # The title is the *decisive* surface: on a squash merge of a multi-commit branch it
+    # becomes the subject on main. Unlike a leaked literal, a malformed title is repaired
+    # by editing the pull request, so this blocks rather than merely warning.
+    finding = conventional_subject_finding("the pull request title", title)
+    if finding:
+        out.append(finding)
+    # A clean result reports nothing, as every other check does. Reporting it as SKIP
+    # would collapse the one distinction SKIP exists to preserve: "checked and found
+    # nothing" against "could not check". That ambiguity is how a no-op check comes to
+    # be trusted.
+    return out
+
+
+CHANGELOG_HEADING = re.compile(r"^## #(?P<num>TBD|\d+)\s*[—-]", re.MULTILINE)
+
+
+def _pr_number(event_path: str | None) -> tuple[int | None, Finding | None]:
+    """The pull request's number from the event payload, or the finding that says why not.
+
+    Split out so its caller keeps one exit per outcome rather than one per obstacle.
+    """
+    if not event_path or not Path(event_path).exists():
+        return None, Finding(
+            SKIP, "changelog-number",
+            "no pull request event payload; the newest heading's number was not checked "
+            "against the number GitHub issued.")
+    try:
+        payload = json.loads(Path(event_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as e:
+        return None, Finding(WARN, "changelog-number",
+                             f"could not read the event payload: {e}")
+    number = (payload.get("pull_request") or {}).get("number")
+    if number is None:
+        return None, Finding(SKIP, "changelog-number",
+                             "the event payload carries no pull request number.")
+    return number, None
+
+
+def check_changelog_number(event_path: str | None) -> list[Finding]:
+    """The guessed heading number, against the one GitHub actually issued.
+
+    A number cannot be known when its entry is written, so it is guessed -- the next one
+    GitHub will issue -- and corrected in the branch if it moved. That leaves exactly one
+    way to fail: guess, forget to check, merge. It has already happened twice, as `#TBD`
+    placeholders that a later pull request had to repay (#193, then #205).
+
+    A rule in a skill cannot catch it, because a skill only runs when it is invoked. This
+    runs on the pull request event, which is the first moment the real number exists and
+    the last one before a merge makes the mistake permanent.
+
+    Only the newest heading is judged: older entries carry other numbers by definition. A
+    pull request that deliberately adds no entry -- rare, and itself worth a second look --
+    takes the `Docs-Gate-Skip` trailer like any other exception.
+    """
+    number, unavailable = _pr_number(event_path)
+    if unavailable is not None:
+        return [unavailable]
+
+    path = ROOT / "CHANGELOG.md"
+    if not path.exists():
+        return [Finding(SKIP, "changelog-number", "there is no CHANGELOG.md to check.")]
+    m = CHANGELOG_HEADING.search(path.read_text(encoding="utf-8"))
+    if not m:
+        return [Finding(SKIP, "changelog-number",
+                        "CHANGELOG.md has no numbered entry to check.")]
+
+    found = m.group("num")
+    if found == str(number):
+        return []
+    # Two mistakes with two remedies, so two messages: a placeholder was never filled, or a
+    # guess moved. Collapsing them would name the wrong fix half the time.
+    detail = (
+        f"CHANGELOG.md's newest heading still says '#TBD' and this pull request is "
+        f"#{number}. Fill it in this branch: a placeholder that merges is a debt the next "
+        f"pull request pays."
+        if found == "TBD" else
+        f"CHANGELOG.md's newest heading is #{found} but this pull request is #{number}. "
+        f"The guess moved -- correct the heading in this branch before merging, or the "
+        f"record and the thing it describes are named differently for good."
+    )
+    return [Finding(BLOCK, "changelog-number", detail)]
+
+
+def check_budgets() -> list[Finding]:
+    """Budgets block, but the block never means delete. See ADR-0003.
+
+    Two kinds, because one rule does not fit both document classes (ADR-0022):
+
+    `BUDGET: n`           total lines. For MUTABLE documents, where exceeding the cap is a
+                          real prompt to ask whether everything still earns its place.
+    `BUDGET-PER-ENTRY: n` longest `## ` section. For APPEND-ONLY documents, where history
+                          does not stop earning its place, so a total cap could only ever
+                          be raised. Capping each entry keeps them terse instead.
+    There is deliberately no total-size instrument for append-only documents. One was
+    tried -- `ARCHIVE-AT: n`, warning when the file passed a line count -- and it warned
+    without a remedy anyone could apply: the procedure it pointed at split by year, and a
+    document whose entries are all one year has no older year to move. It fired on every
+    commit until it stopped being read, which is the failure a warning has. Archiving is
+    now a judgement someone makes, not a threshold. (ADR-0033)
+    """
+    out = []
+    seen = 0
+    for p in sorted(ROOT.rglob("*.md")):
+        r = rel(p)
+        if (".git" in p.parts or "docs/audits" in r or "docs/reviews" in r
+                or "archive" in p.parts):
+            continue
+        text = p.read_text(encoding="utf-8", errors="replace")
+        total = len(text.splitlines())
+
+        per_entry = re.search(r"<!--\s*BUDGET-PER-ENTRY:\s*(\d+)", text)
+        if per_entry:
+            seen += 1
+            cap = int(per_entry.group(1))
+            sections = re.split(r"^## ", text, flags=re.MULTILINE)[1:]
+            for sec in sections:
+                title = sec.splitlines()[0].strip()[:70] if sec.strip() else "(untitled)"
+                # `rstrip()` rather than a raw count, so every entry is charged for its
+                # content and none for the blank line that separates it from the next.
+                # Splitting on the heading leaves that separator inside the *preceding*
+                # section, so without this the final section -- which has no next heading,
+                # and whose trailing newline `splitlines()` does not count -- measured a
+                # line short of an identical earlier one.
+                #
+                # It matters in exactly one document. CHANGELOG.md and DECISIONS.md are
+                # newest-first, so their final section is the oldest entry and nobody
+                # touches it. JOURNAL.md is oldest-first, so its final section is the entry
+                # just appended: an entry of exactly `cap` content lines landed, and then
+                # blocked the next person to append, who had changed nothing about it.
+                n = len(sec.rstrip().splitlines())
+                if n > cap:
+                    out.append(Finding(
+                        BLOCK, "budget",
+                        f"{r}: entry {title!r} is {n} lines against a per-entry budget of "
+                        f"{cap}. Append-only files cap each entry, not the total -- trim "
+                        f"this one, or raise the per-entry budget with a reason in this "
+                        f"same commit."))
+            continue
+
+        m = re.search(r"<!--\s*BUDGET:\s*(\d+)", text)
+        if not m:
+            continue
+        seen += 1
+        budget = int(m.group(1))
+        if total > budget:
+            out.append(Finding(
+                BLOCK, "budget",
+                f"{r} is {total} lines against a budget of {budget}. Three ways out, and "
+                f"none of them is deleting something valuable: trim real redundancy; "
+                f"split it (only for a different audience, different owned code, or "
+                f"reference-vs-narrative); or raise the budget, giving the reason in the "
+                f"commit message rather than the header (CONTRIBUTING.md, \"Prose\")."))
+    if not seen:
+        out.append(Finding(SKIP, "budget", "no document declares a budget header yet."))
+    return out
+
+
+def check_adr_format(text: str | None = None) -> list[Finding]:
+    """The ADR headings ARE the index, so their shape is load-bearing.
+
+    `text` is injectable so a test can drive *this* function over synthetic headings
+    instead of reimplementing it. The reimplementation is the trap: a copy of the rule in
+    the test file passes whether or not the rule here still works, which is the same shape
+    as the bugs this check was written for.
+    """
+    if text is None:
+        p = ROOT / "DECISIONS.md"
+        if not p.exists():
+            return [Finding(SKIP, "adr", "DECISIONS.md not written yet.")]
+        text = p.read_text(encoding="utf-8")
+    heads = re.findall(r"^## (.+)$", text, re.MULTILINE)
+    if not heads:
+        return [Finding(BLOCK, "adr", "DECISIONS.md declares no ADR headings.")]
+    # A decision can be overtaken by more than one later one, on different clauses:
+    # ADR-0005 lost its portability claim to ADR-0031 and its tool count to ADR-0042.
+    # Admitting only a single reference meant the heading could name just the newest, and
+    # the earlier correction survived only in whatever prose happened to mention it.
+    ref_list = r"ADR-\d{4}(?:(?:, | and )ADR-\d{4})*"
+    pattern = re.compile(
+        r"^(?:~~)?ADR-(\d{4}) — \d{4}-\d{2}-\d{2} — .+?(?:~~)? — "
+        rf"(Accepted|Proposed|Rejected|Superseded by {ref_list}|"
+        rf"Partially superseded by {ref_list})$"
+    )
+    out, numbers = [], []
+    # Collect DECLARED numbers first. Searching the file text for "ADR-0099" cannot
+    # work: the reference being validated contains that string itself, so the check
+    # would always find its own needle and never fire. Caught by a negative test --
+    # which is the argument for writing them.
+    declared = {
+        int(m.group(1))
+        for h in heads
+        if (m := re.match(r"^(?:~~)?ADR-(\d{4}) ", h.strip()))
+    }
+    for h in heads:
+        m = pattern.match(h.strip())
+        if not m:
+            out.append(Finding(BLOCK, "adr",
+                               f"malformed ADR heading: {h[:90]!r}. Expected "
+                               f"'ADR-NNNN — YYYY-MM-DD — title — Status'."))
+            continue
+        numbers.append(int(m.group(1)))
+        # Every reference, not the first. `re.search` stopped at one, so widening the
+        # grammar above without widening this would leave the second and later targets
+        # unvalidated -- a heading could point at ADR-9999 and pass.
+        if (tail := re.search(r"[Ss]uperseded by (.+)$", h)) is not None:
+            for target in re.findall(r"ADR-(\d{4})", tail.group(1)):
+                if int(target) not in declared:
+                    out.append(Finding(BLOCK, "adr",
+                                       f"ADR-{m.group(1)} points at ADR-{target}, which "
+                                       f"is not declared by any heading in this file."))
+        if "~~" in h and "Superseded by" not in h:
+            out.append(Finding(BLOCK, "adr",
+                               f"ADR-{m.group(1)} is struck through but names no "
+                               f"replacement."))
+    if numbers != sorted(numbers, reverse=True):
+        out.append(Finding(BLOCK, "adr", "ADRs are not in descending order."))
+    dupes = {n for n in numbers if numbers.count(n) > 1}
+    if dupes:
+        out.append(Finding(BLOCK, "adr", f"duplicate ADR numbers: {sorted(dupes)}."))
+    return out
+
+
+MANIFEST = ROOT / "scripts" / "docs_ownership.toml"
+
+
+def load_manifest() -> dict | None:
+    if not MANIFEST.exists():
+        return None
+    return tomllib.loads(MANIFEST.read_text(encoding="utf-8"))
+
+
+def _matches(path: str, globs: list[str]) -> bool:
+    """Glob match that treats ** as spanning directories, which fnmatch does not."""
+    for g in globs:
+        if fnmatch.fnmatch(path, g):
+            return True
+        if g.endswith("/**") and (path == g[:-3] or path.startswith(g[:-2])):
+            return True
+    return False
+
+
+def owners_of(path: str, manifest: dict) -> list[str]:
+    return [doc for doc, meta in manifest["docs"].items()
+            if _matches(path, meta.get("owns", []))]
+
+
+def check_ownership(changed: list[str], exempt: frozenset[str] = frozenset()) -> list[Finding]:
+    """Changed code must be accompanied by its owning document, in the same commit.
+
+    This is what makes the one-feature-per-commit rule mean something: without it there
+    is nothing for the check to compare against. A path in `exempt` changed only in
+    comments, so it is not held to its document -- `ownership_findings` computes that set
+    for the reading it evaluates.
+    """
+    manifest = load_manifest()
+    if manifest is None:
+        return [Finding(SKIP, "owning-doc", f"{MANIFEST.name} not present.")]
+
+    unowned = manifest.get("unowned", {}).get("paths", [])
+    changed_set = set(changed)
+    out = []
+    stale_pairs: dict[str, list[str]] = {}
+
+    for path in changed:
+        if path in exempt:
+            continue
+        if not path.startswith(("src/", "scripts/", ".github/", ".claude/")):
+            continue
+        if _matches(path, unowned):
+            continue
+        docs = owners_of(path, manifest)
+        if not docs:
+            out.append(Finding(
+                WARN, "owning-doc",
+                f"{path} has no owning document and is not listed as unowned in "
+                f"{MANIFEST.name}. Assign it or declare it unowned -- an unassigned file "
+                f"is a documentation gap nobody can see."))
+            continue
+        # A generated document is satisfied by regeneration, which is policed
+        # separately. Requiring a manual edit there would be theatre.
+        if all(manifest["docs"][d].get("generated") for d in docs):
+            continue
+        if not any(d in changed_set for d in docs):
+            stale_pairs.setdefault(", ".join(docs), []).append(path)
+
+    for docs, paths in stale_pairs.items():
+        shown = ", ".join(paths[:3]) + (f" (+{len(paths)-3} more)" if len(paths) > 3 else "")
+        out.append(Finding(
+            BLOCK, "owning-doc",
+            f"{shown} changed but {docs} was not updated in the same commit. Update it, "
+            f"or add a trailer: 'Docs-Gate-Skip: owning-doc -- <reason>'."))
+    return out
+
+
+def check_orphan_docs() -> list[Finding]:
+    manifest = load_manifest()
+    if manifest is None:
+        return [Finding(SKIP, "orphan-doc", f"{MANIFEST.name} not present.")]
+    tracked = set(git("ls-files").splitlines())
+    out = []
+    for doc, meta in manifest["docs"].items():
+        owns = meta.get("owns", [])
+        if not owns:
+            continue
+        if not any(_matches(f, owns) for f in tracked):
+            out.append(Finding(
+                WARN, "orphan-doc",
+                f"{doc} claims ownership of {owns} but none of those paths exist. Either "
+                f"the code has not been written yet, or the document should be deleted "
+                f"and its manifest entry removed."))
+    return out
+
+
+def check_manifest_docs_exist() -> list[Finding]:
+    """A manifest entry must name a document that exists.
+
+    Catches both directions: an entry added before its document is written, and a document
+    deleted without removing its entry. Either leaves the ownership map describing a repo
+    that is not this one.
+    """
+    manifest = load_manifest()
+    if manifest is None:
+        return [Finding(SKIP, "manifest", f"{MANIFEST.name} not present.")]
+    out = []
+    for doc, meta in manifest["docs"].items():
+        if not (ROOT / doc).exists():
+            kind = "generated" if meta.get("generated") else "hand-written"
+            out.append(Finding(
+                WARN, "manifest",
+                f"{MANIFEST.name} lists {doc} ({kind}) but the file does not exist. Write "
+                f"it, or remove the entry -- an ownership map that names absent documents "
+                f"describes a repository other than this one."))
+    return out
+
+
+def check_split_dodge(mode: str = "pre-commit", diff_range: str | None = None) -> list[Finding]:
+    """A new document must earn its existence, or it is a budget being evaded.
+
+    Valid reasons to split: a different audience, different owned code, or reference
+    material separated from narrative. "It got long" is a reason to raise a budget, not
+    to create a file. See ADR-0003.
+
+    Takes no changed-file list on purpose, and must not be given one. This check needs
+    the files being ADDED, which `changed_files()` does not distinguish -- it reports
+    that a path changed, not how. It previously accepted a `changed` argument and
+    ignored it, which is worse than either: a signature describing a function this is
+    not, and an invitation to "fix" the check by wiring the wrong list into it.
+
+    The mode and range it does take, like every check that reads a diff: CI stages
+    nothing, so reading the index there saw no document added in the one run that
+    `--no-verify` cannot skip.
+    """
+    manifest = load_manifest()
+    if manifest is None:
+        return [Finding(SKIP, "split-dodge", f"{MANIFEST.name} not present.")]
+    if mode == "ci":
+        rng = pr_range(diff_range)
+        if rng is None:
+            return [_no_range("split-dodge")]
+        added_by = ("git", "diff", "--name-only", "--diff-filter=A", rng)
+    else:
+        added_by = ("git", "diff", "--cached", "--name-only", "--diff-filter=A")
+    added = set(run(*added_by, required=True).splitlines())
+    out = []
+    for doc in added:
+        meta = manifest["docs"].get(doc)
+        if meta is None:
+            continue
+        aud, owns = set(meta.get("audience", [])), set(meta.get("owns", []))
+        for other, om in manifest["docs"].items():
+            if other == doc or om.get("plane") != meta.get("plane"):
+                continue
+            o_aud, o_owns = set(om.get("audience", [])), set(om.get("owns", []))
+            if aud and aud <= o_aud and owns and owns <= o_owns:
+                out.append(Finding(
+                    BLOCK, "split-dodge",
+                    f"new document {doc} has the same audience and a subset of the code "
+                    f"owned by {other}, so it is not a split -- it is a size budget "
+                    f"being evaded. Raise {other}'s budget with a reason instead, or give "
+                    f"{doc} a distinct audience or distinct owned code."))
+                break
+    return out
+
+
+def check_scan_coverage() -> list[Finding]:
+    """What the content scanners declined to look at, and why.
+
+    A WARN rather than a BLOCK: a genuinely large tracked file is a cost decision, not a
+    violation. What is not acceptable is it being invisible -- `check_emails_in_files` and
+    `check_host_identifiers` both pass over whatever this skips, and a pass nobody knows is
+    partial is the one that gets trusted. Silent today, because no tracked file is over the
+    cap; it speaks the moment one is.
+    """
+    return scannable_files_with_skips()[1]
+
+
+# --------------------------------------------------------------------------- references
+
+MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
+MD_HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*$", re.MULTILINE)
+
+# A prose pointer at another section: `see "Some Heading"`. Only these lead-ins count,
+# because an unqualified quoted string is far more often a quotation than a reference --
+# 47 files hold exactly one quoted string matching a heading in their own file, and it is
+# this repository's name matching its own H1.
+#
+# The quoted span deliberately admits newlines, and the title is compared on normalised
+# whitespace. The first draft of this check used `[^"\n]` and could not fire on the very
+# bug it was written for, because that pointer wraps as `"Turns, and what\nends them"`.
+# The agent file already recorded this trap -- a contiguous search once called four true
+# quotations fabrications -- which is a check failing to learn from a documented mistake
+# thirty lines away. A blank line ends the span: that is an unclosed quote, not a title.
+# Case-insensitive because a pointer opening a sentence is capitalised, and the arm only
+# fires when the quoted text resolves to the section containing it, so a broader lead-in
+# costs nothing.
+SECTION_POINTER = re.compile(r'\b(?:see|under|in|per)\s+"([^"]{6,160})"', re.IGNORECASE)
+
+
+def _heading_slug(title: str) -> str:
+    """GitHub's anchor for a heading, near enough for the links this repository writes.
+
+    Validated rather than assumed: it resolves all fourteen cross-file anchors present
+    when this check was written. A slugger that matched none of them would have made the
+    dead-anchor arm fire on everything, and one that matched everything would have made
+    it fire on nothing.
+    """
+    title = re.sub(r"`([^`]*)`", r"\1", title)
+    title = re.sub(r"\*\*?([^*]*)\*\*?", r"\1", title)
+    title = re.sub(r"[^\w\s-]", "", title.lower())
+    return re.sub(r"\s+", "-", title.strip())
+
+
+def _sections(text: str) -> list[tuple[int, int, int, str]]:
+    """(start line, end line, level, normalised title) for every heading.
+
+    A section ends at the next heading of the same or a higher level, which is what makes
+    "is this pointer inside the section it names" answerable.
+    """
+    heads = [
+        (text[: m.start()].count("\n") + 1, len(m.group(1)),
+         " ".join(m.group(2).split()).lower())
+        for m in MD_HEADING.finditer(text)
+    ]
+    out = []
+    last_line = text.count("\n") + 2
+    for i, (line, level, title) in enumerate(heads):
+        end = last_line
+        for line2, level2, _ in heads[i + 1:]:
+            if level2 <= level:
+                end = line2
+                break
+        out.append((line, end, level, title))
+    return out
+
+
+def check_doc_references() -> list[Finding]:
+    """Markdown links resolve, anchors name a real heading, and no pointer names itself.
+
+    Added because CLAUDE.md and `.claude/agents/docs-audit-local.md` both claimed the gate
+    checked links and it never had. The claim was not idle: the audit agent is told to
+    report nothing the gate already catches, so it steered the one reader who would have
+    looked. #121, the commit that fixed the 2026-09-06 audit's findings, left a pointer in
+    `docs/DISPATCH.md` reading `see "Turns, and what ends them"` from inside that very
+    section, and it survived two further audits.
+
+    All three arms pass on the repository as it stands -- 104 relative links, 14 anchors,
+    no self-pointers -- so this is a guard, and its negative tests are the only thing
+    standing between it and the four checks this project has already found unable to fail.
+    """
+    out = []
+    docs = [ROOT / f for f in git("ls-files", "*.md").splitlines()]
+    for path in docs:
+        if not path.exists():
+            continue  # staged deletion
+        text = path.read_text(encoding="utf-8", errors="replace")
+        here = rel(path)
+        own_slugs = {_heading_slug(t) for _, _, _, t in _sections(text)}
+
+        for m in MD_LINK.finditer(text):
+            href = m.group(1)
+            if href.startswith(("http://", "https://", "mailto:")):
+                continue
+            line = text[: m.start()].count("\n") + 1
+            path_part, _, anchor = href.partition("#")
+            target = (path.parent / path_part).resolve() if path_part else path
+            if path_part and not target.exists():
+                out.append(Finding(
+                    BLOCK, "doc-reference",
+                    f"{here} line {line} links to {href!r}, which does not exist."))
+                continue
+            if not anchor:
+                continue
+            if target == path:
+                slugs = own_slugs
+            elif target.suffix == ".md":
+                slugs = {_heading_slug(t) for _, _, _, t
+                         in _sections(target.read_text(encoding="utf-8", errors="replace"))}
+            else:
+                continue
+            if _heading_slug(anchor) not in slugs:
+                out.append(Finding(
+                    BLOCK, "doc-reference",
+                    f"{here} line {line} links to {href!r}, but no heading there makes "
+                    f"that anchor. A reworded heading breaks this silently."))
+
+        for m in SECTION_POINTER.finditer(text):
+            if "\n\n" in m.group(1):
+                continue
+            quoted = " ".join(m.group(1).split()).lower()
+            line = text[: m.start()].count("\n") + 1
+            for start, end, level, title in _sections(text):
+                # Level 1 excluded: a document whose H1 is its own name says that name in
+                # prose constantly, and none of it is a cross-reference.
+                if title == quoted and level > 1 and start <= line < end:
+                    # The normalised title, not the raw capture: a wrapped pointer would
+                    # otherwise print an escaped newline in the middle of the heading.
+                    out.append(Finding(
+                        BLOCK, "doc-reference",
+                        f"{here} line {line} points at {quoted!r} from inside that "
+                        f"section. Whatever it promises the reader lives somewhere else, "
+                        f"or nowhere."))
+    return out
+
+# -------------------------------------------------------------------------- prose regrowth
+#
+# The history is being cut out of src/ comments module by module, by hand. This is the gate
+# that keeps it from growing back. It only WARNs and never BLOCKs, because the existing prose is
+# still being cut by per-module passes -- blocking would block every edit to a file that is
+# still awaiting its pass. And it only reads ADDED lines, because a date or a TODO that
+# already shipped is a decision already made, not one being made now; the ratio arm is the
+# whole-file part that watches the level rather than the increment.
+
+# A date right after `JOURNAL ` is a pointer to where the history lives, not history.
+PROSE_DATE_RE = re.compile(r"(?<!JOURNAL )\b20\d\d-\d\d-\d\d\b")
+PROSE_TODO_RE = re.compile(r"\b(?:TODO|FIXME|XXX)\b")
+PROSE_FUTURE_RE = re.compile(
+    r"\b(?:for now|in future|in the future|eventually|not yet)\b", re.IGNORECASE)
+
+
+def _added_line_numbers(diff_text: str) -> set[int]:
+    """New-file line numbers of the lines `git diff -U0` reports as added.
+
+    A hunk header is `@@ -l,s +l,s @@` optionally followed by a section heading, so the
+    regex stops at the first `@@` rather than anchoring at end-of-line. With -U0 there is
+    no context, so every `+` line inside a hunk is an addition and the header's starting
+    line is where they begin.
+    """
+    added: set[int] = set()
+    new_no: int | None = None
+    for line in diff_text.splitlines():
+        if line.startswith("@@"):
+            m = re.match(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
+            new_no = int(m.group(1)) if m else None
+            continue
+        if new_no is None:
+            continue
+        if line.startswith("+"):
+            added.add(new_no)
+            new_no += 1
+        elif line.startswith("-") or line.startswith("\\"):
+            continue
+        elif line.startswith(" "):
+            new_no += 1
+        else:
+            new_no = None  # out of a hunk (a `diff --git` header for the next file)
+    return added
+
+
+def _docstring_lines(tree: ast.AST) -> set[int]:
+    """Line numbers inside a module, class or function docstring."""
+    lines: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                             ast.AsyncFunctionDef)):
+            body = getattr(node, "body", None)
+            if not body:
+                continue
+            first = body[0]
+            if (isinstance(first, ast.Expr)
+                    and isinstance(first.value, ast.Constant)
+                    and isinstance(first.value.value, str)):
+                lines.update(
+                    range(first.lineno, (first.end_lineno or first.lineno) + 1))
+    return lines
+
+
+def _prose_lines(text: str) -> tuple[set[int], set[int]] | None:
+    """(comment line numbers, docstring line numbers), or None when the file does not parse.
+
+    Comments come from `tokenize`, not from a `#` substring test, so a `#` inside a string
+    literal is not mistaken for a comment. Docstrings come from `ast`, because a triple-
+    quoted string that is not the first statement of a module, class or function is not a
+    docstring and should not count as prose.
+    """
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return None
+    comments: set[int] = set()
+    try:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if tok.type == tokenize.COMMENT:
+                comments.add(tok.start[0])
+    except (SyntaxError, tokenize.TokenError, IndentationError, ValueError):
+        return None
+    return comments, _docstring_lines(tree)
+
+
+def _prose_ratio(text: str) -> int | None:
+    """Whole-file prose as a percent of non-blank lines, or None when it does not parse."""
+    stats = _prose_lines(text)
+    if stats is None:
+        return None
+    comments, docstring = stats
+    prose = len(comments | docstring)
+    nonblank = sum(1 for ln in text.splitlines() if ln.strip())
+    if nonblank == 0:
+        return 0
+    return round(prose * 100 / nonblank)
+
+
+def _prose_match(line: str) -> str | None:
+    """The first thing on a prose line the gate refuses to let grow back, or None."""
+    for pat in (PROSE_DATE_RE, PROSE_TODO_RE, PROSE_FUTURE_RE):
+        m = pat.search(line)
+        if m:
+            return m.group(0)
+    return None
+
+
+def _file_at(rev: str, path: str) -> str | None:
+    """A tracked file's content at a revision, un-stripped: line numbers must survive.
+
+    The gate's `run` helper strips, and stripping a file shifts every line number after the
+    first blank line, so the content scanners cannot use it for a file whose line numbers
+    are being matched against a diff. `rev` may be `HEAD`, a commit, or the empty string for
+    the index, which git spells `:path` rather than `rev:path`.
+    """
+    proc = subprocess.run(
+        ["git", "show", f"{rev}:{path}"], cwd=ROOT, capture_output=True, text=True,
+        check=False, encoding="utf-8", errors="replace")
+    return proc.stdout if proc.returncode == 0 else None
+
+
+def _range_base_and_new(rng: str) -> tuple[str, str]:
+    """(base revision, new revision) for a diff range, in git's own terms.
+
+    A three-dot range diffs against the merge base, so the base revision is the merge base
+    rather than the left operand. A two-dot range diffs the operands directly.
+    """
+    if "..." in rng:
+        left, right = rng.split("...", 1)
+        return run("git", "merge-base", left, right, required=True), right
+    if ".." in rng:
+        left, right = rng.split("..", 1)
+        return left, right
+    return rng, "HEAD"
+
+
+def check_prose_regrowth(mode: str, diff_range: str | None) -> list[Finding]:
+    """Warn on history and future-work phrasing creeping back into `src/` comments.
+
+    The history is being cut out of these files module by module, by hand. This stops it
+    regrowing, and it is deliberately a WARN and never a BLOCK: the existing prose is still
+    being cut by per-module passes, so blocking would block every edit to a file that is
+    still awaiting its pass. Only ADDED lines are read, because a date or a TODO that
+    already shipped is a decision already made, not one being made now; the ratio arm
+    covers the whole file, so a drift that never lands on an added line still surfaces.
+    """
+    # commit-msg too: the commit does not exist yet, so a range ending at HEAD reads the
+    # previous one, and at an amend the very text being replaced.
+    if mode in ("pre-commit", "commit-msg"):
+        base_rev, new_rev = "HEAD", ""  # "" reads the index: `git show :path`
+        diff_base = ("git", "diff", "--cached", "-U0")
+        files = [p for p in git("diff", "--cached", "--name-only",
+                                "--diff-filter=ACMR").splitlines() if p]
+    else:
+        rng = pr_range(diff_range)
+        if rng is None:
+            return [_no_range("prose-regrowth")]
+        base_rev, new_rev = _range_base_and_new(rng)
+        diff_base = ("git", "diff", "-U0", rng)
+        files = [p for p in git("diff", "--name-only", "--diff-filter=ACMR",
+                                rng).splitlines() if p]
+
+    out = []
+    for path in files:
+        if not (path.startswith("src/") and path.endswith(".py")):
+            continue
+        new_text = _file_at(new_rev, path)
+        if new_text is None:
+            continue
+        stats = _prose_lines(new_text)
+        if stats is None:
+            continue  # does not parse; another check will complain
+        comments, docstring = stats
+        prose = comments | docstring
+        lines = new_text.splitlines()
+        for n in sorted(_added_line_numbers(
+                run(*diff_base, "--", path, required=True))):
+            if n not in prose:
+                continue
+            line = lines[n - 1] if n - 1 < len(lines) else ""
+            what = _prose_match(line)
+            if what:
+                out.append(Finding(
+                    WARN, "prose-regrowth",
+                    f"{path} line {n}: {what} in a comment -- history belongs in "
+                    f"CHANGELOG/JOURNAL, future work in PLAN.md (CONTRIBUTING.md, "
+                    f"\"Prose\")"))
+        nonblank = sum(1 for ln in lines if ln.strip())
+        new_ratio = round(len(prose) * 100 / nonblank) if nonblank else 0
+        base_text = _file_at(base_rev, path)
+        if base_text is None:
+            continue  # a new module has no ratio to rise from; its added lines were read
+        base_ratio = _prose_ratio(base_text)
+        if base_ratio is not None and new_ratio > base_ratio:
+            out.append(Finding(
+                WARN, "prose-regrowth",
+                f"{path}: prose ratio rose from {base_ratio}% to {new_ratio}%"))
+    return out
+
+
+CHECKS = {
+    "identity": check_commit_identity,
+    "email-content": check_emails_in_files,
+    "conflict-marker": check_conflict_markers,
+    "body-history": check_body_history,
+    "host-identifier": check_host_identifiers,
+    "scan-coverage": check_scan_coverage,
+    "never-track": check_never_tracked,
+    "commit-message": check_commit_message,
+    "budget": check_budgets,
+    "adr": check_adr_format,
+    "owning-doc": check_ownership,
+    "orphan-doc": check_orphan_docs,
+    "doc-reference": check_doc_references,
+    "split-dodge": check_split_dodge,
+    "prose-regrowth": check_prose_regrowth,
+    "manifest": check_manifest_docs_exist,
+    "public-text": check_pr_text,
+    "changelog-number": check_changelog_number,
+}
+
+
+def waivers(mode: str, message_file: str | None = None) -> dict[str, str]:
+    """Parse `Docs-Gate-Skip: <check> -- <reason>` trailers.
+
+    Waivers are echoed in the output on purpose. An escape hatch nobody can see becomes
+    the default route; one that leaves a visible trail in every run does not.
+    """
+    if mode == "commit-msg":
+        f = Path(message_file) if message_file else None
+        text = f.read_text(encoding="utf-8", errors="replace") if f and f.exists() else ""
+    elif mode == "pre-commit":
+        # See check_commit_message: the message is not written yet. Reading COMMIT_EDITMSG
+        # here would apply the PREVIOUS commit's waiver to this one -- an escape hatch
+        # firing on a commit that never asked for it.
+        text = ""
+    else:
+        text = run("git", "log", "--format=%B", "origin/main...HEAD")
+    out = {}
+    for m in re.finditer(r"^Docs-Gate-Skip:\s*([a-z-]+)\s*(?:--|—)\s*(.+)$", text, re.MULTILINE):
+        out[m.group(1).strip()] = m.group(2).strip()
+    return out
+
+
+def amend_hint(mode: str) -> str:
+    """Shown beside an owning-doc block, because the commonest cause is not a missing doc.
+
+    `git commit --amend -m` is the one amend the gate cannot see. Git tells the
+    prepare-commit-msg hook where a message came from, and only an amend that *reuses*
+    the existing message says "commit"/"HEAD"; supplying a new one with `-m` or `-F` is
+    reported exactly like an ordinary commit. Nothing else distinguishes them:
+    GIT_REFLOG_ACTION is unset for both, and reading the parent's argv out of /proc --
+    which does work under WSL -- is not available where these hooks actually run, because
+    Git for Windows gives the hook a PPID of 1 with no readable entry. Both measured.
+
+    So the remedy is a workflow one and belongs where someone hits the wall. `git commit
+    --amend` with an editor is detected *and* lets the message change, which is the whole
+    of what `--amend -m` was wanted for.
+    """
+    hint = ("if this is a `git commit --amend`, git only reports an amend to the hook when "
+            "the message is reused, so `--amend -m` looks exactly like an ordinary commit "
+            "and the commit is judged against HEAD rather than its real parent. Re-run it "
+            "as `git commit --amend` and change the message in the editor -- that form is "
+            "detected. Reach for Docs-Gate-Skip only once that has been tried.")
+    if mode == "pre-commit":
+        hint += (" Run by hand at pre-commit, no amend can be detected at all: the marker "
+                 "is written by prepare-commit-msg, which has not run yet. The binding "
+                 "check is the commit-msg hook.")
+    return hint
+
+
+def _only_comments_changed(path: str, base_rev: str, new_rev: str) -> bool:
+    """True when a `.py` file's only difference is comment text.
+
+    `check_ownership` sees file names only, so without this a comment pass is held to the
+    document exactly as a behaviour change is (ADR-0108). The two contents are compared
+    token by token, with `COMMENT` and `NL` dropped: those are the only tokens a comment
+    edit moves. A docstring is a `STRING` token, so rewording one is a behaviour change and
+    stays held -- it is part of the contract a reader uses. Either side that does not
+    tokenize is a behaviour change by default, as is a path that is not Python.
+    """
+    if not path.endswith(".py"):
+        return False
+
+    def tokens(rev: str) -> list[tuple[int, str]] | None:
+        text = _file_at(rev, path)
+        if text is None:
+            return None
+        try:
+            return [(t.type, t.string) for t in
+                    tokenize.generate_tokens(io.StringIO(text).readline)
+                    if t.type not in (tokenize.COMMENT, tokenize.NL)]
+        except (SyntaxError, tokenize.TokenError, IndentationError, ValueError):
+            return None
+
+    base, new = tokens(base_rev), tokens(new_rev)
+    return base is not None and new is not None and base == new
+
+
+def ownership_findings(changed: list[str], reused_message: bool, mode: str,
+                       diff_range: str | None = None) -> list[Finding]:
+    """Ownership, judged against the parent the resulting commit will actually have.
+
+    A normal commit is the index against HEAD. An amend is the index against HEAD~1: the
+    files already inside the commit being amended are part of what lands, but they are not
+    in the index, so judging an amend against HEAD reports a complete commit as incomplete.
+    That blocked real work and the documented workaround was to undo the commit and remake
+    it, which is a lot of ceremony to answer a question the tool got wrong.
+
+    It cannot be detected outright. `git commit --amend` and `git commit -C HEAD` reach a
+    hook identically -- source="commit", sha="HEAD", GIT_REFLOG_ACTION unset -- and only
+    the first has HEAD~1 as its parent. So both readings are evaluated, the strict one
+    first, and a pass that depended on the amend reading is *announced* rather than taken
+    quietly. An escape hatch nobody can see becomes the default route; this one leaves a
+    line in every run that used it.
+
+    The comment-only exemption is computed per reading, from that reading's own base: the
+    index against HEAD for an ordinary commit, against HEAD~1 for an amend, and the range's
+    merge base for CI. A file exempted in the reading whose result is returned is named in
+    a warning, so the relaxation is visible rather than silent.
+    """
+    def exempted(changed_list: list[str], base_rev: str, new_rev: str) -> frozenset[str]:
+        return frozenset(p for p in changed_list
+                         if p.endswith(".py") and _only_comments_changed(p, base_rev, new_rev))
+
+    def comment_exempt_warn(exempt: frozenset[str]) -> list[Finding]:
+        if not exempt:
+            return []
+        names = ", ".join(sorted(exempt))
+        return [Finding(
+            WARN, "owning-doc",
+            f"{len(exempt)} file(s) changed only in comments, so not held to their "
+            f"owning document: {names}")]
+
+    if mode == "ci":
+        rng = pr_range(diff_range)
+        strict_exempt = exempted(changed, *_range_base_and_new(rng)) if rng else frozenset()
+        strict = check_ownership(changed, exempt=strict_exempt)
+        return [*strict, *comment_exempt_warn(strict_exempt)]
+
+    strict_exempt = exempted(changed, "HEAD", "")
+    strict = check_ownership(changed, exempt=strict_exempt)
+    if not any(f.level == BLOCK for f in strict):
+        return [*strict, *comment_exempt_warn(strict_exempt)]
+    if not reused_message:
+        return [*strict, Finding(WARN, "owning-doc", amend_hint(mode))] if mode in (
+            "commit-msg", "pre-commit") else strict
+
+    widened = files_against_previous_commit()
+    if widened is None:
+        return [*strict, Finding(
+            WARN, "owning-doc",
+            "this commit reuses HEAD's message but HEAD has no parent, so there is no "
+            "amend reading to check. Judged against HEAD alone.")]
+
+    relaxed_exempt = exempted(widened, "HEAD~1", "")
+    relaxed = check_ownership(widened, exempt=relaxed_exempt)
+    if any(f.level == BLOCK for f in relaxed):
+        return relaxed
+
+    extra = sorted(set(widened) - set(changed))
+    return [*relaxed, *comment_exempt_warn(relaxed_exempt), Finding(
+        WARN, "owning-doc",
+        "passed only when read as an amend. This commit reuses HEAD's message, so its "
+        f"parent is HEAD~1 rather than HEAD, and {len(extra)} file(s) already inside the "
+        f"commit being amended were counted: {', '.join(extra[:6])}"
+        f"{' ...' if len(extra) > 6 else ''}. If this was `git commit -C HEAD` and not an "
+        "amend, the owning document for the changed code is in the PREVIOUS commit, not "
+        "this one.")]
+
+
+def _printable_findings() -> None:
+    """Make stdout survive a finding message this gate did not choose the characters of.
+
+    The hooks run under Git Bash on Windows, where stdout is cp1252. A finding carrying a
+    character outside it -- a smart quote from a document --
+    raises `UnicodeEncodeError` *while printing the finding*, so the check fires and the
+    gate dies with a traceback instead of reporting what it found. Worse than the report it
+    replaces: the crash happens in the loop over blocks and warnings, which runs before the
+    verdict, so a non-ASCII **warning** kills a commit that was about to pass.
+
+    Nothing has hit this because every message written so far happens to be ASCII, and
+    because the agent's own shell sets PYTHONIOENCODING to UTF-8 -- so the one environment
+    that would have caught it is the one that masks it.
+
+    `backslashreplace` rather than a wider encoding: it cannot fail, it cannot lose
+    information, and on a terminal that could not have shown the character anyway an escape
+    is more use than a replacement glyph. A no-op where stdout is already UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="backslashreplace")
+            except (ValueError, OSError):
+                # A stream that refuses is one this cannot help -- a pipe already closed,
+                # or a double a test substituted. Printing is still attempted; failing here
+                # would be this function causing the crash it exists to prevent.
+                pass
+
+
+def _run_checks(args: argparse.Namespace) -> tuple[list[str], list[Finding]]:
+    """Every check's findings, and the changed files the ownership check was given.
+
+    A check that could not read its input has not passed. `GitFailed` makes it block,
+    naming the command, rather than report the clean result an empty answer would imply.
+    """
+    findings: list[Finding] = []
+    try:
+        changed = changed_files(args.mode, args.diff_range)
+    except GitFailed as e:
+        changed = []
+        findings.append(Finding(BLOCK, "changed-files", f"could not run: {e}"))
+    reused_message = message_reused_from_head() if args.mode == "commit-msg" else False
+
+    for name, fn in CHECKS.items():
+        try:
+            if name == "commit-message":
+                findings += fn(args.mode, args.diff_range, args.message_file)
+            elif name in ("identity", "split-dodge", "prose-regrowth"):
+                findings += fn(args.mode, args.diff_range)
+            elif name in ("public-text", "changelog-number"):
+                findings += fn(args.pr_event)
+            elif name == "owning-doc":
+                findings += ownership_findings(changed, reused_message, args.mode,
+                                               args.diff_range)
+            else:
+                findings += fn()
+        except GitFailed as e:
+            findings.append(Finding(BLOCK, name, f"could not run: {e}"))
+    return changed, findings
+
+
+def main() -> int:
+    _printable_findings()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--mode", choices=("pre-commit", "commit-msg", "ci"),
+                    default="pre-commit")
+    ap.add_argument("--message-file", metavar="PATH", default=None,
+                    help="the commit message file, as git hands it to a commit-msg "
+                         "hook. The only stage where the real message exists.")
+    ap.add_argument("--diff", dest="diff_range", default=None)
+    ap.add_argument("--pr-event", metavar="PATH", default=None,
+                    help="Actions event payload; scans the pull request title and "
+                         "body, a public surface no hook can see.")
+    ap.add_argument("--owner", metavar="PATH",
+                    help="print which document owns PATH, then exit. Exists so CLAUDE.md "
+                         "can state the ownership rule without restating the manifest.")
+    args = ap.parse_args()
+
+    if args.owner:
+        manifest = load_manifest()
+        if manifest is None:
+            print(f"no manifest at {MANIFEST}")
+            return 1
+        path = args.owner.replace("\\", "/")
+        docs = owners_of(path, manifest)
+        if docs:
+            for d in docs:
+                gen = (" (generated -- run its generator, do not hand-edit)"
+                   if manifest["docs"][d].get("generated") else "")
+                print(f"{d}{gen}")
+            return 0
+        if _matches(path, manifest.get("unowned", {}).get("paths", [])):
+            print(f"{path} is declared unowned in {MANIFEST.name}")
+            return 0
+        print(f"{path} has no owning document and is not declared unowned -- "
+              f"assign it in {MANIFEST.name}")
+        return 1
+
+    changed, findings = _run_checks(args)
+    waived = waivers(args.mode, args.message_file)
+
+    blocks = [f for f in findings if f.level == BLOCK and f.check not in waived]
+    waived_hits = [f for f in findings if f.level == BLOCK and f.check in waived]
+    warns = [f for f in findings if f.level == WARN]
+    skips = [f for f in findings if f.level == SKIP]
+
+    # Says what was counted, not just how many. An amend stages only its increment, so
+    # "1 changed file(s)" on a commit holding six is accurate and reads as a bug report;
+    # naming the comparison is what makes the number legible. When the ownership check
+    # widened to HEAD~1 it says so in its own finding, which is the only check that does.
+    against = (args.diff_range or "origin/main...HEAD") if args.mode == "ci" else "HEAD"
+    print(f"docs gate: mode={args.mode}, {len(changed)} file(s) changed against {against}")
+    for f in blocks + warns:
+        print("  " + str(f))
+    for f in waived_hits:
+        print(f"  WAIVED [{f.check}] {f.message}")
+        print(f"         reason given: {waived[f.check]}")
+    for f in skips:
+        print("  " + str(f))
+
+    if blocks:
+        print(f"\nFAIL: {len(blocks)} blocking finding(s).")
+        return 1
+    print(f"\nPASS ({len(warns)} warning(s), {len(skips)} not-yet-applicable check(s)"
+          + (f", {len(waived_hits)} waived" if waived_hits else "") + ").")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

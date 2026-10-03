@@ -1,0 +1,111 @@
+# Which document owns which code. The authority, and the only copy.
+#
+# Nothing else may restate this mapping. `python scripts/docs_gate.py --owner <path>`
+# answers the question without anyone having to read this file.
+#
+# TOML because tomllib is in the standard library, so the gate runs from a bare clone with
+# nothing installed.
+#
+# Read by scripts/docs_gate.py for three checks:
+#   owning-doc   changed code whose owning document was not updated in the same commit
+#   orphan-doc   a document claiming code that does not exist
+#   split-dodge  a new document whose audience AND owned globs are both subsets of its
+#                parent's -- a size budget being evaded, not a real split
+#
+# Fields per document:
+#   audience    user | contributor | agent
+#   plane       project (repo root: where are we, why) | product (docs/: how it works)
+#   owns        globs whose change requires this document to change
+#   covers_not  the anti-duplication contract, in prose, for humans and reviewers
+
+[docs."README.md"]
+audience = ["user"]
+plane = "project"
+owns = [
+  "src/server/settings.ts",
+  ".env.example",
+]
+covers_not = """
+Internals or design reasons. It says what the tracker is, how to run it and how to
+configure it, and links out for the rest."""
+
+[docs."CLAUDE.md"]
+audience = ["agent"]
+plane = "project"
+owns = []            # cross-cutting traps, deliberately owning no single area
+covers_not = """
+Rationale, tutorials, or anything already enforced by a check. It records traps an
+editing agent falls into, and rules a machine cannot check."""
+
+[docs."CONTRIBUTING.md"]
+audience = ["contributor"]
+plane = "project"
+owns = [
+  "scripts/install_hooks.py",
+  "scripts/plan_stack.py",
+  "scripts/update-contract.ts",
+  "scripts/gen_gitleaks_config.py",
+  ".github/**",
+  ".claude/agents/**",
+]
+covers_not = """
+Architecture or configuration values. Those live in docs/ARCHITECTURE.md and README.md."""
+
+[docs."DECISIONS.md"]
+audience = ["contributor", "agent"]
+plane = "project"
+owns = []
+covers_not = """
+Current behaviour. An ADR records a decision at a point in time and is never edited
+afterwards. docs/ARCHITECTURE.md is what is true now."""
+
+[docs."JOURNAL.md"]
+audience = ["contributor", "agent"]
+plane = "project"
+owns = []
+covers_not = "Decisions, and anything routine. Only what cost real time to work out."
+
+[docs."CHANGELOG.md"]
+audience = ["contributor", "agent"]
+plane = "project"
+owns = []
+covers_not = """
+Why the design is as it is. Entries carry the why of a *change* and cite the ADR for the
+why of a decision."""
+
+[docs."docs/ARCHITECTURE.md"]
+audience = ["contributor"]
+plane = "product"
+owns = [
+  "src/server/folder.ts",
+  "src/server/streams.ts",
+  "src/server/metrics.ts",
+  "src/server/nodes.ts",
+  "src/server/titles.ts",
+  "src/server/app.ts",
+  "src/web/**",
+]
+covers_not = """
+How to run or configure the tracker (README.md), how work is done (CONTRIBUTING.md), and
+why a structural choice was made (DECISIONS.md)."""
+
+[unowned]
+paths = [
+  # The manifest cannot own itself.
+  "scripts/docs_ownership.toml",
+  "scripts/docs_gate.py",
+  "tests/**",
+  "security/**",
+  # Vendored from a server release; only scripts/update-contract.ts writes it.
+  "contract/**",
+  # Tool and package configuration: no behaviour of its own to document.
+  "package.json",
+  "package-lock.json",
+  "tsconfig.json",
+  "vite.config.ts",
+  "eslint.config.js",
+  ".nvmrc",
+  ".gitignore",
+  ".gitattributes",
+  ".gitleaks.toml",
+]

@@ -1,0 +1,25 @@
+# Secrets and private files
+.env
+*.local.md
+security/forbidden_strings.txt
+
+# Private session skills
+.claude/skills/session-plan/
+.claude/skills/session-execute/
+
+# Scratch space for handing issue text to delegations
+.scratch/
+
+# Build output and dependencies
+node_modules/
+dist/
+
+# Caches
+.vite/
+.eslintcache
+*.tsbuildinfo
+coverage/
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

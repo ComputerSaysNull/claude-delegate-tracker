@@ -1,0 +1,5 @@
+# One line ending everywhere, so a checkout on Windows and CI on Linux see the same bytes.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary

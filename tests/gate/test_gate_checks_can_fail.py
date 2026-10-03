@@ -1,0 +1,825 @@
+"""Six gate checks that had never been shown to fire.
+
+The second audit of 2026-08-27 found that `check_budgets`, `check_orphan_docs`,
+`check_manifest_docs_exist`, `check_split_dodge`, `check_secret_paths` and `check_pr_text`
+had no negative test. `test_gate_self_defeating_checks.py` covers the four checks that were
+already caught validating nothing, by name; its docstring says both were found "by
+negative-testing the gate rather than by reading it", which is exactly what these six had
+never had. Two of them -- `check_pr_text` and `check_secret_paths` -- guard the surface
+CLAUDE.md says no hook can gate.
+
+Every check here is asserted in BOTH directions: that it fires on a real violation, and
+that it stays silent on the closest thing that is not one. One direction alone is not a
+test. A check that always fires passes a fires-on-violation test, and a check that never
+fires passes a silent-on-clean test; only the pair distinguishes a working check from
+either broken one.
+
+`check_secret_paths` had exactly that half-test before this file: one case asserting it
+does *not* flag the policy list. Nothing asserted it flags anything.
+
+Two later checks join them here for the same reason. `check_env_example` and
+`check_scan_coverage` were both written *because* something had been passing
+unseen -- a deleted setting still advertised, and files the content scanners
+declined to open -- so shipping either without a negative test would have
+repeated the mistake that created them.
+
+Named after the bug, per the project's convention.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+GATE = ROOT / "scripts" / "docs_gate.py"
+
+# Fictional, and assembled at runtime, for the same reason test_forbidden_matching.py does
+# it: a test proving a secret scanner works must not itself contain the string the scanner
+# looks for, and exempting the test file would be a hole rather than a fix.
+FORBIDDEN_LITERAL = "host-" + "zeta"
+
+MANIFEST = """\
+[docs."docs/PARENT.md"]
+audience = ["contributor"]
+plane = "product"
+owns = ["src/real.py"]
+covers_not = "Nothing."
+
+[unowned]
+paths = ["tests/**", "scripts/**", "security/**", "src/other.py"]
+"""
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    """A throwaway repository the gate can be pointed at.
+
+    The gate resolves ROOT from its own location, so copying the script into a temp tree
+    makes that tree the repository under test. Nothing here touches the real one.
+    """
+    r = tmp_path / "r"
+    (r / "scripts").mkdir(parents=True)
+    (r / "security").mkdir()
+    (r / "docs").mkdir()
+    (r / "src").mkdir()
+    shutil.copy(GATE, r / "scripts" / "docs_gate.py")
+    (r / "scripts" / "docs_ownership.toml").write_text(MANIFEST, encoding="utf-8")
+    for name, body in (
+        ("allowed_emails.txt", "t@example.com\n"),
+        ("content_safe_emails.txt", "t@example.com\n"),
+        ("forbidden_strings.txt", "# local\n" + FORBIDDEN_LITERAL + "\n"),
+    ):
+        (r / "security" / name).write_text(body, encoding="utf-8")
+    (r / "docs" / "PARENT.md").write_text("<!-- BUDGET: 99 -->\n# Parent\n", encoding="utf-8")
+    (r / "src" / "real.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=r, capture_output=True)
+    subprocess.run(["git", "add", "-A"], cwd=r, capture_output=True)
+    return r
+
+
+def gate(repo: Path, *args: str) -> list[str]:
+    """Run the gate in the temp repo and return its report lines."""
+    subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+    proc = subprocess.run(
+        [sys.executable, "scripts/docs_gate.py", *(args or ("--mode", "pre-commit"))],
+        cwd=repo, capture_output=True, text=True,
+    )
+    return proc.stdout.splitlines()
+
+
+def fired(lines: list[str], check: str, *needles: str) -> bool:
+    """True when `check` reported a BLOCK or WARN mentioning every needle."""
+    return any(
+        f"[{check}]" in ln
+        and ("BLOCK" in ln or "WARN" in ln)
+        and all(n in ln for n in needles)
+        for ln in lines
+    )
+
+
+# --------------------------------------------------------------------------- budgets
+
+def test_budget_fires_when_a_document_is_over_its_cap(repo: Path):
+    (repo / "docs" / "big.md").write_text(
+        "<!-- BUDGET: 5 -->\n" + "line\n" * 40, encoding="utf-8")
+    assert fired(gate(repo), "budget", "docs/big.md", "against a budget of 5")
+
+
+def test_budget_is_silent_when_the_document_fits(repo: Path):
+    """The other direction. A check that blocks every document would pass the test above."""
+    (repo / "docs" / "small.md").write_text(
+        "<!-- BUDGET: 50 -->\n" + "line\n" * 4, encoding="utf-8")
+    assert not fired(gate(repo), "budget", "docs/small.md")
+
+
+def test_per_entry_budget_fires_on_one_long_section(repo: Path):
+    (repo / "docs" / "log.md").write_text(
+        "<!-- BUDGET-PER-ENTRY: 3 -->\n## short\nx\n## long\n" + "y\n" * 30,
+        encoding="utf-8")
+    assert fired(gate(repo), "budget", "docs/log.md", "'long'")
+
+
+def test_per_entry_budget_charges_identical_entries_identically(repo: Path):
+    """Two entries, byte-identical, must get the same verdict. They did not.
+
+    `re.split` on the heading leaves the blank separator inside the *preceding* section, so
+    every entry but the last was charged a line the last one was not. Here each entry is
+    exactly `cap` content lines: the last passed and the first blocked, though nothing
+    distinguishes them.
+
+    The damage is not the block. It is that the last entry -- the one just appended, in an
+    oldest-first document like JOURNAL.md -- lands at exactly `cap`, and then blocks the
+    next person to append, who has changed nothing about it.
+    """
+    body = "## 2026-01-01\nalpha\nbeta\n"
+    (repo / "docs" / "log3.md").write_text(
+        "<!-- BUDGET-PER-ENTRY: 3 -->\n" + body + "\n" + body, encoding="utf-8")
+    assert not fired(gate(repo), "budget", "docs/log3.md")
+
+
+def test_per_entry_budget_still_blocks_a_genuinely_long_last_entry(repo: Path):
+    """The direction that keeps the fix honest.
+
+    Measuring every entry on its content could have been had by not measuring at all, and
+    that would satisfy the test above. The final section is where the old count was wrong,
+    so the final section is where an over-budget entry has to still be caught.
+    """
+    (repo / "docs" / "log4.md").write_text(
+        "<!-- BUDGET-PER-ENTRY: 3 -->\n## short\nx\n\n## last\n" + "y\n" * 20,
+        encoding="utf-8")
+    assert fired(gate(repo), "budget", "docs/log4.md", "'last'")
+
+
+def test_per_entry_budget_is_silent_on_short_sections(repo: Path):
+    (repo / "docs" / "log2.md").write_text(
+        "<!-- BUDGET-PER-ENTRY: 30 -->\n## a\nx\n## b\ny\n", encoding="utf-8")
+    assert not fired(gate(repo), "budget", "docs/log2.md")
+
+
+def test_archive_threshold_is_gone_and_says_nothing(repo: Path):
+    """ARCHIVE-AT was removed (ADR-0033): a stale marker must be inert, not honoured.
+
+    It warned past a line count and pointed at a by-year split that a single-year document
+    could not perform, so it fired on every commit with no way to answer it. A marker left
+    behind in some old file must now do nothing at all -- silently still warning would be
+    the instrument surviving its own removal.
+    """
+    (repo / "docs" / "hist.md").write_text(
+        "<!-- ARCHIVE-AT: 5 -->\n" + "line\n" * 40, encoding="utf-8")
+    lines = gate(repo)
+    assert not fired(lines, "budget", "docs/hist.md")
+
+
+def test_a_per_entry_budget_fires_on_the_changelog_shape(repo: Path):
+    """The shape ADR-0033 adopted: one `## ` section per pull request.
+
+    The 2026-08-27 audit withdrew per-entry budgeting for CHANGELOG.md because its entries
+    were bullets under one section, so the cap read the whole file as a single entry.
+    Sections per pull request are what make the existing check apply, and this asserts it
+    really does -- and that a short section beside a long one is left alone.
+    """
+    long_entry = "\n".join(f"- line {i}" for i in range(40))
+    (repo / "docs" / "cl.md").write_text(
+        "<!-- BUDGET-PER-ENTRY: 30 -->\n"
+        "## #2 -- second\n### Added\n- short\n"
+        f"## #1 -- first\n### Added\n{long_entry}\n",
+        encoding="utf-8")
+    lines = gate(repo)
+    assert fired(lines, "budget", "docs/cl.md", "#1 -- first")
+    assert not any("#2 -- second" in ln for ln in lines)
+
+
+# ---------------------------------------------------------------------- orphan docs
+
+def test_orphan_doc_fires_when_owned_code_does_not_exist(repo: Path):
+    (repo / "src" / "real.py").unlink()
+    assert fired(gate(repo), "orphan-doc", "docs/PARENT.md")
+
+
+def test_orphan_doc_is_silent_when_the_owned_code_is_tracked(repo: Path):
+    assert not fired(gate(repo), "orphan-doc", "docs/PARENT.md")
+
+
+# -------------------------------------------------------------- manifest documents
+
+def test_manifest_fires_when_a_listed_document_is_absent(repo: Path):
+    (repo / "docs" / "PARENT.md").unlink()
+    assert fired(gate(repo), "manifest", "docs/PARENT.md", "does not exist")
+
+
+def test_manifest_is_silent_when_the_document_is_present(repo: Path):
+    assert not fired(gate(repo), "manifest", "does not exist")
+
+
+# ------------------------------------------------------------------- the split dodge
+
+def _add_child(repo: Path, *, audience: str, owns: str) -> None:
+    """Register and stage a second document, as someone evading a budget would."""
+    manifest = repo / "scripts" / "docs_ownership.toml"
+    manifest.write_text(
+        manifest.read_text(encoding="utf-8").replace(
+            "[unowned]",
+            textwrap.dedent(f"""\
+                [docs."docs/CHILD.md"]
+                audience = [{audience}]
+                plane = "product"
+                owns = [{owns}]
+                covers_not = "Nothing."
+
+                [unowned]"""),
+        ),
+        encoding="utf-8",
+    )
+    (repo / "docs" / "CHILD.md").write_text("<!-- BUDGET: 99 -->\n# Child\n", encoding="utf-8")
+
+
+def test_split_dodge_fires_on_a_subset_of_an_existing_document(repo: Path):
+    _add_child(repo, audience='"contributor"', owns='"src/real.py"')
+    assert fired(gate(repo), "split-dodge", "docs/CHILD.md", "docs/PARENT.md")
+
+
+def test_split_dodge_fires_in_ci_where_nothing_is_staged(repo: Path):
+    """CI checks out commits and stages nothing, so a check reading the index saw no document
+    added and passed in the one run `--no-verify` cannot skip."""
+    commit = ["git", "-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm"]
+    subprocess.run([*commit, "base"], cwd=repo, capture_output=True, check=True)
+    _add_child(repo, audience='"contributor"', owns='"src/real.py"')
+    subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True, check=True)
+    subprocess.run([*commit, "docs: a child"], cwd=repo, capture_output=True, check=True)
+    lines = gate(repo, "--mode", "ci", "--diff", "HEAD~1...HEAD")
+    assert fired(lines, "split-dodge", "docs/CHILD.md", "docs/PARENT.md"), lines
+
+
+def test_split_dodge_is_silent_when_the_audience_is_distinct(repo: Path):
+    """A real split. Same owned code, different reader -- allowed by ADR-0003."""
+    _add_child(repo, audience='"user"', owns='"src/real.py"')
+    assert not fired(gate(repo), "split-dodge", "docs/CHILD.md")
+
+
+# ----------------------------------------------------------------- pull request text
+
+def _event(repo: Path, *, title: str, body: str) -> str:
+    p = repo / "event.json"
+    p.write_text(json.dumps({"pull_request": {"title": title, "body": body}}),
+                 encoding="utf-8")
+    return str(p)
+
+
+def test_pr_title_is_scanned(repo: Path):
+    ev = _event(repo, title=f"fix: crash on {FORBIDDEN_LITERAL}", body="clean")
+    assert fired(gate(repo, "--mode", "ci", "--pr-event", ev), "public-text", "title")
+
+
+def test_pr_body_is_scanned(repo: Path):
+    ev = _event(repo, title="fix: a crash", body=f"reproduced on {FORBIDDEN_LITERAL}")
+    assert fired(gate(repo, "--mode", "ci", "--pr-event", ev), "public-text", "body")
+
+
+def test_pr_text_is_silent_when_both_are_clean(repo: Path):
+    ev = _event(repo, title="fix: a crash", body="reproduced locally")
+    assert not fired(gate(repo, "--mode", "ci", "--pr-event", ev), "public-text")
+
+
+def test_pr_text_reports_a_skip_rather_than_a_pass_when_there_is_no_payload(repo: Path):
+    """The distinction SKIP exists for: 'could not check' must not read as 'checked'."""
+    lines = gate(repo, "--mode", "ci")
+    assert any("[public-text]" in ln and "SKIP" in ln for ln in lines)
+
+
+# ------------------------------------------------------ conventional commit subjects
+#
+# CLAUDE.md and CONTRIBUTING.md both required Conventional Commits and nothing read
+# either. Five pull request titles and two subjects on main drifted to "M1: ...",
+# "M2: ..." and "M3: ..." before anyone noticed, across eleven pull requests.
+#
+# Checked on both surfaces because each is decisive in a different case: a squash of a
+# multi-commit branch takes its subject from the pull request title, and a squash of a
+# single-commit branch takes it from the commit. Guarding one leaves the other open,
+# which is exactly the split that let those two subjects through while every title
+# around them was well formed.
+
+def test_a_milestone_prefixed_pr_title_is_refused(repo: Path):
+    ev = _event(repo, title="M1: one real backend call", body="clean")
+    assert fired(gate(repo, "--mode", "ci", "--pr-event", ev), "conventional-subject")
+
+
+def test_a_conventional_pr_title_is_accepted(repo: Path):
+    """Without this, a check that refused every title would pass the test above."""
+    ev = _event(repo, title="feat: one real backend call", body="clean")
+    assert not fired(gate(repo, "--mode", "ci", "--pr-event", ev), "conventional-subject")
+
+
+def test_a_scope_and_a_breaking_marker_are_still_conventional(repo: Path):
+    ev = _event(repo, title="feat(loop)!: drop the old dispatch", body="clean")
+    assert not fired(gate(repo, "--mode", "ci", "--pr-event", ev), "conventional-subject")
+
+
+def test_a_type_outside_the_declared_set_is_refused(repo: Path):
+    """`wip:` is Conventional-shaped but not one of the six CONTRIBUTING.md names."""
+    ev = _event(repo, title="wip: half a thing", body="clean")
+    assert fired(gate(repo, "--mode", "ci", "--pr-event", ev), "conventional-subject")
+
+
+def test_a_milestone_prefixed_commit_subject_is_refused(repo: Path):
+    msg = repo / "msg.txt"
+    msg.write_text("M3: the response state machine\n\nbody\n", encoding="utf-8")
+    lines = gate(repo, "--mode", "commit-msg", "--message-file", str(msg))
+    assert fired(lines, "conventional-subject")
+
+
+def test_a_conventional_commit_subject_is_accepted(repo: Path):
+    msg = repo / "msg.txt"
+    msg.write_text("feat: the response state machine\n\nbody\n", encoding="utf-8")
+    lines = gate(repo, "--mode", "commit-msg", "--message-file", str(msg))
+    assert not fired(lines, "conventional-subject")
+
+
+def test_a_generated_merge_or_revert_subject_is_exempt(repo: Path):
+    """Nobody wrote these, so holding them to a convention would block a real operation."""
+    for subject in ("Merge branch 'main' into feat/x", 'Revert "feat: a thing"'):
+        msg = repo / "msg.txt"
+        msg.write_text(subject + "\n", encoding="utf-8")
+        lines = gate(repo, "--mode", "commit-msg", "--message-file", str(msg))
+        assert not fired(lines, "conventional-subject"), subject
+
+
+def test_contributing_lists_exactly_the_gated_types():
+    """The prose copy and the enforced copy must not drift.
+
+    CONTRIBUTING.md names the types for a human; docs_gate.py decides. Two copies of one
+    fact is the drift this repository's whole documentation scheme exists to prevent, so
+    the second copy is asserted against the first rather than trusted.
+    """
+    import importlib.util
+    import sys
+    spec = importlib.util.spec_from_file_location(
+        "dg_types", ROOT / "scripts" / "docs_gate.py")
+    mod = importlib.util.module_from_spec(spec)
+    # Registered before execution: the module defines dataclasses, and dataclasses
+    # resolves a class's module through sys.modules while the class body is executing.
+    sys.modules["dg_types"] = mod
+    spec.loader.exec_module(mod)
+    prose = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    line = next(ln for ln in prose.splitlines() if "conventionalcommits.org" in ln)
+    block = line + " " + prose.splitlines()[prose.splitlines().index(line) + 1]
+    named = set(re.findall(r"`(\w+):`", block))
+    assert named == set(mod.CONVENTIONAL_TYPES), (named, mod.CONVENTIONAL_TYPES)
+
+
+# ------------------------------------------------------------------- conflict markers
+
+def test_conflict_marker_fires_on_a_nested_pair(repo: Path):
+    """The nested shape, because it is the one that hides.
+
+    A resolver that searches for the first conflict, fixes it and commits the rest
+    verbatim leaves the inner pair behind. That is how markers reached `main` twice, so a
+    fixture with one flat pair would pass against the bug this is written for.
+    """
+    (repo / "docs" / "merged.md").write_text(
+        "<!-- BUDGET: 99 -->\n# Notes\n\n"
+        + "<" * 7 + " HEAD\nours\n"
+        + "<" * 7 + " HEAD\ninner ours\n"
+        + "=" * 7 + "\ninner theirs\n"
+        + ">" * 7 + " branch\n"
+        + "=" * 7 + "\ntheirs\n"
+        + ">" * 7 + " branch\n",
+        encoding="utf-8")
+    assert fired(gate(repo), "conflict-marker", "docs/merged.md")
+
+
+def test_conflict_marker_is_silent_on_a_setext_heading(repo: Path):
+    """The look-alike that must pass, and the reason the separator is not blocked.
+
+    Seven or more equals signs on their own line is a valid Markdown H1 underline. Zero
+    appear in this repository today, which is precisely why this test exists: without it
+    the obvious check -- block all three markers -- passes review and then fires on the
+    first ordinary heading anybody writes.
+    """
+    (repo / "docs" / "setext.md").write_text(
+        "<!-- BUDGET: 99 -->\nA heading written the old way\n"
+        + "=" * 40 + "\n\nBody text.\n\nA second heading\n" + "-" * 40 + "\n",
+        encoding="utf-8")
+    assert not fired(gate(repo), "conflict-marker", "docs/setext.md")
+
+
+def test_conflict_marker_says_nothing_about_a_clean_tree(repo: Path):
+    """A check that flagged every file would pass both tests above."""
+    (repo / "docs" / "ordinary.md").write_text(
+        "<!-- BUDGET: 99 -->\n# Ordinary\n\nNothing unusual here.\n", encoding="utf-8")
+    assert not fired(gate(repo), "conflict-marker")
+
+
+# ----------------------------------------------------------------------- scan coverage
+
+def test_scan_coverage_fires_on_a_file_over_the_byte_cap(repo: Path):
+    """The gap: `scannable_files` skipped an oversized file with a bare `continue`.
+
+    So `email-content` and `host-identifier` reported a clean pass over a file they had
+    never opened. One byte past the cap is enough -- the point is that it is announced.
+    """
+    (repo / "docs" / "bulk.md").write_bytes(b"a" * 2_000_001)
+    assert fired(gate(repo), "scan-coverage", "docs/bulk.md", "over the")
+
+
+def test_scan_coverage_is_silent_on_a_file_under_the_cap(repo: Path):
+    """A check that announced every file would pass the test above."""
+    (repo / "docs" / "small.md").write_bytes(b"a" * 64)
+    assert not fired(gate(repo), "scan-coverage", "docs/small.md")
+
+
+def test_scan_coverage_says_nothing_about_a_binary_file(repo: Path):
+    """Binary is a deliberate exclusion, not a coverage gap, and must stay quiet.
+
+    Reporting it would make the warning routine, and a routine warning is read past --
+    costing exactly the visibility this check was added for.
+    """
+    (repo / "docs" / "blob.md").write_bytes(bytes([0]) * 32 + b"text")
+    assert not fired(gate(repo), "scan-coverage", "docs/blob.md")
+
+
+# ------------------------------------------- references, which nothing checked at all
+#
+# `check_doc_references` is the ninth check to arrive here, and the first added because a
+# check was *claimed* rather than merely untested: CLAUDE.md and the audit agent's body
+# both listed "broken links" among what the gate mechanically caught, and it never had.
+# The agent is told to report nothing the gate already catches, so the false claim aimed
+# the one reader who would have looked somewhere else.
+#
+# All three arms pass on the real repository, so these tests are the whole of the evidence
+# that any of them can fire. The wrapped-pointer case below is not decoration: the first
+# draft of the check used `[^"\n]` for the quoted span and could not fire on the single
+# bug it existed for.
+
+POINTER_DOC = """\
+# Doc
+
+## Turns, and what ends them
+
+The last turn is forbidden its tools -- see "Turns, and what ends them" for why that
+distinction is a cache one.
+
+## The history is resent every turn
+
+Where the measurement lives.
+"""
+
+
+def test_doc_reference_fires_on_a_pointer_into_its_own_section(repo: Path):
+    (repo / "docs" / "ptr.md").write_text(POINTER_DOC, encoding="utf-8")
+    assert fired(gate(repo), "doc-reference", "docs/ptr.md", "from inside that section")
+
+
+def test_doc_reference_fires_when_the_pointer_wraps_across_a_line(repo: Path):
+    """The regression. `docs/DISPATCH.md` wrapped its pointer exactly here.
+
+    A contiguous `[^"\\n]` span cannot match a title broken by the line wrap, so the
+    check's first draft passed the repository holding the bug it was written for. The
+    trap was already written down thirty lines away in the audit agent's own body, where
+    a contiguous search had once called four true quotations fabrications.
+    """
+    (repo / "docs" / "wrap.md").write_text(
+        POINTER_DOC.replace(
+            'see "Turns, and what ends them" for why that\ndistinction',
+            'see "Turns, and what\nends them" for why that distinction'),
+        encoding="utf-8")
+    assert fired(gate(repo), "doc-reference", "docs/wrap.md", "from inside that section")
+
+
+def test_doc_reference_is_silent_on_a_pointer_at_another_section(repo: Path):
+    """The other direction, and the one that matters most here.
+
+    An arm that flagged every quoted heading would pass both tests above while making
+    every legitimate cross-reference in the repository a blocking finding.
+    """
+    (repo / "docs" / "ok.md").write_text(
+        POINTER_DOC.replace(
+            'see "Turns, and what ends them"', 'see "The history is resent every turn"'),
+        encoding="utf-8")
+    assert not fired(gate(repo), "doc-reference", "docs/ok.md")
+
+
+def test_doc_reference_ignores_a_document_naming_its_own_title(repo: Path):
+    """README.md mentions its own H1 in prose, and none of it is a cross-reference.
+
+    The level-1 exclusion, measured: this was the only false positive the arm produced
+    across all 47 markdown files when it was written.
+    """
+    (repo / "docs" / "h1.md").write_text(
+        '# Some Project\n\nInstall it, then see "Some Project" for what it does.\n',
+        encoding="utf-8")
+    assert not fired(gate(repo), "doc-reference", "docs/h1.md")
+
+
+def test_doc_reference_fires_on_a_link_to_a_file_that_is_not_there(repo: Path):
+    (repo / "docs" / "gone.md").write_text(
+        "# Doc\n\nSee [the other one](NOT_THERE.md).\n", encoding="utf-8")
+    assert fired(gate(repo), "doc-reference", "docs/gone.md", "does not exist")
+
+
+def test_doc_reference_is_silent_on_a_link_that_resolves(repo: Path):
+    (repo / "docs" / "fine.md").write_text(
+        "# Doc\n\nSee [the parent](PARENT.md).\n", encoding="utf-8")
+    assert not fired(gate(repo), "doc-reference", "docs/fine.md")
+
+
+def test_doc_reference_fires_on_an_anchor_no_heading_makes(repo: Path):
+    """The silent half of a broken link: the file is right and the fragment is not.
+
+    This is the arm with no current violation to point at -- 14 cross-file anchors all
+    resolve -- so it is guarding against a reworded heading, and nothing but this test
+    says it would notice one.
+    """
+    (repo / "docs" / "anch.md").write_text(
+        "# Doc\n\nSee [the parent](PARENT.md#no-such-heading).\n", encoding="utf-8")
+    assert fired(gate(repo), "doc-reference", "docs/anch.md", "no heading there makes")
+
+
+def test_doc_reference_is_silent_on_an_anchor_that_resolves(repo: Path):
+    (repo / "docs" / "anch2.md").write_text(
+        "# Doc\n\nSee [the parent](PARENT.md#parent).\n", encoding="utf-8")
+    assert not fired(gate(repo), "doc-reference", "docs/anch2.md")
+
+
+def test_doc_reference_resolves_an_anchor_through_backticks_and_bold(repo: Path):
+    """The slugger, which is the arm's whole accuracy.
+
+    One that stripped nothing would call every anchor into a code-formatted heading dead,
+    and this repository writes plenty of them.
+    """
+    (repo / "docs" / "slug.md").write_text(
+        "# Doc\n\n## The **`delegate()`** tool, and why\n\n"
+        "See [above](#the-delegate-tool-and-why).\n",
+        encoding="utf-8")
+    assert not fired(gate(repo), "doc-reference", "docs/slug.md")
+
+
+def test_every_gate_check_is_exercised_by_some_test():
+    """The meta-check, and the reason this file exists at all.
+
+    Four checks in this project have been found unable to fail, two of them by an audit
+    rather than by a test. A check with no negative test anywhere is the next one.
+
+    Scoped to the whole test tree rather than to this file, which is the correction its
+    first draft needed: eight checks are covered in files named after their own bugs --
+    the amend handling, the commit message, host identifiers, the audit clock -- and
+    demanding they also appear here would either fail for no reason or push a second copy
+    of each into one place. Naming a check is weaker than proving it fires, and it is
+    strong enough to stop a new one arriving with nothing at all.
+    """
+    block = GATE.read_text(encoding="utf-8").split("CHECKS = {", 1)[1].split("}", 1)[0]
+    # Key AND function, because a test may name either: some drive a check directly by
+    # calling it, which never mentions the registry key. Missing that cost the first draft
+    # of this test three false positives.
+    pairs = re.findall(r'"([a-z-]+)":\s*(\w+)', block)
+    assert len(pairs) > 10, f"CHECKS did not parse ({pairs}); this would pass vacuously"
+
+    tests_root = Path(__file__).resolve().parents[1]
+    corpus = "\n".join(
+        f.read_text(encoding="utf-8", errors="replace")
+        for f in sorted(tests_root.rglob("test_*.py"))
+    )
+    missing = sorted(key for key, fn in pairs if f'"{key}"' not in corpus and fn not in corpus)
+    assert not missing, (
+        f"gate checks no test names: {missing}. Add one that fires on a real violation "
+        f"and one that stays silent on the nearest thing that is not."
+    )
+
+
+# ------------------- the three checks the meta-test found with no negative test ---------
+#
+# `generated-doc`, `generated-coverage` and `never-track` were named by nothing. The first
+# demonstrably works -- it fired repeatedly while this session's config changes were being
+# made -- but "I have seen it fire" is not a test, and the other two were unproven.
+
+
+def test_never_track_fires_on_a_staged_file_that_must_never_be_committed(repo: Path):
+    """The second layer under .gitignore, and the one that has to work when .gitignore is
+    edited, when someone uses `git add -f`, and when the file is empty -- an empty one
+    committed today is populated tomorrow in a commit nobody reads twice."""
+    (repo / "security" / "forbidden_strings.txt").write_text("", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", "security/forbidden_strings.txt"],
+                   cwd=repo, capture_output=True)
+    assert fired(gate(repo), "never-track", "forbidden_strings.txt")
+
+
+def test_never_track_is_silent_when_the_file_is_only_on_disk(repo: Path):
+    """Untracked and unstaged is the normal, correct state for every one of these files.
+    A check that flagged it would fire on every clean checkout.
+
+    The `.gitignore` is what makes that state reachable here: `gate()` runs `git add -A`
+    first, so without it the file this check exists to keep out would be re-staged by the
+    harness on the way in -- which is also the first layer this check sits underneath.
+    """
+    (repo / ".gitignore").write_text(
+        "security/forbidden_strings.txt" + "\n", encoding="utf-8")
+    subprocess.run(["git", "rm", "--cached", "-q", "security/forbidden_strings.txt"],
+                   cwd=repo, capture_output=True)
+    assert not fired(gate(repo), "never-track", "forbidden_strings.txt")
+
+
+# ------------------------------------------------------------------- prose regrowth (M18.6)
+#
+# M18 cut the history out of `src/` comments module by module. The gate that stops it growing
+# back warns on a date, a TODO/FIXME/XXX or future-work phrasing in an ADDED comment or
+# docstring line, and reports a module's prose ratio when it rises. It warns rather than
+# blocks, because the per-module passes are still cutting the existing prose -- blocking would
+# block every edit to a file still awaiting its pass.
+#
+# Each case is built from concatenated strings so the test file itself never carries a literal
+# ISO date or a bare `TODO`, which a future scan of tests could trip on.
+
+
+def _commit(repo: Path, message: str) -> None:
+    """Stage everything and commit, so HEAD is the base the gate compares against."""
+    subprocess.run(["git", "add", "-A"], cwd=repo, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@example.com", "-c", "user.name=t",
+         "commit", "-qm", message],
+        cwd=repo, capture_output=True, check=True)
+
+
+def _mod(repo: Path, body: str) -> Path:
+    p = repo / "src" / "pkg" / "mod.py"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_prose_regrowth_warns_on_an_added_todo_comment_and_still_passes(repo: Path):
+    """A staged `# TODO` comment warns, and the warning is a WARN, never a BLOCK.
+
+    The point is to make the history loud, not to stop the edit. Blocking would block every
+    edit to a file still awaiting its per-module pass. The whole run is not asserted green:
+    this throwaway repository trips unrelated blocking checks, and the level is the claim.
+    """
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    todo = "TO" + "DO"
+    _mod(repo, "x = 1\n# " + todo + ": cut this later\n")
+    lines = gate(repo)
+    assert fired(lines, "prose-regrowth", "mod.py line 2", todo), lines
+    assert any("[prose-regrowth]" in ln and "WARN" in ln for ln in lines), lines
+    assert not any("[prose-regrowth]" in ln and "BLOCK" in ln for ln in lines), lines
+
+
+def test_prose_regrowth_warns_on_an_added_iso_date_comment(repo: Path):
+    """History is what M18 cut out, so a date in an added comment warns."""
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    d = "20" + "26-01-01"
+    _mod(repo, "x = 1\n# cut since " + d + "\n")
+    lines = gate(repo)
+    assert fired(lines, "prose-regrowth", "mod.py line 2", d), lines
+
+
+def test_prose_regrowth_lets_a_journal_pointer_through(repo: Path):
+    """`JOURNAL <date>` is how a comment links its measurement, not history, so it is quiet.
+
+    The dated sentence beside it is the control: a pointer exemption wide enough to pass
+    any date would let exactly the history this check exists for back in.
+    """
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    d = "20" + "26-01-01"
+    _mod(repo, "x = 1\n# measured, JOURNAL " + d + "\n# cut since " + d + "\n")
+    lines = gate(repo)
+    assert not fired(lines, "prose-regrowth", "mod.py line 2"), lines
+    assert fired(lines, "prose-regrowth", "mod.py line 3", d), lines
+
+
+def _commit_msg_gate(repo: Path) -> list[str]:
+    """The installed hook's view: `commit-msg`, before the commit exists, `origin/main` set."""
+    msg = repo / "msg.txt"
+    msg.write_text("fix: a thing\n\nbody\n", encoding="utf-8")
+    return gate(repo, "--mode", "commit-msg", "--message-file", str(msg))
+
+
+def test_prose_regrowth_reads_the_staged_index_at_commit_msg_time(repo: Path):
+    """`commit-msg` is the hook installed, and it runs before the commit exists.
+
+    Read as `origin/main...HEAD`, it saw the previous commit, so a staged TODO never warned.
+    """
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   cwd=repo, capture_output=True, check=True)
+    todo = "TO" + "DO"
+    _mod(repo, "x = 1\n# " + todo + ": cut this later\n")
+    lines = _commit_msg_gate(repo)
+    assert fired(lines, "prose-regrowth", "mod.py line 2", todo), lines
+
+
+def test_prose_regrowth_at_an_amend_does_not_report_what_it_removes(repo: Path):
+    """At an amend HEAD is the commit being replaced, so reading HEAD reported its text."""
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    subprocess.run(["git", "update-ref", "refs/remotes/origin/main", "HEAD"],
+                   cwd=repo, capture_output=True, check=True)
+    todo = "TO" + "DO"
+    _mod(repo, "x = 1\n# " + todo + ": cut this later\n")
+    _commit(repo, "the commit being amended")
+    _mod(repo, "x = 1\n")
+    lines = _commit_msg_gate(repo)
+    assert not fired(lines, "prose-regrowth", todo), lines
+
+
+def test_prose_regrowth_warns_on_future_phrasing_in_an_added_docstring(repo: Path):
+    """A docstring line is prose too, so `for now` inside one warns."""
+    _mod(repo, "def f():\n    pass\n")
+    _commit(repo, "base")
+    _mod(repo, 'def f():\n    """Do it for now."""\n    pass\n')
+    lines = gate(repo)
+    assert fired(lines, "prose-regrowth", "mod.py line 2", "for now"), lines
+
+
+def test_prose_regrowth_ignores_todo_inside_a_string_literal(repo: Path):
+    """A `#` inside a string is not a comment, so a TODO there is not prose.
+
+    A naive `'#' in line` comment test would call this line a comment, find the TODO and
+    warn. `tokenize` knows the `#` belongs to a STRING token, so the line is code and the
+    check stays silent.
+    """
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    line = 's = "a # ' + "TO" + "DO" + ' b"\n'
+    _mod(repo, "x = 1\n" + line)
+    lines = gate(repo)
+    assert not fired(lines, "prose-regrowth", "mod.py line 2"), lines
+
+
+def test_prose_regrowth_ignores_an_unchanged_comment_with_a_date(repo: Path):
+    """Only added lines count. A date that already shipped is a decision already made."""
+    d = "20" + "26-01-01"
+    _mod(repo, "x = 1\n# since " + d + "\n")
+    _commit(repo, "base")
+    _mod(repo, "x = 1\n# since " + d + "\ny = 2\n")
+    lines = gate(repo)
+    assert not fired(lines, "prose-regrowth", "mod.py line 2", d), lines
+
+
+def test_prose_regrowth_reports_a_ratio_rise(repo: Path):
+    """A comment that adds prose moves the module's ratio, and that is reported."""
+    _mod(repo, "x = 1\ny = 2\nz = 3\n")
+    _commit(repo, "base")
+    _mod(repo, "x = 1\ny = 2\nz = 3\n# a note\n")
+    lines = gate(repo)
+    assert fired(lines, "prose-regrowth", "rose from 0% to 25%"), lines
+
+
+def test_prose_regrowth_reports_no_ratio_for_a_new_module(repo: Path):
+    """A new module has no earlier ratio to rise from, so any docstring would warn.
+
+    A warning that every new file earns teaches everyone to skip the warning. Its added
+    lines are still read, so a date or a TODO in it warns the same as anywhere else.
+    """
+    (repo / "README.md").write_text("x\n", encoding="utf-8")
+    _commit(repo, "base")
+    d = "20" + "26-01-01"
+    _mod(repo, '"""A new module."""\n\nx = 1\n# cut since ' + d + "\n")
+    lines = gate(repo)
+    assert not fired(lines, "prose-regrowth", "rose from"), lines
+    assert fired(lines, "prose-regrowth", "mod.py line 4", d), lines
+
+
+def test_prose_regrowth_reports_no_ratio_for_a_code_only_edit(repo: Path):
+    """A code-only edit changes the denominator but not the numerator, so no rise."""
+    _mod(repo, "x = 1\n")
+    _commit(repo, "base")
+    _mod(repo, "x = 1\ny = 2\n")
+    lines = gate(repo)
+    assert not fired(lines, "prose-regrowth", "rose from"), lines
+
+
+# ------------------------------------------------------ this repo's own file types and files
+#
+# The tracker adds a lockfile npm writes and two private Markdown files. The lockfile is
+# large and holds only public registry URLs, so the host scan skips it by name; every other
+# .json is still scanned. The private files are kept out by `*.local.md` in .gitignore, and
+# never-track is the layer under that.
+
+def test_host_identifier_skips_the_npm_lockfile(repo: Path):
+    (repo / "package-lock.json").write_text(
+        '{"note": "' + FORBIDDEN_LITERAL + '"}\n', encoding="utf-8")
+    assert not fired(gate(repo), "host-identifier", "package-lock.json")
+
+
+def test_host_identifier_still_scans_any_other_json(repo: Path):
+    """The control: the skip is by name, not by extension."""
+    (repo / "package.json").write_text(
+        '{"note": "' + FORBIDDEN_LITERAL + '"}\n', encoding="utf-8")
+    assert fired(gate(repo), "host-identifier", "package.json")
+
+
+@pytest.mark.parametrize("name", ["CLAUDE.local.md", "initial-spec.local.md"])
+def test_never_track_fires_on_a_private_markdown_file(repo: Path, name: str):
+    (repo / name).write_text("private\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-f", name], cwd=repo, capture_output=True)
+    assert fired(gate(repo), "never-track", name)
