@@ -71,7 +71,9 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, with their age. |
 | `GET /api/health` | The health report: when it was checked, and whether the transcript folder is set and readable. Never the folder's path. |
-| `GET /api/updates?stream=<name>` | An SSE stream. Today it sends a `list` event with the whole list on connect and again whenever the list changes; `stream=` is not used yet. The figures and the health will come the same way, as small whole objects. A followed stream sends only what changed in its current turn (appended text, counters), never its whole view. A `: ping` comment every 15 s. After a reconnect the page fetches `/api/streams/<name>` whole rather than replaying. |
+| `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes. The figures and the health will come the same way, as small whole objects. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
+
+Each `stream` event carries a number one above the last. The page fetches `/api/streams/<name>` whole when the SSE stream opens or reopens, and again whenever a number is skipped, rather than replaying.
 
 All routes are GET-only, with no CORS headers: any other method gets `405`, and a request whose `Host` is not a loopback name or in `ALLOWED_HOSTS` gets `403` before any route runs. Any other path serves the built page (`dist/web`), so a deep link opens the page. The page keeps no state the backend doesn't have.
 
@@ -277,7 +279,8 @@ package.json  tsconfig.json  vite.config.ts  eslint.config.js  .nvmrc
 src/server/
     settings.ts         every setting and its default (the only place a default lives)
     folder.ts           transcript folder reader: names, offsets, whole lines
-    streams.ts          stream state from events: every rendering rule
+    streams.ts          stream state from events: the list row's rules
+    view.ts             one stream's view: turns, calls, heartbeat, summary
     metrics.ts          Prometheus text parser, the name allowlists, derived rates
     nodes.ts            node figures over SSH: one open connection per node
     titles.ts           titles from the task

@@ -35,7 +35,7 @@ const poller = new Poller({
   quietAfterSeconds: settings.quietAfterSeconds,
   now: () => new Date(),
 });
-poller.start(settings.streamsPollSeconds);
+poller.start(settings.streamsPollSeconds, settings.followPollSeconds);
 
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
@@ -45,6 +45,8 @@ const app = createApp({
   now: () => new Date(),
   streams: () => poller.list(),
   subscribe: (listener) => poller.onChange(listener),
+  view: (name) => poller.view(name),
+  follow: (name, listener) => poller.follow(name, listener),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

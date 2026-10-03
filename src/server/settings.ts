@@ -5,12 +5,14 @@ export interface Settings {
   allowedHosts: string[];       // ALLOWED_HOSTS; comma-separated; default none
   quietAfterSeconds: number;    // QUIET_AFTER_SECONDS; keep it well above the server's keepalive
   streamsPollSeconds: number;   // STREAMS_POLL_SECONDS; counted from the end of the previous pass
+  followPollSeconds: number;    // FOLLOW_POLL_SECONDS; how often a followed stream is read
 }
 
 export const DEFAULTS = {
   port: 8787,
   quietAfterSeconds: 120,
   streamsPollSeconds: 2,
+  followPollSeconds: 1,
 } as const;
 
 export class SettingsError extends Error {}
@@ -38,5 +40,6 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
       .filter((h) => h !== ""),
     quietAfterSeconds: wholeNumber(env, "QUIET_AFTER_SECONDS", DEFAULTS.quietAfterSeconds, 1, 86400),
     streamsPollSeconds: wholeNumber(env, "STREAMS_POLL_SECONDS", DEFAULTS.streamsPollSeconds, 1, 3600),
+    followPollSeconds: wholeNumber(env, "FOLLOW_POLL_SECONDS", DEFAULTS.followPollSeconds, 1, 3600),
   };
 }

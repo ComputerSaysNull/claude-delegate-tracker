@@ -1,7 +1,7 @@
 import type { ListResponse } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
 
-const STATE_COLOR: Record<ListRow["state"], string> = {
+export const STATE_COLOR: Record<ListRow["state"], string> = {
   live: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
   queued: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   quiet: "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200",
@@ -78,9 +78,11 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
                   <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[row.state]}`}>
                     {row.state}
                   </span>
-                  <span className="min-w-0 truncate font-medium" title={row.title}>
-                    {row.title}
-                  </span>
+                  <a href={"/s/" + encodeURIComponent(row.name)} className="hover:underline">
+                    <span className="min-w-0 truncate font-medium" title={row.title}>
+                      {row.title}
+                    </span>
+                  </a>
                 </div>
                 {meta !== "" && (
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{meta}</p>
