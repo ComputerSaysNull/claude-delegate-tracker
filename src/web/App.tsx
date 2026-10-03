@@ -4,6 +4,7 @@ import { HealthBanners } from "./HealthBanners.tsx";
 import { ModelPanel } from "./ModelPanel.tsx";
 import { NodePanel } from "./NodePanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
+import { useClusterHistory } from "./useClusterHistory.ts";
 import { useLiveList } from "./useLiveList.ts";
 import { localTime } from "./time.ts";
 
@@ -11,6 +12,11 @@ type Status = "readable" | "not readable" | "not set";
 
 export default function App() {
   const { list, cluster, health, connected } = useLiveList();
+  const history = useClusterHistory(cluster);
+  const histories =
+    history === null
+      ? undefined
+      : Object.fromEntries(history.nodes.map((node) => [node.name, node.series] as const));
 
   const status: Status | null = health
     ? health.transcriptFolder.configured
@@ -50,8 +56,8 @@ export default function App() {
               {localTime(health?.checkedAt ?? null)}
             </p>
           </section>
-          <ModelPanel model={cluster?.model ?? null} />
-          <NodePanel nodes={cluster?.nodes ?? null} />
+          <ModelPanel model={cluster?.model ?? null} history={history?.model} windowSeconds={history?.windowSeconds} />
+          <NodePanel nodes={cluster?.nodes ?? null} histories={histories} windowSeconds={history?.windowSeconds} />
           {!connected && list !== null && (
             <p className="mt-4 rounded border border-amber-500 bg-amber-100 px-3 py-2 text-sm text-amber-700 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-300">
               Live updates paused; reconnecting…

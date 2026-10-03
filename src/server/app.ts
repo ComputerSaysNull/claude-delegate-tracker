@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Health } from "./health.ts";
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
+import type { ClusterHistory } from "./history.ts";
 import type { HistoryPage, ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
@@ -23,6 +24,7 @@ export interface AppDeps {
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
   history: (before: string) => HistoryPage | null;
   cluster: () => Cluster;
+  clusterHistory: () => ClusterHistory;
   subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
 }
 
@@ -50,7 +52,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, history, cluster, subscribeCluster } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, history, cluster, clusterHistory, subscribeCluster } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -83,6 +85,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   app.get("/api/cluster", (c) => c.json(cluster()));
+  app.get("/api/cluster/history", (c) => c.json(clusterHistory()));
 
   // One stream's whole view; the name is only ever looked up, never joined onto a path.
   app.get("/api/streams/:name", (c) => {

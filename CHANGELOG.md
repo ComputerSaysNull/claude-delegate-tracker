@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #16 — 2026-10-04 — feat: chart the cluster figures over time
+
+### Added
+
+- **Small charts under the figures**: requests running, KV-cache use and decode speed for
+  the model server, and CPU and GPU use and temperature for each node, over the last
+  `HISTORY_WINDOW_SECONDS`. A single reading said little about whether the cluster was
+  getting busier or cooling down. A missing figure is a gap, never 0, and an outage shows
+  as a break in the line rather than a line joined across it.
+- **`GET /api/cluster/history`**: the backend keeps a point per reading in memory, so a
+  restart starts the charts afresh; the page fetches it once and adds each live update.
+
 ## #15 — 2026-10-04 — feat: search and filter the delegations shown
 
 ### Added

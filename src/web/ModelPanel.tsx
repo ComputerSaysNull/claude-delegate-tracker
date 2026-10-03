@@ -1,6 +1,9 @@
 // The model server's figures, as the backend sends them on the cluster event.
 import type { ModelFigures } from "../server/metrics.ts";
+import type { Series } from "../server/history.ts";
 import { localTime } from "./time.ts";
+import { Sparkline, windowLabel } from "./Sparkline.tsx";
+import { toUplotData } from "./sparkData.ts";
 
 const SLATE = "text-slate-500 dark:text-slate-400";
 const AMBER = "text-amber-600 dark:text-amber-400";
@@ -50,44 +53,67 @@ interface Row {
   label: string;
   value: string;
   note?: string;
+  spark?: string; // history key for a sparkline under this row
 }
 
 function figuresRows(model: ModelFigures): Row[] {
   const rows: Row[] = [
-    { label: "Requests running", value: num(model.running) },
+    { label: "Requests running", value: num(model.running), spark: "running" },
     { label: "Requests waiting", value: num(model.waiting) },
-    { label: "KV-cache use", value: percent(model.kvCachePercent) },
-    { label: "Decode speed", value: decodeLine(model) },
+    { label: "KV-cache use", value: percent(model.kvCachePercent), spark: "kvCachePercent" },
+    { label: "Decode speed", value: decodeLine(model), spark: "decodeTokensPerSecond" },
     { label: "Prefix-cache hits", value: percent(model.prefixHitPercent), note: "since the engine started" },
   ];
   if (model.preemptions !== null) rows.push({ label: "Preemptions", value: num(model.preemptions) });
   return rows;
 }
 
-export function ModelPanel({ model }: { model: ModelFigures | null }) {
+export function ModelPanel({
+  model,
+  history,
+  windowSeconds,
+}: {
+  model: ModelFigures | null;
+  history?: Series;
+  windowSeconds?: number;
+}) {
   return (
     <section className="mt-6 rounded-lg border border-slate-300 p-4 dark:border-slate-700">
       <h2 className="text-lg font-semibold">Model server</h2>
       {model === null ? (
         <p className="mt-2 text-slate-500 dark:text-slate-400">Waiting for figures…</p>
       ) : (
-        <ModelFiguresBody model={model} />
+        <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} />
       )}
     </section>
   );
 }
 
-function ModelFiguresBody({ model }: { model: ModelFigures }) {
+function ModelFiguresBody({
+  model,
+  history,
+  windowSeconds,
+}: {
+  model: ModelFigures;
+  history?: Series;
+  windowSeconds?: number;
+}) {
   const status = statusLine(model);
+  const span = windowSeconds ?? 3600;
   return (
     <>
       <div className="mt-2 flex flex-col gap-1 text-sm">
         {figuresRows(model).map((row) => (
-          <p key={row.label} className={SLATE}>
-            <span>{row.label}: </span>
-            <span>{row.value}</span>
-            {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
-          </p>
+          <div key={row.label} className="flex flex-col gap-1">
+            <p className={SLATE}>
+              <span>{row.label}: </span>
+              <span>{row.value}</span>
+              {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
+            </p>
+            {row.spark !== undefined && history !== undefined && (
+              <Sparkline data={toUplotData(history, row.spark)} label={`${row.label} over the ${windowLabel(span)}`} />
+            )}
+          </div>
         ))}
       </div>
       <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>

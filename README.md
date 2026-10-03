@@ -60,6 +60,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `FOLLOW_POLL_SECONDS` — how often a delegation that a page has open is read.
 - `METRICS_POLL_SECONDS` — how often the model server's figures are read.
 - `NODES_POLL_SECONDS` — how often each node's figures are read.
+- `HISTORY_WINDOW_SECONDS` — how far back the charts of the figures reach.
 - The other poll intervals, and the optional identity check.
 
 Node figures are read over SSH with a dedicated key that can only run the stats command (ADR-0003).

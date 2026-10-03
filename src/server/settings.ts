@@ -14,6 +14,7 @@ export interface Settings {
   nodeKey: string | null;       // NODE_KEY; the dedicated key's path
   nodeKnownHosts: string | null; // NODE_KNOWN_HOSTS; the file pinning each node's host key
   nodesPollSeconds: number;     // NODES_POLL_SECONDS; counted from the end of the previous poll
+  historyWindowSeconds: number; // HISTORY_WINDOW_SECONDS; how far back the figures over time reach
 }
 
 export const DEFAULTS = {
@@ -24,6 +25,7 @@ export const DEFAULTS = {
   metricsPollSeconds: 10,
   metricsTimeoutMs: 5000,
   nodesPollSeconds: 5,
+  historyWindowSeconds: 3600,
   nodeTimeoutMs: 10000,
   sshPort: 22,
 } as const;
@@ -82,5 +84,6 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     nodeKey: optional(env, "NODE_KEY"),
     nodeKnownHosts: optional(env, "NODE_KNOWN_HOSTS"),
     nodesPollSeconds: wholeNumber(env, "NODES_POLL_SECONDS", DEFAULTS.nodesPollSeconds, 1, 3600),
+    historyWindowSeconds: wholeNumber(env, "HISTORY_WINDOW_SECONDS", DEFAULTS.historyWindowSeconds, 60, 86400),
   };
 }
