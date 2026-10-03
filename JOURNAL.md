@@ -5,6 +5,21 @@ What took real work to find out, or would surprise you again in six months: usua
 measurement and what it settled. Newest first; the headings are the index. Routine work
 leaves no entry.
 
+## 2026-10-03 — The overlay VPN's serve passes the original Host header through
+
+Measured through the VPN from the workstation itself: before the VPN names were in
+`ALLOWED_HOSTS`, both of them got the tracker's `403`, so the proxy forwards the `Host` the
+client sent rather than rewriting it to loopback. A wrong `Host` never reaches the tracker:
+the VPN's serve answers `404` itself. Settled: `ALLOWED_HOSTS` holds the VPN names, and the
+Host check guards VPN traffic too. The page then opened on the phone.
+
+## 2026-10-03 — The cluster nodes have no thermal zone named for the CPU
+
+Over the restricted key, both nodes list seven thermal zones, all of type `acpitz`, and
+`nvidia-smi` reports GPU use and temperature as numbers. Settled: the node panel shows the
+hottest zone as "CPU". The restricted key held: asked to run another command, it printed
+the stats again and allocated no terminal.
+
 ## 2026-10-03 — Field meanings checked against the server source: no contradictions, three null cases
 
 Each non-enumerated field claim in the starting field guide was checked against the server's

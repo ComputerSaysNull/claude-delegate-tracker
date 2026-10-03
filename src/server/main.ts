@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { Poller } from "./poller.ts";
 import { loadSettings, SettingsError, type Settings } from "./settings.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -29,12 +30,20 @@ function isReadableDir(dir: string): boolean {
   }
 }
 
+const poller = new Poller({
+  dir: settings.transcriptDir,
+  quietAfterSeconds: settings.quietAfterSeconds,
+  now: () => new Date(),
+});
+poller.start(settings.streamsPollSeconds);
+
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
   settings,
   staticRoot: fs.existsSync(path.join(staticRoot, "index.html")) ? staticRoot : null,
   isReadableDir,
   now: () => new Date(),
+  streams: () => poller.list(),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

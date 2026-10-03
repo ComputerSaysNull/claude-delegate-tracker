@@ -9,6 +9,30 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #3 — 2026-10-03 — feat: derive the delegation list from the transcript folder
+
+### Added
+
+- **`GET /api/streams`**: the newest 20 delegations, newest first by `start.at`, each with its
+  state, why (for cut off and failed), age (for quiet and queued), kind, model, effort,
+  title, start time, elapsed time and turns used of budget. It also says when the list is
+  capped, how many streams the folder holds, how many names lack the stamp, whether the
+  folder was readable, and how many lines were not JSON. The page does not show it yet.
+- **The folder reader**: picks the newest 25 names without opening a file, then reads each
+  stream from a byte offset, keeping whole lines only. A half-written last line waits for
+  its newline, a character split between reads is never decoded in halves, a line longer
+  than one read comes back whole, and a file that shrank is read again from the start.
+- **The state builder**: the six states in the order the rendering rules give, so a failed
+  stream is never shown as cut off, a finished one never goes quiet, and a silent queued one
+  reads as quiet. Unknown fields and event kinds change nothing; an unknown format major is
+  flagged. Ages and durations stop at `0s`, so a WSL clock slightly ahead of Windows never
+  shows a negative time.
+- **The poller**: one reader per listed stream; a finished stream is never read again; the
+  last rows are kept when the folder cannot be read; listeners hear only real changes. Its
+  interval counts from the end of the previous pass, so passes never overlap.
+- **Titles** from the task's first line, cut to 60 characters at a space.
+- **Settings** `QUIET_AFTER_SECONDS` and `STREAMS_POLL_SECONDS`.
+
 ## #2 — 2026-10-03 — feat: serve a first page on loopback, with the Host check and a health route
 
 ### Added

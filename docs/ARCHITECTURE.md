@@ -67,7 +67,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | Route | Returns |
 |---|---|
 | `GET /` | The page (built static files). |
-| `GET /api/streams` | The list rows, already derived. |
+| `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, with their age. |
 | `GET /api/health` | The health report: when it was checked, and whether the transcript folder is set and readable. Never the folder's path. |
@@ -281,6 +281,7 @@ src/server/
     metrics.ts          Prometheus text parser, the name allowlists, derived rates
     nodes.ts            node figures over SSH: one open connection per node
     titles.ts           titles from the task
+    poller.ts           one reader per listed stream; the list, re-derived each pass
     app.ts              Hono routes, SSE, Host check, static files
     main.ts             the entry `npm start` runs: settings, the app, loopback only
 src/web/                React page: list, stream view, panels, banners

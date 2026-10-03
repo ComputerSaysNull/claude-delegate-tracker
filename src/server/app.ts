@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
 
 export interface AppDeps {
@@ -10,6 +11,7 @@ export interface AppDeps {
   staticRoot: string | null;
   isReadableDir: (dir: string) => boolean;
   now: () => Date;
+  streams: () => ListResponse;
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -29,7 +31,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, isReadableDir, now } = deps;
+  const { settings, staticRoot, isReadableDir, now, streams } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -57,6 +59,9 @@ export function createApp(deps: AppDeps): Hono {
       transcriptFolder: { configured, readable },
     });
   });
+
+  // The list rows, already derived by the poller; the page only lays them out.
+  app.get("/api/streams", (c) => c.json(streams()));
 
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 

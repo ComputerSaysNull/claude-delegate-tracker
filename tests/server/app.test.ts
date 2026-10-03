@@ -4,11 +4,19 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server/app.ts";
 import type { AppDeps } from "../../src/server/app.ts";
+import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
 
-function makeSettings(overrides: Partial<Settings> = {}) {
-  return { port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"], ...overrides };
+function makeSettings(overrides: Partial<Settings> = {}): Settings {
+  return {
+    port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
+    quietAfterSeconds: 1, streamsPollSeconds: 1, ...overrides,
+  };
 }
+
+const LIST: ListResponse = {
+  rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0,
+};
 
 function makeApp(overrides: Partial<AppDeps> = {}) {
   return createApp({
@@ -16,6 +24,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     staticRoot: null,
     isReadableDir: () => true,
     now: () => new Date("2026-10-03T12:00:00Z"),
+    streams: () => LIST,
     ...overrides,
   });
 }
@@ -122,6 +131,14 @@ describe("app", () => {
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+
+  it("serves the poller's list at /api/streams, read fresh on each request", async () => {
+    let list = LIST;
+    const app = makeApp({ streams: () => list });
+    expect(await (await app.request("/api/streams", goodHost)).json()).toEqual(LIST);
+    list = { ...LIST, total: 3, capped: true };
+    expect(await (await app.request("/api/streams", goodHost)).json()).toEqual(list);
   });
 
   it("returns 404 for non-api paths when staticRoot is null", async () => {
