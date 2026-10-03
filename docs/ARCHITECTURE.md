@@ -68,6 +68,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 |---|---|
 | `GET /` | The page (built static files). |
 | `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
+| `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name, ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. Each is read whole on request and never polled. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
@@ -206,7 +207,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 ### The list
 
 - Order by `start.at`, newest first, never by last activity.
-- Say when the list is capped at 20.
+- Say when the list is capped at 20, and offer older ones a page at a time; older pages are a snapshot, not live.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 
 ### On a phone

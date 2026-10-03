@@ -88,6 +88,7 @@ const app = createApp({
   subscribe: (listener) => poller.onChange(listener),
   view: (name) => poller.view(name),
   follow: (name, listener) => poller.follow(name, listener),
+  history: (before) => poller.history(before),
   cluster: () => ({ model: metrics.figures(), nodes: nodes.figures() }),
   subscribeCluster: (listener) => {
     const offModel = metrics.onChange((model) => listener({ model, nodes: nodes.figures() }));

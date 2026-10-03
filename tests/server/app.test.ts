@@ -46,6 +46,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     subscribe: () => () => {},
     view: () => null,
     follow: () => null,
+    history: () => null,
     cluster: () => ({ model: MODEL, nodes: [] }),
     subscribeCluster: () => () => {},
     ...overrides,
@@ -64,6 +65,30 @@ async function readUntil(res: Response, needle: string): Promise<string> {
   await reader.cancel();
   return text;
 }
+
+describe("history", () => {
+  it("serves a page of older streams at /api/streams?before=<name>", async () => {
+    const seen: string[] = [];
+    const page = { rows: [makeRow("older.jsonl")], nextBefore: null };
+    const app = makeApp({ history: (b) => { seen.push(b); return page; } });
+    const res = await app.request("/api/streams?before=20261001T120000.000-a.jsonl", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(page);
+    expect(seen).toEqual(["20261001T120000.000-a.jsonl"]);
+  });
+
+  it("answers 404 for a cursor the backend did not list", async () => {
+    const res = await makeApp({ history: () => null }).request("/api/streams?before=..%2Fx.jsonl", goodHost);
+    expect(res.status).toBe(404);
+  });
+
+  it("still serves the live list without a cursor", async () => {
+    const history = vi.fn(() => null);
+    const res = await makeApp({ history }).request("/api/streams", goodHost);
+    expect(await res.json()).toEqual(LIST);
+    expect(history).not.toHaveBeenCalled();
+  });
+});
 
 describe("cluster figures", () => {
   it("serves the figures at /api/cluster", async () => {
