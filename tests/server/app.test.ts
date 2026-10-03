@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server/app.ts";
 import type { AppDeps, Cluster } from "../../src/server/app.ts";
+import type { Health } from "../../src/server/health.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
@@ -19,21 +20,28 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
   };
 }
 
+const HEALTH: Health = {
+  checkedAt: "2026-10-03T12:00:00.000Z",
+  transcriptFolder: { configured: true, readable: true },
+  clockSkewSeconds: null,
+  banners: [],
+};
+
 const MODEL: ModelFigures = {
   status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 80,
   decodeWindowSeconds: 10, prefixHitPercent: 92, preemptions: null, readAt: "2026-10-03T12:00:00.000Z",
 };
 
 const LIST: ListResponse = {
-  rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0,
+  rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
 };
 
 function makeApp(overrides: Partial<AppDeps> = {}) {
   return createApp({
     settings: makeSettings(),
     staticRoot: null,
-    isReadableDir: () => true,
-    now: () => new Date("2026-10-03T12:00:00Z"),
+    health: () => HEALTH,
+    subscribeHealth: () => () => {},
     streams: () => LIST,
     subscribe: () => () => {},
     view: () => null,
@@ -135,31 +143,23 @@ describe("app", () => {
     expect(res.headers.get("allow")).toBe("GET, HEAD");
   });
 
-  it("reports health without leaking the folder path", async () => {
+  it("serves the health report at /api/health", async () => {
     const res = await makeApp().request("/api/health", goodHost);
-    const body = await res.text();
-    expect(JSON.parse(body)).toEqual({
-      checkedAt: "2026-10-03T12:00:00.000Z",
-      transcriptFolder: { configured: true, readable: true },
-    });
-    expect(body).not.toContain("C:\\t");
+    expect(await res.json()).toEqual(HEALTH);
   });
 
-  it("reports readable false when the folder is unreadable", async () => {
-    const res = await makeApp({ isReadableDir: () => false }).request("/api/health", goodHost);
-    const body = (await res.json()) as { transcriptFolder: { readable: boolean } };
-    expect(body.transcriptFolder.readable).toBe(false);
-  });
-
-  it("reports not configured without calling isReadableDir", async () => {
-    const isReadableDir = vi.fn(() => true);
-    const res = await makeApp({ settings: makeSettings({ transcriptDir: null }), isReadableDir }).request(
-      "/api/health",
-      goodHost
-    );
-    const body = (await res.json()) as { transcriptFolder: { configured: boolean; readable: boolean } };
-    expect(body.transcriptFolder).toEqual({ configured: false, readable: false });
-    expect(isReadableDir).not.toHaveBeenCalled();
+  it("sends a health event on connect and again on a change, and unsubscribes on disconnect", async () => {
+    let listener: ((h: Health) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const app = makeApp({ subscribeHealth: (l) => { listener = l; return unsubscribe; } });
+    const res = await app.request("/api/updates", goodHost);
+    const changed: Health = { ...HEALTH, banners: [{ level: "warning", text: "The model server can't be reached." }] };
+    listener!(changed);
+    const text = await readUntil(res, "can't be reached");
+    expect(text).toContain(`event: health\ndata: ${JSON.stringify(HEALTH)}`);
+    expect(text).toContain(`event: health\ndata: ${JSON.stringify(changed)}`);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unsubscribe).toHaveBeenCalled();
   });
 
   it("returns 404 JSON for unknown api paths", async () => {

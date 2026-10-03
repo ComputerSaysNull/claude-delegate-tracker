@@ -9,6 +9,27 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #9 — 2026-10-03 — feat: warn on the page when what it shows can't be trusted
+
+### Added
+
+- **Health banners** at the top of every page: the transcript folder not set or not
+  readable (with when it is tried next), the model server or a node unreachable, a node
+  refused for its host key, a stream in a contract major this tracker does not know, events
+  that failed the schema, names without the timestamp prefix, lines that were not JSON, and
+  a clock skew over 5 s between WSL and Windows. Until now most of these were counted or
+  logged but never shown, so the page could look fine while showing stale or wrong ages.
+- **The runtime schema check**: every event is checked against the vendored schema and a
+  failure is counted, never dropped. **Clock skew** is measured on lines that appeared
+  since the previous read, so an old file's first read says nothing about the clocks.
+
+### Changed
+
+- **The folder is retried after 1, 2, 4 … 30 s** while it can't be read, instead of at the
+  normal interval, and the health report now arrives as a `health` event on
+  `/api/updates` rather than by the page asking every 5 s. The list's own "can't be read"
+  note moved into the banners, so the fact is shown once.
+
 ## #8 — 2026-10-03 — feat: show each cluster node's load and temperature
 
 ### Added

@@ -4,6 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { Health } from "./health.ts";
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
 import type { ListResponse } from "./poller.ts";
@@ -13,8 +14,8 @@ import type { StreamView, ViewPatch } from "./view.ts";
 export interface AppDeps {
   settings: Settings;
   staticRoot: string | null;
-  isReadableDir: (dir: string) => boolean;
-  now: () => Date;
+  health: () => Health;
+  subscribeHealth: (listener: (health: Health) => void) => () => void;
   streams: () => ListResponse;
   subscribe: (listener: (list: ListResponse) => void) => () => void;
   // Both return null for a name the backend did not list itself.
@@ -48,7 +49,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, isReadableDir, now, streams, subscribe, view, follow, cluster, subscribeCluster } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, cluster, subscribeCluster } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -68,14 +69,8 @@ export function createApp(deps: AppDeps): Hono {
     await next();
   });
 
-  app.get("/api/health", (c) => {
-    const configured = settings.transcriptDir !== null;
-    const readable = settings.transcriptDir !== null && isReadableDir(settings.transcriptDir);
-    return c.json({
-      checkedAt: now().toISOString(),
-      transcriptFolder: { configured, readable },
-    });
-  });
+  // The health report: never the folder's path, only whether it is set and readable.
+  app.get("/api/health", (c) => c.json(health()));
 
   // The list rows, already derived by the poller; the page only lays them out.
   app.get("/api/streams", (c) => c.json(streams()));
@@ -108,6 +103,10 @@ export function createApp(deps: AppDeps): Hono {
         stream.writeSSE({ event: "list", data: JSON.stringify(list) });
       });
       stream.writeSSE({ event: "cluster", data: JSON.stringify(cluster()) });
+      stream.writeSSE({ event: "health", data: JSON.stringify(health()) });
+      const unsubscribeHealth = subscribeHealth((report) => {
+        stream.writeSSE({ event: "health", data: JSON.stringify(report) });
+      });
       const unsubscribeCluster = subscribeCluster((figures) => {
         stream.writeSSE({ event: "cluster", data: JSON.stringify(figures) });
       });
@@ -123,6 +122,7 @@ export function createApp(deps: AppDeps): Hono {
         stream.onAbort(() => {
           unsubscribe();
           unsubscribeCluster();
+          unsubscribeHealth();
           unfollow?.();
           if (timer !== null) clearInterval(timer);
           resolve();

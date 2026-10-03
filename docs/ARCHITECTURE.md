@@ -70,8 +70,8 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
-| `GET /api/health` | The health report: when it was checked, and whether the transcript folder is set and readable. Never the folder's path. |
-| `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and a `cluster` event with the figures the same way. The health will come the same way, as a small whole object. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
+| `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
+| `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and `cluster` and `health` events with the figures and the health report the same way. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
 Each `stream` event carries a number one above the last. The page fetches `/api/streams/<name>` whole when the SSE stream opens or reopens, and again whenever a number is skipped, rather than replaying.
 
@@ -81,7 +81,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 
 | Failure | What the tracker does |
 |---|---|
-| The transcript folder is unreadable | A banner, the last known state kept, retries with backoff. |
+| The transcript folder is unreadable | A banner, the last known state kept, retries after 1, 2, 4 … 30 s. |
 | A stream file is shorter than its reader's offset | It was replaced (by the sync client, say): read it again from 0 and rebuild its state. |
 | A figures source is unreachable | Its panel shows `—` and "no figures since <time>". |
 | A stream names a contract major this tracker does not know | A banner on that stream, then a best-effort render. |

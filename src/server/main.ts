@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { buildHealth, makeSchemaCheck, type Health } from "./health.ts";
 import { MetricsPoller } from "./metrics.ts";
 import { NodesPoller, sshRunner } from "./nodes.ts";
 import { Poller } from "./poller.ts";
@@ -23,19 +24,11 @@ try {
   process.exit(1);
 }
 
-function isReadableDir(dir: string): boolean {
-  try {
-    fs.accessSync(dir, fs.constants.R_OK);
-    return fs.statSync(dir).isDirectory();
-  } catch {
-    return false;
-  }
-}
-
 const poller = new Poller({
   dir: settings.transcriptDir,
   quietAfterSeconds: settings.quietAfterSeconds,
   now: () => new Date(),
+  schemaCheck: makeSchemaCheck(path.join(root, "contract", "transcript.schema.json")),
 });
 poller.start(settings.streamsPollSeconds, settings.followPollSeconds);
 
@@ -58,12 +51,39 @@ const runner = settings.nodes.length > 0 && settings.nodeKey !== null && setting
 const nodes = new NodesPoller({ targets: runner === null ? [] : settings.nodes, runner, now: () => new Date() });
 nodes.start(settings.nodesPollSeconds);
 
+// The health report, rebuilt whenever one of its sources changes; sent only when it differs.
+const healthNow = (): Health => buildHealth({
+  folderConfigured: settings.transcriptDir !== null,
+  list: poller.list(),
+  retryInSeconds: poller.status().retryInSeconds,
+  clockSkewSeconds: poller.status().clockSkewSeconds,
+  readIntervalSeconds: settings.streamsPollSeconds,
+  model: metrics.figures(),
+  nodes: nodes.figures(),
+}, new Date());
+const healthListeners = new Set<(health: Health) => void>();
+let lastHealth = "";
+const healthChanged = (): void => {
+  const health = healthNow();
+  const key = JSON.stringify({ ...health, checkedAt: null });
+  if (key === lastHealth) return;
+  lastHealth = key;
+  for (const listener of healthListeners) listener(health);
+};
+poller.onChange(healthChanged);
+poller.onStatus(healthChanged);
+metrics.onChange(healthChanged);
+nodes.onChange(healthChanged);
+
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
   settings,
   staticRoot: fs.existsSync(path.join(staticRoot, "index.html")) ? staticRoot : null,
-  isReadableDir,
-  now: () => new Date(),
+  health: healthNow,
+  subscribeHealth: (listener) => {
+    healthListeners.add(listener);
+    return () => healthListeners.delete(listener);
+  },
   streams: () => poller.list(),
   subscribe: (listener) => poller.onChange(listener),
   view: (name) => poller.view(name),
