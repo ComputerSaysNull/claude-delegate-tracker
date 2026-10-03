@@ -7,6 +7,20 @@ describe('loadSettings', () => {
     expect(s.port).toBe(DEFAULTS.port);
     expect(s.transcriptDir).toBeNull();
     expect(s.allowedHosts).toEqual([]);
+    expect(s.quietAfterSeconds).toBe(DEFAULTS.quietAfterSeconds);
+    expect(s.streamsPollSeconds).toBe(DEFAULTS.streamsPollSeconds);
+  });
+
+  it('QUIET_AFTER_SECONDS and STREAMS_POLL_SECONDS are used when valid', () => {
+    const s = loadSettings({ QUIET_AFTER_SECONDS: '300', STREAMS_POLL_SECONDS: '5' });
+    expect(s.quietAfterSeconds).toBe(300);
+    expect(s.streamsPollSeconds).toBe(5);
+  });
+
+  it.each(['QUIET_AFTER_SECONDS', 'STREAMS_POLL_SECONDS'])('%s rejects 0 and non-numbers', (name) => {
+    for (const v of ['0', 'abc', '1.5']) {
+      expect(() => loadSettings({ [name]: v })).toThrow(new RegExp(name));
+    }
   });
 
   it('valid TRACKER_PORT is used', () => {
