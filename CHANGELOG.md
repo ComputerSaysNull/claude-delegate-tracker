@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #8 — 2026-10-03 — feat: show each cluster node's load and temperature
+
+### Added
+
+- **The node panel** on the list page: for each node, CPU use with the window it was
+  measured over, CPU temperature, GPU use and GPU temperature, and when they were read.
+  Until now a node's load and heat meant logging in to it. Figures come over SSH with the
+  dedicated key that can run only the stats command, on one connection per node kept open.
+  The CPU temperature is the hottest thermal zone, since the nodes name none for the CPU.
+- **Pinned host keys**: a node whose host key does not match `NODE_KNOWN_HOSTS` is refused
+  and its panel says so, because the SSH library accepts any host key unless told
+  otherwise, and a fake node could feed the panel invented figures. A node that can't be
+  reached keeps the time of its last good reading, and each node fails alone.
+
 ## #7 — 2026-10-03 — feat: show the model server's load in a panel on the page
 
 ### Added

@@ -1,4 +1,5 @@
 // This module is the only place a default lives. Docs and tests never restate them.
+import type { NodeTarget } from "./nodes.ts";
 export interface Settings {
   port: number;                 // TRACKER_PORT
   transcriptDir: string | null; // TRANSCRIPT_DIR; no default: null when unset or blank
@@ -9,6 +10,10 @@ export interface Settings {
   metricsUrl: string | null;    // METRICS_URL; the model server's root; null when unset or blank
   metricsTokenEnv: string | null; // METRICS_TOKEN_ENV; the NAME of the env var holding a bearer token
   metricsPollSeconds: number;   // METRICS_POLL_SECONDS; counted from the end of the previous scrape
+  nodes: NodeTarget[];          // NODES; comma-separated name=user@host[:port]; default none
+  nodeKey: string | null;       // NODE_KEY; the dedicated key's path
+  nodeKnownHosts: string | null; // NODE_KNOWN_HOSTS; the file pinning each node's host key
+  nodesPollSeconds: number;     // NODES_POLL_SECONDS; counted from the end of the previous poll
 }
 
 export const DEFAULTS = {
@@ -18,7 +23,26 @@ export const DEFAULTS = {
   followPollSeconds: 1,
   metricsPollSeconds: 10,
   metricsTimeoutMs: 5000,
+  nodesPollSeconds: 5,
+  nodeTimeoutMs: 10000,
+  sshPort: 22,
 } as const;
+
+function nodeTargets(env: Record<string, string | undefined>): NodeTarget[] {
+  const raw = env.NODES?.trim() ?? "";
+  if (raw === "") return [];
+  const targets: NodeTarget[] = [];
+  for (const entry of raw.split(",").map((e) => e.trim())) {
+    const m = /^([^=@\s]+)=([^=@\s]+)@([^=@\s:]+)(?::([0-9]+))?$/.exec(entry);
+    const port = m?.[4] === undefined ? DEFAULTS.sshPort : Number(m[4]);
+    if (m === null || !(port >= 1 && port <= 65535) || targets.some((t) => t.name === m[1])) {
+      throw new SettingsError(
+        `NODES must be comma-separated name=user@host[:port] entries with distinct names, not "${entry}".`);
+    }
+    targets.push({ name: m[1], user: m[2], host: m[3], port });
+  }
+  return targets;
+}
 
 function optional(env: Record<string, string | undefined>, name: string): string | null {
   const raw = env[name]?.trim() ?? "";
@@ -54,5 +78,9 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     metricsUrl: optional(env, "METRICS_URL"),
     metricsTokenEnv: optional(env, "METRICS_TOKEN_ENV"),
     metricsPollSeconds: wholeNumber(env, "METRICS_POLL_SECONDS", DEFAULTS.metricsPollSeconds, 1, 3600),
+    nodes: nodeTargets(env),
+    nodeKey: optional(env, "NODE_KEY"),
+    nodeKnownHosts: optional(env, "NODE_KNOWN_HOSTS"),
+    nodesPollSeconds: wholeNumber(env, "NODES_POLL_SECONDS", DEFAULTS.nodesPollSeconds, 1, 3600),
   };
 }

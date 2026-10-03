@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelFigures } from "./metrics.ts";
+import type { NodeFigures } from "./nodes.ts";
 import type { ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
@@ -25,6 +26,7 @@ export interface AppDeps {
 
 export interface Cluster {
   model: ModelFigures;
+  nodes: NodeFigures[];
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

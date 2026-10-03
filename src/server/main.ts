@@ -5,6 +5,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { MetricsPoller } from "./metrics.ts";
+import { NodesPoller, sshRunner } from "./nodes.ts";
 import { Poller } from "./poller.ts";
 import { DEFAULTS, loadSettings, SettingsError, type Settings } from "./settings.ts";
 
@@ -49,6 +50,14 @@ const metrics = new MetricsPoller({
 });
 metrics.start(settings.metricsPollSeconds);
 
+// Node figures need the node list, the dedicated key and the pinned host keys; without
+// all three nothing connects.
+const runner = settings.nodes.length > 0 && settings.nodeKey !== null && settings.nodeKnownHosts !== null
+  ? sshRunner({ keyPath: settings.nodeKey, knownHostsPath: settings.nodeKnownHosts, timeoutMs: DEFAULTS.nodeTimeoutMs })
+  : null;
+const nodes = new NodesPoller({ targets: runner === null ? [] : settings.nodes, runner, now: () => new Date() });
+nodes.start(settings.nodesPollSeconds);
+
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
   settings,
@@ -59,8 +68,15 @@ const app = createApp({
   subscribe: (listener) => poller.onChange(listener),
   view: (name) => poller.view(name),
   follow: (name, listener) => poller.follow(name, listener),
-  cluster: () => ({ model: metrics.figures() }),
-  subscribeCluster: (listener) => metrics.onChange((model) => listener({ model })),
+  cluster: () => ({ model: metrics.figures(), nodes: nodes.figures() }),
+  subscribeCluster: (listener) => {
+    const offModel = metrics.onChange((model) => listener({ model, nodes: nodes.figures() }));
+    const offNodes = nodes.onChange((figures) => listener({ model: metrics.figures(), nodes: figures }));
+    return () => {
+      offModel();
+      offNodes();
+    };
+  },
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

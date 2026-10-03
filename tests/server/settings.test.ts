@@ -26,6 +26,36 @@ describe('loadSettings', () => {
     expect(set.metricsTokenEnv).toBe('TOKEN_VAR');
   });
 
+  it('NODES is a comma-separated list of name=user@host[:port]', () => {
+    expect(loadSettings({}).nodes).toEqual([]);
+    expect(loadSettings({ NODES: ' ' }).nodes).toEqual([]);
+    expect(loadSettings({ NODES: 'one=u@nodea, two=v@some-host:2222' }).nodes).toEqual([
+      { name: 'one', user: 'u', host: 'nodea', port: 22 },
+      { name: 'two', user: 'v', host: 'some-host', port: 2222 },
+    ]);
+  });
+
+  it.each(['one', 'one=nodea', '=u@nodea', 'one=@node-a.example', 'one=u@', 'one=u@h:0', 'one=u@h:x', 'a=u@h,a=v@h2'])(
+    'NODES rejects %s',
+    (v) => {
+      expect(() => loadSettings({ NODES: v })).toThrow(/NODES/);
+    },
+  );
+
+  it('NODE_KEY and NODE_KNOWN_HOSTS are null unless set', () => {
+    expect(loadSettings({ NODE_KEY: ' ', NODE_KNOWN_HOSTS: '' }).nodeKey).toBeNull();
+    expect(loadSettings({}).nodeKnownHosts).toBeNull();
+    const s = loadSettings({ NODE_KEY: 'C:\\k\\key', NODE_KNOWN_HOSTS: 'C:\\k\\hosts' });
+    expect(s.nodeKey).toBe('C:\\k\\key');
+    expect(s.nodeKnownHosts).toBe('C:\\k\\hosts');
+  });
+
+  it('NODES_POLL_SECONDS defaults and is used when valid', () => {
+    expect(loadSettings({}).nodesPollSeconds).toBe(DEFAULTS.nodesPollSeconds);
+    expect(loadSettings({ NODES_POLL_SECONDS: '15' }).nodesPollSeconds).toBe(15);
+    expect(() => loadSettings({ NODES_POLL_SECONDS: '0' })).toThrow(/NODES_POLL_SECONDS/);
+  });
+
   it('METRICS_POLL_SECONDS and FOLLOW_POLL_SECONDS default, and are used when valid', () => {
     expect(loadSettings({}).metricsPollSeconds).toBe(DEFAULTS.metricsPollSeconds);
     expect(loadSettings({}).followPollSeconds).toBe(DEFAULTS.followPollSeconds);
