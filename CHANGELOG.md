@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #6 — 2026-10-03 — feat: show the reply growing while the model writes it
+
+### Added
+
+- **The reply as it is written**: on a delegation's page, the open turn's answer grows as
+  the model writes it, with its reasoning folded away until opened. Until now the reply
+  appeared only when the turn ended, so a long answer looked like a stall. When the turn
+  ends, its final text replaces the growing one, because a retried attempt can leave text
+  behind that never reached the reply. Each live update carries only the added text, so a
+  long answer is not resent every second.
+
 ## #5 — 2026-10-03 — feat: follow one delegation on its own page, updating live
 
 ### Added

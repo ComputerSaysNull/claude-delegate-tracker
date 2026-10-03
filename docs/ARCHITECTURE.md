@@ -233,6 +233,12 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - A turn's tool time = the sum of its calls' `ms`. Fall back to `ms − backend_ms` only when the calls carry no `ms` and there are calls. Say nothing for a turn without calls; show `<1s` for instant ones.
 - Show durations as lengths (`2m51s`), not times of day.
 
+### The reply as it is written
+
+- `partial` events add to the open turn's reasoning and answer. Show the answer as it grows; fold the reasoning away until opened.
+- When the turn's `turn` event lands, its `text` replaces the partial text, even where they differ: a retried attempt can leave text in `partial` that never reached the reply.
+- A patch carries only the text added since the previous one.
+
 ### Failures
 
 - Count failures from `end.failed_calls`. Only if that is absent or `null`, use `tool_errors + bash_failures`; if those are `null` too (a one-shot), show no count.

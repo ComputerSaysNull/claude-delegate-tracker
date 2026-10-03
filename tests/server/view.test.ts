@@ -588,3 +588,160 @@ describe("contract samples", () => {
     expect(failed.summary!.error).toBe("backend_unreachable: the endpoint refused the connection");
   });
 });
+
+describe("partial reply", () => {
+  it("accepts a partial event and bumps seq", () => {
+    const v = newViewState();
+    expect(applyViewEvent(v, { t: "partial", at: at(0), turn: 2, reasoning: "x", answer: "y" })).toBe(true);
+    expect(v.seq).toBe(1);
+  });
+
+  it("appends reasoning and answer in order while the turn is open", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 2, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 2, reasoning: "The test counts attempts; ", answer: "" },
+      { t: "partial", at: at(0), turn: 2, reasoning: "the loop counts time.", answer: "The loop retries until the deadline, " },
+    ]);
+    expect(v.turns[0].closed).toBe(false);
+    expect(v.turns[0].partial).toEqual({
+      reasoning: "The test counts attempts; the loop counts time.",
+      answer: "The loop retries until the deadline, ",
+    });
+  });
+
+  it("appends nothing for an absent or non-string field", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+      { t: "partial", at: at(0), turn: 1, answer: "c" },
+      { t: "partial", at: at(0), turn: 1, reasoning: 5, answer: "d" },
+    ]);
+    expect(v.turns[0].partial).toEqual({ reasoning: "a", answer: "bcd" });
+  });
+
+  it("clears partial and uses the turn text once the turn closes", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "first try, ", answer: "first try, " },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "final answer" },
+    ]);
+    expect(v.turns[0].closed).toBe(true);
+    expect(v.turns[0].partial).toBeNull();
+    expect(v.turns[0].reply).toBe("final answer");
+  });
+
+  it("keeps partial null for an open turn with no partial events", () => {
+    const v = viewOf([start(), { t: "priced", at: at(0), turn: 1, of_turns: 4 }]);
+    expect(v.turns[0].closed).toBe(false);
+    expect(v.turns[0].partial).toBeNull();
+  });
+
+  it("appends only the added text when a later partial follows an earlier one", () => {
+    const prev = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+    ]);
+    const next = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "c", answer: "d" },
+    ]);
+    const patch = diffView(prev, next);
+    expect(patch.turns.length).toBe(1);
+    const entry = patch.turns[0];
+    expect(entry.append).toBe(true);
+    expect(entry.turn.partial).toEqual({ reasoning: "c", answer: "d" });
+    expect(entry.turn.n).toBe(1);
+    expect(entry.turn.closed).toBe(false);
+    expect(entry.turn.reply).toBeNull();
+  });
+
+  it("carries the whole turn when there is no previous view", () => {
+    const next = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+    ]);
+    const patch = diffView(null, next);
+    expect(patch.turns.length).toBe(1);
+    expect(patch.turns[0].append).toBeUndefined();
+    expect(patch.turns[0].turn).toEqual(next.turns[0]);
+  });
+
+  it("carries a new turn whole when it was absent before", () => {
+    const prev = viewOf([start(), { t: "priced", at: at(0), turn: 1, of_turns: 4 }]);
+    const next = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "priced", at: at(0), turn: 2, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 2, reasoning: "a", answer: "b" },
+    ]);
+    const patch = diffView(prev, next);
+    expect(patch.turns.map((t) => t.index)).toEqual([1]);
+    expect(patch.turns[0].append).toBeUndefined();
+    expect(patch.turns[0].turn).toEqual(next.turns[1]);
+  });
+
+  it("carries the whole turn when partial became null on closing", () => {
+    const prev = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+    ]);
+    const next = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "a", answer: "b" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "done" },
+    ]);
+    const patch = diffView(prev, next);
+    expect(patch.turns.length).toBe(1);
+    expect(patch.turns[0].append).toBeUndefined();
+    expect(patch.turns[0].turn).toEqual(next.turns[0]);
+  });
+
+  it("carries the whole turn when the old partial is not a prefix of the new (a rebuilt stream)", () => {
+    const prev = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "old thoughts", answer: "old answer" },
+    ]);
+    const next = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "new", answer: "new answer, longer than before" },
+    ]);
+    const patch = diffView(prev, next);
+    expect(patch.turns[0].append).toBeUndefined();
+    expect(patch.turns[0].turn).toEqual(next.turns[0]);
+  });
+
+  it("builds turn 2's partial from the agentic sample up to its partial lines", () => {
+    const root = join(import.meta.dirname, "../..");
+    const file = join(root, "contract", "samples", "agentic.jsonl");
+    const lines = readFileSync(file, "utf8").split("\n").filter((l) => l.trim() !== "");
+    const turn2End = lines.findIndex((l) => {
+      const e = JSON.parse(l) as Record<string, unknown>;
+      return e.t === "turn" && e.turn === 2;
+    });
+    const state = newStreamState();
+    const view = newViewState();
+    for (const line of lines.slice(0, turn2End)) {
+      applyLine(state, line);
+      applyViewEvent(view, JSON.parse(line) as Record<string, unknown>);
+    }
+    const v = buildView("agentic.jsonl", view, state, listRow("agentic.jsonl", state, NOW, QUIET));
+    expect(v.turns.length).toBe(2);
+    const turn2 = v.turns[1];
+    expect(turn2.closed).toBe(false);
+    expect(turn2.partial).toEqual({
+      reasoning: "The test counts attempts; the loop counts time.",
+      answer: "The loop retries until the deadline, ",
+    });
+  });
+});

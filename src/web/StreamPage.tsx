@@ -125,8 +125,28 @@ function TurnSection({ turn }: { turn: TurnView }) {
       {turn.attempts !== null && (
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">attempts {turn.attempts}</p>
       )}
+      {turn.partial !== null && <TurnPartial partial={turn.partial} />}
       {turn.reply !== null && <pre className="mt-2 whitespace-pre-wrap text-sm">{turn.reply}</pre>}
     </section>
+  );
+}
+
+function TurnPartial({ partial }: { partial: NonNullable<TurnView["partial"]> }) {
+  return (
+    <div className="mt-2 flex flex-col gap-1">
+      {partial.answer !== "" && (
+        <>
+          <p className="text-xs text-slate-500 dark:text-slate-400">writing…</p>
+          <pre className="whitespace-pre-wrap">{partial.answer}</pre>
+        </>
+      )}
+      {partial.reasoning !== "" && (
+        <details>
+          <summary className="text-sm text-slate-500 dark:text-slate-400">reasoning</summary>
+          <pre className="whitespace-pre-wrap">{partial.reasoning}</pre>
+        </details>
+      )}
+    </div>
   );
 }
 

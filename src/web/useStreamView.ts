@@ -9,9 +9,22 @@ export function applyPatch(held: StreamView, patch: ViewPatch): StreamView | "re
   if (patch.seq <= held.seq) return "ignore";
   if (patch.seq !== held.seq + 1) return "refetch";
   const turns = held.turns.slice();
-  for (const { index, turn } of patch.turns) {
-    if (index > held.turns.length) return "refetch";
-    turns[index] = turn;
+  for (const { index, turn, append } of patch.turns) {
+    if (append === true) {
+      if (index < 0 || index >= held.turns.length) return "refetch";
+      const heldPartial = held.turns[index].partial;
+      if (heldPartial === null || turn.partial === null) return "refetch";
+      turns[index] = {
+        ...turn,
+        partial: {
+          reasoning: heldPartial.reasoning + turn.partial.reasoning,
+          answer: heldPartial.answer + turn.partial.answer,
+        },
+      };
+    } else {
+      if (index > held.turns.length) return "refetch";
+      turns[index] = turn;
+    }
   }
   return { ...held, seq: patch.seq, row: patch.row, waiting: patch.waiting, summary: patch.summary, turns };
 }
