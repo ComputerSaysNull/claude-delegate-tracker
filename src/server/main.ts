@@ -44,6 +44,7 @@ const app = createApp({
   isReadableDir,
   now: () => new Date(),
   streams: () => poller.list(),
+  subscribe: (listener) => poller.onChange(listener),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {
