@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #12 — 2026-10-03 — feat: show every time in local time, in dark and light themes
+
+### Changed
+
+- **One local-time formatter for the whole page**: each view formatted its own times, so a
+  new view could slip back to UTC unnoticed (streams carry UTC). They now all go through
+  one module, and a test fails if a view formats a time itself.
+- **Dark and light themes, held to it**: the page follows the system setting, and a test
+  now fails if any colour lacks its dark-mode variant, which is how a view ends up
+  unreadable in one of the two.
+
 ## #11 — 2026-10-03 — feat: make every view fit and read well on a phone
 
 ### Fixed

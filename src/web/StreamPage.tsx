@@ -4,6 +4,7 @@ import type { StreamView, TurnView, CallView, SummaryView } from "../server/view
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
 import { STATE_COLOR } from "./DelegationList.tsx";
+import { localDateTime } from "./time.ts";
 
 const WHY_COLOR: Record<ListRow["state"], string> = {
   live: "text-blue-600 dark:text-blue-400",
@@ -65,7 +66,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       </div>
       {meta !== "" && <p className="text-sm text-slate-500 dark:text-slate-400">{meta}</p>}
       <p className="text-sm text-slate-500 dark:text-slate-400">
-        started {row.startedAt === null ? "—" : new Date(row.startedAt).toLocaleString()}
+        started {localDateTime(row.startedAt)}
       </p>
       {row.why !== null && row.why !== "" && (
         <p className={`text-sm ${WHY_COLOR[row.state]}`}>{row.why}</p>

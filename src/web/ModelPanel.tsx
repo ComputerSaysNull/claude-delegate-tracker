@@ -1,5 +1,6 @@
 // The model server's figures, as the backend sends them on the cluster event.
 import type { ModelFigures } from "../server/metrics.ts";
+import { localTime } from "./time.ts";
 
 const SLATE = "text-slate-500 dark:text-slate-400";
 const AMBER = "text-amber-600 dark:text-amber-400";
@@ -27,7 +28,7 @@ function statusLine(model: ModelFigures): StatusLine {
   switch (model.status) {
     case "ok":
       return {
-        text: model.readAt === null ? "as of —" : `as of ${new Date(model.readAt).toLocaleTimeString()}`,
+        text: model.readAt === null ? "as of —" : `as of ${localTime(model.readAt)}`,
         color: SLATE,
       };
     case "unreachable":
@@ -35,7 +36,7 @@ function statusLine(model: ModelFigures): StatusLine {
         text:
           model.readAt === null
             ? "Unreachable; no figures yet"
-            : `Unreachable; no figures since ${new Date(model.readAt).toLocaleTimeString()}`,
+            : `Unreachable; no figures since ${localTime(model.readAt)}`,
         color: AMBER,
       };
     case "not available":
