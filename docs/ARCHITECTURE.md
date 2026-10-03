@@ -70,10 +70,10 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams` | The list rows, already derived. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, with their age. |
-| `GET /api/health` | The health report. |
+| `GET /api/health` | The health report: when it was checked, and whether the transcript folder is set and readable. Never the folder's path. |
 | `GET /api/updates?stream=<name>` | An SSE stream. The list, the figures and the health come as small whole objects. A followed stream sends only what changed in its current turn (appended text, counters), never its whole view. A `: ping` comment every 15 s. After a reconnect the page fetches `/api/streams/<name>` whole rather than replaying. |
 
-All routes are GET-only, with no CORS headers. The page keeps no state the backend doesn't have.
+All routes are GET-only, with no CORS headers: any other method gets `405`, and a request whose `Host` is not a loopback name or in `ALLOWED_HOSTS` gets `403` before any route runs. Any other path serves the built page (`dist/web`), so a deep link opens the page. The page keeps no state the backend doesn't have.
 
 ## When something fails
 
@@ -282,6 +282,7 @@ src/server/
     nodes.ts            node figures over SSH: one open connection per node
     titles.ts           titles from the task
     app.ts              Hono routes, SSE, Host check, static files
+    main.ts             the entry `npm start` runs: settings, the app, loopback only
 src/web/                React page: list, stream view, panels, banners
 contract/               vendored from a server release, plus VERSION
 scripts/update-contract.ts  the only thing that writes contract/

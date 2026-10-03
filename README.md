@@ -35,7 +35,9 @@ npm install
 npm start
 ```
 
-Then open the loopback port in a browser. That is the whole setup: it reads the transcript folder itself, so there is nothing else to start. It listens on loopback only.
+`npm start` builds the page, then starts the server and prints the address to open. That is the whole setup: it reads the transcript folder itself, so there is nothing else to start. It listens on loopback only.
+
+Settings are read from the environment, and from a `.env` file in the repo root if there is one; a value already in the environment wins. A setting it cannot use (such as a `TRACKER_PORT` that is not a port number) stops the start with a message naming it.
 
 To reach it from a phone, share the tracker port through the overlay VPN's serve, then open the page on the phone. Only devices on that private network can reach it.
 

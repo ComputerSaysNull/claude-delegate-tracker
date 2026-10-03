@@ -83,6 +83,7 @@ owns = [
   "src/server/nodes.ts",
   "src/server/titles.ts",
   "src/server/app.ts",
+  "src/server/main.ts",
   "src/web/**",
 ]
 covers_not = """
