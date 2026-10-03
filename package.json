@@ -5,7 +5,9 @@
   "scripts": {
     "test": "vitest run",
     "lint": "eslint . && tsc --noEmit",
-    "update-contract": "node scripts/update-contract.ts"
+    "update-contract": "node scripts/update-contract.ts",
+    "build": "vite build",
+    "start": "vite build && node src/server/main.ts"
   },
   "type": "module",
   "private": true,
