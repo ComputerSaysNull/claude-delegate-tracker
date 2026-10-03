@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #11 — 2026-10-03 — feat: make every view fit and read well on a phone
+
+### Fixed
+
+- **Pages wider than a phone screen**: measured at 360 px, the list was 404 px wide
+  because a long title no longer truncated once it became a link, and a delegation's page
+  was 1,859 px wide because paths, commands and replies hold long unbroken strings. Long
+  text now wraps anywhere it must, and the title truncates again.
+- **Cut values out of reach on a phone**: long arguments and file paths were cut with `…`
+  and the rest only shown in a hover tooltip, which a phone cannot open. A cut value now
+  opens in full on a tap.
+
 ## #10 — 2026-10-03 — fix: close the page's live connections when you leave it
 
 ### Fixed

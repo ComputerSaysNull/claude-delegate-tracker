@@ -73,10 +73,12 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
                   <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[row.state]}`}>
                     {row.state}
                   </span>
-                  <a href={"/s/" + encodeURIComponent(row.name)} className="hover:underline">
-                    <span className="min-w-0 truncate font-medium" title={row.title}>
-                      {row.title}
-                    </span>
+                  <a
+                    href={"/s/" + encodeURIComponent(row.name)}
+                    className="min-w-0 truncate font-medium hover:underline"
+                    title={row.title}
+                  >
+                    {row.title}
                   </a>
                 </div>
                 {meta !== "" && (

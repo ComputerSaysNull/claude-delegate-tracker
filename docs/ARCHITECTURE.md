@@ -209,6 +209,11 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Say when the list is capped at 20.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 
+### On a phone
+
+- Long unbroken text (paths, commands, replies) wraps; nothing widens the page past the screen.
+- A value cut to one line opens in full on a tap, since a phone has no hover for a tooltip.
+
 ### Absent is not zero
 
 - A missing figure shows `—` or nothing, never `0` or `0%`; a measured 0 shows as 0. This applies to cached tokens, reuse, tokens returned, load, effort, attempts, sizes, exit codes and tool time.

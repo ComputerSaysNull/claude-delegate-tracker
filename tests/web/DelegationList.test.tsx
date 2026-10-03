@@ -41,6 +41,14 @@ function list(rows: ListRow[], overrides: Partial<ListResponse> = {}): ListRespo
 describe("DelegationList", () => {
   afterEach(cleanup);
 
+  it("links the title and truncates it on the link itself, so a long title cannot widen a phone screen", () => {
+    render(<DelegationList list={list([row({ title: "A title long enough to need cutting on a phone" })])} />);
+    const link = screen.getByRole("link", { name: "A title long enough to need cutting on a phone" });
+    expect(link.getAttribute("href")).toBe("/s/stream-1");
+    expect(link.className).toMatch(/\bmin-w-0\b/);
+    expect(link.className).toMatch(/\btruncate\b/);
+  });
+
   it("shows the waiting line for a null list", () => {
     render(<DelegationList list={null} />);
     expect(screen.getByText("Waiting for the first list…")).toBeTruthy();

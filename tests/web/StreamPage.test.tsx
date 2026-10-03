@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { applyPatch } from "../../src/web/useStreamView.ts";
 import { StreamViewBody } from "../../src/web/StreamPage.tsx";
 import type { StreamView, ViewPatch, TurnView, CallView } from "../../src/server/view.ts";
@@ -256,5 +256,31 @@ describe("StreamViewBody", () => {
 
     expect(screen.getByText("final answer")).toBeTruthy();
     expect(screen.queryByText("writing…")).toBeNull();
+  });
+});
+
+describe("long values on a phone", () => {
+  afterEach(cleanup);
+  const LONG = "/w/" + "a_very_long_directory_name_".repeat(6) + "file.py";
+
+  it("an argument is cut to one line, and one tap shows all of it", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", LONG]] })] })] })} />);
+    const summary = screen.getByText(`path: ${LONG}`);
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+    expect(summary.className).toMatch(/\btruncate\b/);
+    fireEvent.click(summary);
+    expect(details!.open).toBe(true);
+  });
+
+  it("a file path is cut to one line, and one tap shows all of it", () => {
+    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null }] })} />);
+    const summary = screen.getByText(LONG);
+    const details = summary.closest("details");
+    expect(details).not.toBeNull();
+    expect(details!.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details!.open).toBe(true);
   });
 });
