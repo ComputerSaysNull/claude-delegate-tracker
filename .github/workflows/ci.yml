@@ -1,0 +1,113 @@
+name: ci
+
+# The gate runs here as well as in the commit hook, from the same script. The hook is fast
+# feedback; this is the authority that `--no-verify` cannot walk past.
+#
+# Job names are the required checks in .github/ruleset.json: renaming a job blocks every
+# pull request until the ruleset is edited too.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: docs and secrets gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          # The commit-authorship check walks a range, so it needs real history. A
+          # shallow clone would check nothing and still report success.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+
+      # Identifying literals are never committed -- a file listing what must not be
+      # committed is itself the leak -- so CI reads them from a repository secret. Without
+      # the secret the gate still runs its committed patterns and says which mode it used.
+      - name: Materialise local forbidden strings
+        env:
+          FORBIDDEN: ${{ secrets.FORBIDDEN_STRINGS }}
+        # Guarded inside the script, not with a step-level `if`: a step's own `env` is not
+        # available to its own `if`, so that form would test an always-empty value.
+        run: |
+          if [ -n "$FORBIDDEN" ]; then
+            echo "$FORBIDDEN" > security/forbidden_strings.txt
+            echo "forbidden strings loaded from repository secret"
+          else
+            echo "no FORBIDDEN_STRINGS secret set; committed patterns only"
+          fi
+
+      # Nothing installed, deliberately: the gate uses only the standard library, so a
+      # broken install cannot disable it. GITHUB_EVENT_PATH carries the pull request title
+      # and body, a public surface written outside git that no hook can see.
+      - name: Run the gate
+        run: python scripts/docs_gate.py --mode ci --diff origin/${{ github.base_ref || 'main' }}...HEAD --pr-event "$GITHUB_EVENT_PATH"
+
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # ESLint, then the type check: one job, so the ruleset names one check.
+      - name: ESLint and tsc
+        run: npm run lint
+
+  tests:
+    name: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.14"
+
+      - name: Install
+        run: |
+          npm ci
+          python -m pip install pytest==9.1.1
+
+      - name: Vitest
+        run: npm test
+
+      # The gate's own tests: every check proven able to fail.
+      - name: Gate tests
+        run: python -m pytest tests/gate -q -p no:cacheprovider
+
+  gitleaks:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0 # scan history, not just the tip
+
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e  # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
