@@ -86,7 +86,8 @@ describe("DelegationList", () => {
 
   it("omits null meta pieces and never leaves a dangling separator", () => {
     render(<DelegationList list={list([row({ kind: "one-shot" })])} />);
-    const meta = screen.getByText("one-shot");
+    // `one-shot` also appears as a kind-filter option, so scope to the meta paragraph.
+    const meta = screen.getByText("one-shot", { selector: "p" });
     expect(meta.textContent).toBe("one-shot");
     expect(screen.queryByText("null")).toBeNull();
     expect(screen.queryByText("·")).toBeNull();
@@ -190,5 +191,100 @@ describe("DelegationList", () => {
     fireEvent.click(screen.getByRole("button", { name: "Show older" }));
     await screen.findByText("Already shown");
     expect(screen.getAllByText("Already shown")).toHaveLength(1);
+  });
+
+  it("narrows the rows when typing in the search input", () => {
+    render(
+      <DelegationList
+        list={list([
+          row({ name: "a", title: "Refactor the auth module" }),
+          row({ name: "b", title: "Fix the login screen" }),
+        ])}
+      />,
+    );
+    const search = screen.getByRole("searchbox", { name: "Search titles" });
+    fireEvent.change(search, { target: { value: "auth" } });
+    expect(screen.getByText("Refactor the auth module")).toBeTruthy();
+    expect(screen.queryByText("Fix the login screen")).toBeNull();
+  });
+
+  it("shows only the selected state and flips aria-pressed", () => {
+    render(
+      <DelegationList
+        list={list([
+          row({ name: "a", state: "live", title: "Live task" }),
+          row({ name: "b", state: "ok", title: "Ok task" }),
+        ])}
+      />,
+    );
+    const okButton = screen.getByRole("button", { name: "ok" });
+    expect(okButton.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(okButton);
+    expect(okButton.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Ok task")).toBeTruthy();
+    expect(screen.queryByText("Live task")).toBeNull();
+    fireEvent.click(okButton);
+    expect(okButton.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByText("Live task")).toBeTruthy();
+    expect(screen.getByText("Ok task")).toBeTruthy();
+  });
+
+  it("narrows by kind", () => {
+    render(
+      <DelegationList
+        list={list([
+          row({ name: "a", kind: "claude-code", title: "Code task" }),
+          row({ name: "b", kind: "one-shot", title: "One shot task" }),
+        ])}
+      />,
+    );
+    const kind = screen.getByRole("combobox", { name: "Kind" });
+    fireEvent.change(kind, { target: { value: "one-shot" } });
+    expect(screen.getByText("One shot task")).toBeTruthy();
+    expect(screen.queryByText("Code task")).toBeNull();
+  });
+
+  it("narrows by model", () => {
+    render(
+      <DelegationList
+        list={list([
+          row({ name: "a", model: "claude-sonnet-4", title: "Sonnet task" }),
+          row({ name: "b", model: "claude-opus-4", title: "Opus task" }),
+        ])}
+      />,
+    );
+    const model = screen.getByRole("combobox", { name: "Model" });
+    fireEvent.change(model, { target: { value: "claude-opus-4" } });
+    expect(screen.getByText("Opus task")).toBeTruthy();
+    expect(screen.queryByText("Sonnet task")).toBeNull();
+  });
+
+  it("shows the N of M loaded line and Clear restores all rows", () => {
+    render(
+      <DelegationList
+        list={list([
+          row({ name: "a", title: "Alpha" }),
+          row({ name: "b", title: "Beta" }),
+          row({ name: "c", title: "Gamma" }),
+        ])}
+      />,
+    );
+    const search = screen.getByRole("searchbox", { name: "Search titles" });
+    fireEvent.change(search, { target: { value: "alpha" } });
+    expect(screen.getByText("Showing 1 of 3 loaded")).toBeTruthy();
+    expect(screen.getByText("Alpha")).toBeTruthy();
+    expect(screen.queryByText("Beta")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByText("Alpha")).toBeTruthy();
+    expect(screen.getByText("Beta")).toBeTruthy();
+    expect(screen.getByText("Gamma")).toBeTruthy();
+  });
+
+  it("shows the no-match message when nothing matches", () => {
+    render(<DelegationList list={list([row({ name: "a", title: "Alpha" })])} />);
+    const search = screen.getByRole("searchbox", { name: "Search titles" });
+    fireEvent.change(search, { target: { value: "zzz" } });
+    expect(screen.getByText("No loaded delegation matches.")).toBeTruthy();
+    expect(screen.queryByText("Alpha")).toBeNull();
   });
 });

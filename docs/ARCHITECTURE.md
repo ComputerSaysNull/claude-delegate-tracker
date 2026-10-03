@@ -208,6 +208,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 
 - Order by `start.at`, newest first, never by last activity.
 - Say when the list is capped at 20, and offer older ones a page at a time; older pages are a snapshot, not live.
+- Search and filters (title words, state, kind, model) apply to the rows loaded so far, live and older alike, and say how many of them they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 
 ### On a phone

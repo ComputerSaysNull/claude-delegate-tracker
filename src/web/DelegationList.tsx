@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
+import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "./filter.ts";
 import { localDateTime } from "./time.ts";
 
 export const STATE_COLOR: Record<ListRow["state"], string> = {
@@ -20,6 +21,14 @@ const WHY_COLOR: Record<ListRow["state"], string> = {
   failed: "text-red-600 dark:text-red-400",
   "cut off": "text-orange-600 dark:text-orange-400",
 };
+
+const STATES: ListRow["state"][] = ["live", "queued", "quiet", "ok", "failed", "cut off"];
+
+const CONTROL_CLASS =
+  "rounded border border-slate-300 bg-white px-2 py-1 text-sm text-slate-900 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100";
+
+const CLEAR_CLASS =
+  "rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800";
 
 function metaLine(row: ListRow): string {
   const pieces = [
@@ -74,18 +83,31 @@ function RowCard({ row }: { row: ListRow }) {
   );
 }
 
+function toggleState(prev: RowFilter, state: ListRow["state"]): RowFilter {
+  const has = prev.states.includes(state);
+  return { ...prev, states: has ? prev.states.filter((s) => s !== state) : [...prev.states, state] };
+}
+
 export function DelegationList({ list }: { list: ListResponse | null }) {
   const [older, setOlder] = useState<ListRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [filter, setFilter] = useState<RowFilter>(NO_FILTER);
 
   if (list === null) {
     return <p className="text-slate-500 dark:text-slate-400">Waiting for the first list…</p>;
   }
 
   const live = list.rows;
+  const loaded = [...live, ...older];
+  const filtering = isFiltering(filter);
+  const filteredLive = filterRows(live, filter);
+  const filteredOlder = filterRows(older, filter);
+  const shownCount = filteredLive.length + filteredOlder.length;
+  const kindChoices = choices(loaded, "kind");
+  const modelChoices = choices(loaded, "model");
 
   async function loadOlder(): Promise<void> {
     if (loading) return;
@@ -123,15 +145,87 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
       {list.rows.length === 0 ? (
         <p className="text-slate-500 dark:text-slate-400">No delegations yet.</p>
       ) : (
-        <ul className="mt-2 flex flex-col gap-3">
-          {list.rows.map((row) => (
-            <RowCard key={row.name} row={row} />
-          ))}
-          {list.capped &&
-            older.map((row) => (
-              <RowCard key={row.name} row={row} />
-            ))}
-        </ul>
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              type="search"
+              placeholder="Search titles"
+              aria-label="Search titles"
+              value={filter.text}
+              onChange={(e) => setFilter((prev) => ({ ...prev, text: e.target.value }))}
+              className={`${CONTROL_CLASS} placeholder-slate-400 dark:placeholder-slate-500`}
+            />
+            {STATES.map((state) => {
+              const pressed = filter.states.includes(state);
+              return (
+                <button
+                  key={state}
+                  type="button"
+                  aria-pressed={pressed}
+                  onClick={() => setFilter((prev) => toggleState(prev, state))}
+                  className={
+                    pressed
+                      ? `rounded border px-2 py-0.5 text-xs font-medium ${STATE_COLOR[state]}`
+                      : "rounded border border-slate-300 px-2 py-0.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:text-slate-300 dark:hover:bg-slate-800"
+                  }
+                >
+                  {state}
+                </button>
+              );
+            })}
+            <select
+              aria-label="Kind"
+              value={filter.kind ?? ""}
+              onChange={(e) => setFilter((prev) => ({ ...prev, kind: e.target.value === "" ? null : e.target.value }))}
+              className={CONTROL_CLASS}
+            >
+              <option value="">All kinds</option>
+              {kindChoices.map((kind) => (
+                <option key={kind} value={kind}>
+                  {kind}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Model"
+              value={filter.model ?? ""}
+              onChange={(e) => setFilter((prev) => ({ ...prev, model: e.target.value === "" ? null : e.target.value }))}
+              className={CONTROL_CLASS}
+            >
+              <option value="">All models</option>
+              {modelChoices.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+          </div>
+          {filtering && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {shownCount === 0 ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">No loaded delegation matches.</p>
+              ) : (
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Showing {shownCount} of {loaded.length} loaded
+                </p>
+              )}
+              <button type="button" onClick={() => setFilter(NO_FILTER)} className={CLEAR_CLASS}>
+                Clear
+              </button>
+            </div>
+          )}
+          {(!filtering || shownCount > 0) && (
+            <ul className="mt-2 flex flex-col gap-3">
+              {filteredLive.map((row) => (
+                <RowCard key={row.name} row={row} />
+              ))}
+              {list.capped &&
+                filteredOlder.map((row) => (
+                  <RowCard key={row.name} row={row} />
+                ))}
+            </ul>
+          )}
+        </>
       )}
       {list.capped && (
         <div className="mt-3">
