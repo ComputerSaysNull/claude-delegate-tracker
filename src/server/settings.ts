@@ -6,6 +6,9 @@ export interface Settings {
   quietAfterSeconds: number;    // QUIET_AFTER_SECONDS; keep it well above the server's keepalive
   streamsPollSeconds: number;   // STREAMS_POLL_SECONDS; counted from the end of the previous pass
   followPollSeconds: number;    // FOLLOW_POLL_SECONDS; how often a followed stream is read
+  metricsUrl: string | null;    // METRICS_URL; the model server's root; null when unset or blank
+  metricsTokenEnv: string | null; // METRICS_TOKEN_ENV; the NAME of the env var holding a bearer token
+  metricsPollSeconds: number;   // METRICS_POLL_SECONDS; counted from the end of the previous scrape
 }
 
 export const DEFAULTS = {
@@ -13,7 +16,14 @@ export const DEFAULTS = {
   quietAfterSeconds: 120,
   streamsPollSeconds: 2,
   followPollSeconds: 1,
+  metricsPollSeconds: 10,
+  metricsTimeoutMs: 5000,
 } as const;
+
+function optional(env: Record<string, string | undefined>, name: string): string | null {
+  const raw = env[name]?.trim() ?? "";
+  return raw === "" ? null : raw;
+}
 
 export class SettingsError extends Error {}
 
@@ -41,5 +51,8 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     quietAfterSeconds: wholeNumber(env, "QUIET_AFTER_SECONDS", DEFAULTS.quietAfterSeconds, 1, 86400),
     streamsPollSeconds: wholeNumber(env, "STREAMS_POLL_SECONDS", DEFAULTS.streamsPollSeconds, 1, 3600),
     followPollSeconds: wholeNumber(env, "FOLLOW_POLL_SECONDS", DEFAULTS.followPollSeconds, 1, 3600),
+    metricsUrl: optional(env, "METRICS_URL"),
+    metricsTokenEnv: optional(env, "METRICS_TOKEN_ENV"),
+    metricsPollSeconds: wholeNumber(env, "METRICS_POLL_SECONDS", DEFAULTS.metricsPollSeconds, 1, 3600),
   };
 }

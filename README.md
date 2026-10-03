@@ -56,6 +56,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `ALLOWED_HOSTS` — extra Host names to accept, such as the overlay VPN's name for this machine.
 - `STREAMS_POLL_SECONDS` — how often the transcript folder is read, counted from the end of the previous read.
 - `FOLLOW_POLL_SECONDS` — how often a delegation that a page has open is read.
+- `METRICS_POLL_SECONDS` — how often the model server's figures are read.
 - The other poll intervals, and the optional identity check.
 
 Node figures are read over SSH with a dedicated key that can only run the stats command (ADR-0003).

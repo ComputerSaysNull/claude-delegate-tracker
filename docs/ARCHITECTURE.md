@@ -69,9 +69,9 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /` | The page (built static files). |
 | `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
-| `GET /api/cluster` | The latest model server and node figures, with their age. |
+| `GET /api/cluster` | The latest figures and when they were read. Today the model server's; the nodes' are to come. |
 | `GET /api/health` | The health report: when it was checked, and whether the transcript folder is set and readable. Never the folder's path. |
-| `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes. The figures and the health will come the same way, as small whole objects. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
+| `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and a `cluster` event with the figures the same way. The health will come the same way, as a small whole object. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
 Each `stream` event carries a number one above the last. The page fetches `/api/streams/<name>` whole when the SSE stream opens or reopens, and again whenever a number is skipped, rather than replaying.
 
@@ -161,7 +161,7 @@ Rules for the model server only:
 
 - Its counters count tokens, not requests.
 - A `/metrics` that answers `404` means "not available", not "idle".
-- These are one engine's figures, not a fleet's.
+- These are one engine's figures, not a fleet's. A name that appears more than once (a second engine) is left out rather than summed.
 
 ## The nodes
 

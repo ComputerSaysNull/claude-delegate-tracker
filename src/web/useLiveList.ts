@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
 import type { ListResponse } from "../server/poller.ts";
+import type { ModelFigures } from "../server/metrics.ts";
 
-export function useLiveList(): { list: ListResponse | null; connected: boolean } {
+export type Cluster = { model: ModelFigures };
+
+export function useLiveList(): {
+  list: ListResponse | null;
+  cluster: Cluster | null;
+  connected: boolean;
+} {
   const [list, setList] = useState<ListResponse | null>(null);
+  const [cluster, setCluster] = useState<Cluster | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -11,9 +19,13 @@ export function useLiveList(): { list: ListResponse | null; connected: boolean }
       setList(JSON.parse((event as MessageEvent<string>).data) as ListResponse);
       setConnected(true);
     });
+    source.addEventListener("cluster", (event) => {
+      setCluster(JSON.parse((event as MessageEvent<string>).data) as Cluster);
+      setConnected(true);
+    });
     source.onerror = () => setConnected(false);
     return () => source.close();
   }, []);
 
-  return { list, connected };
+  return { list, cluster, connected };
 }
