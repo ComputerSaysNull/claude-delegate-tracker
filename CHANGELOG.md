@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #13 — 2026-10-03 — feat: page back through older delegations beyond the newest 20
+
+### Added
+
+- **"Show older"** under the list: the next 20 delegations, then the next, until the oldest.
+  Until now only the newest 20 were reachable, though the folder holds over a thousand.
+  Older pages are read on request and never polled, so the live list costs no more.
+- **`GET /api/streams?before=<name>`**: the page after a name the backend listed itself;
+  any other name is `404` and is never joined onto a path.
+
 ## #12 — 2026-10-03 — feat: show every time in local time, in dark and light themes
 
 ### Changed

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Health } from "./health.ts";
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
-import type { ListResponse } from "./poller.ts";
+import type { HistoryPage, ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
 
@@ -21,6 +21,7 @@ export interface AppDeps {
   // Both return null for a name the backend did not list itself.
   view: (name: string) => StreamView | null;
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
+  history: (before: string) => HistoryPage | null;
   cluster: () => Cluster;
   subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
 }
@@ -49,7 +50,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, cluster, subscribeCluster } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, history, cluster, subscribeCluster } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -73,7 +74,13 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/health", (c) => c.json(health()));
 
   // The list rows, already derived by the poller; the page only lays them out.
-  app.get("/api/streams", (c) => c.json(streams()));
+  // With ?before=<name>, the page of older streams after it; the name is only looked up.
+  app.get("/api/streams", (c) => {
+    const before = c.req.query("before");
+    if (before === undefined) return c.json(streams());
+    const page = history(before);
+    return page === null ? c.json({ error: "not found" }, 404) : c.json(page);
+  });
 
   app.get("/api/cluster", (c) => c.json(cluster()));
 

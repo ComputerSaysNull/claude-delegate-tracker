@@ -1,4 +1,5 @@
-import type { ListResponse } from "../server/poller.ts";
+import { useState } from "react";
+import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
 import { localDateTime } from "./time.ts";
 
@@ -41,9 +42,74 @@ function startLine(row: ListRow): string {
   return text;
 }
 
+function RowCard({ row }: { row: ListRow }) {
+  const meta = metaLine(row);
+  return (
+    <li className="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+      <div className="flex items-center gap-2">
+        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[row.state]}`}>
+          {row.state}
+        </span>
+        <a
+          href={"/s/" + encodeURIComponent(row.name)}
+          className="min-w-0 truncate font-medium hover:underline"
+          title={row.title}
+        >
+          {row.title}
+        </a>
+      </div>
+      {meta !== "" && (
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{meta}</p>
+      )}
+      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{startLine(row)}</p>
+      {row.why !== null && row.why !== "" && (
+        <p className={`mt-1 text-sm ${WHY_COLOR[row.state]}`}>{row.why}</p>
+      )}
+      {row.unknownFormat !== null && row.unknownFormat !== "" && (
+        <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
+          format {row.unknownFormat}: shown as best it can be
+        </p>
+      )}
+    </li>
+  );
+}
+
 export function DelegationList({ list }: { list: ListResponse | null }) {
+  const [older, setOlder] = useState<ListRow[]>([]);
+  const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
+  const [started, setStarted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
   if (list === null) {
     return <p className="text-slate-500 dark:text-slate-400">Waiting for the first list…</p>;
+  }
+
+  const live = list.rows;
+
+  async function loadOlder(): Promise<void> {
+    if (loading) return;
+    const before = started ? cursor : live[live.length - 1]?.name ?? null;
+    if (before === null) return;
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch("/api/streams?before=" + encodeURIComponent(before));
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const page = (await res.json()) as HistoryPage;
+      setOlder((prev) => {
+        const shown = new Set<string>();
+        for (const r of live) shown.add(r.name);
+        for (const r of prev) shown.add(r.name);
+        return [...prev, ...page.rows.filter((r) => !shown.has(r.name))];
+      });
+      setCursor(page.nextBefore);
+      setStarted(true);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -58,38 +124,35 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
         <p className="text-slate-500 dark:text-slate-400">No delegations yet.</p>
       ) : (
         <ul className="mt-2 flex flex-col gap-3">
-          {list.rows.map((row) => {
-            const meta = metaLine(row);
-            return (
-              <li key={row.name} className="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[row.state]}`}>
-                    {row.state}
-                  </span>
-                  <a
-                    href={"/s/" + encodeURIComponent(row.name)}
-                    className="min-w-0 truncate font-medium hover:underline"
-                    title={row.title}
-                  >
-                    {row.title}
-                  </a>
-                </div>
-                {meta !== "" && (
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{meta}</p>
-                )}
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{startLine(row)}</p>
-                {row.why !== null && row.why !== "" && (
-                  <p className={`mt-1 text-sm ${WHY_COLOR[row.state]}`}>{row.why}</p>
-                )}
-                {row.unknownFormat !== null && row.unknownFormat !== "" && (
-                  <p className="mt-1 text-sm text-amber-600 dark:text-amber-400">
-                    format {row.unknownFormat}: shown as best it can be
-                  </p>
-                )}
-              </li>
-            );
-          })}
+          {list.rows.map((row) => (
+            <RowCard key={row.name} row={row} />
+          ))}
+          {list.capped &&
+            older.map((row) => (
+              <RowCard key={row.name} row={row} />
+            ))}
         </ul>
+      )}
+      {list.capped && (
+        <div className="mt-3">
+          {error && (
+            <p className="text-sm text-amber-700 dark:text-amber-300">Could not load older delegations.</p>
+          )}
+          {started && cursor === null && !loading ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400">That is the oldest.</p>
+          ) : (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => {
+                void loadOlder();
+              }}
+              className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              {loading ? "Loading…" : "Show older"}
+            </button>
+          )}
+        </div>
       )}
     </section>
   );

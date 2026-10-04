@@ -23,6 +23,12 @@ export interface ListResponse {
   schemaFailures: number;
 }
 
+// A page of older streams: read on request, never polled.
+export interface HistoryPage {
+  rows: ListRow[];
+  nextBefore: string | null; // the cursor for the page after this one; null at the oldest
+}
+
 // What the health report needs from the poller beyond the list.
 export interface PollerStatus {
   clockSkewSeconds: number | null; // now − at on the freshest new line; kept while nothing is new
@@ -65,6 +71,7 @@ export class Poller {
   private readonly entries = new Map<string, Entry>();
   private readonly listeners = new Set<(list: ListResponse) => void>();
   private known = new Set<string>();
+  private ordered: string[] = []; // every listed name, newest first, unstamped last
   private current: ListResponse = emptyList();
   private timer: ReturnType<typeof setTimeout> | null = null;
   private followTimer: ReturnType<typeof setTimeout> | null = null;
@@ -95,6 +102,7 @@ export class Poller {
       return;
     }
     this.known = listing.all;
+    this.ordered = [...listing.all];
     this.failures = 0;
     this.setStatus({ ...this.status_, retryInSeconds: null });
 
@@ -161,6 +169,29 @@ export class Poller {
   onChange(listener: (list: ListResponse) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  // The streams listed after `before`, a page at a time; null for a name the listing did not
+  // hold. Each is read whole once and kept nowhere, so nothing polls it.
+  history(before: string): HistoryPage | null {
+    const { dir, now, quietAfterSeconds } = this.deps;
+    if (dir === null || !this.known.has(before)) return null;
+    const start = this.ordered.indexOf(before) + 1;
+    const names = this.ordered.slice(start, start + LIST_LIMIT);
+    const at = now();
+    const rows: ListRow[] = [];
+    for (const name of names) {
+      const state = newStreamState();
+      try {
+        for (const line of new StreamReader(join(dir, name)).read().lines) applyLine(state, line);
+      } catch {
+        continue; // gone since it was listed
+      }
+      rows.push(listRow(name, state, at, quietAfterSeconds));
+    }
+    rows.sort(compareRows);
+    const more = start + LIST_LIMIT < this.ordered.length;
+    return { rows, nextBefore: more && names.length > 0 ? names[names.length - 1] : null };
   }
 
   // One stream's whole view, or null for a name the folder listing did not hold.

@@ -498,3 +498,67 @@ describe("health inputs", () => {
     }
   });
 });
+
+describe("history", () => {
+  // 45 finished streams, one a minute; names sort newest first.
+  function fill(dir: string, count: number): string[] {
+    const names: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const at = new Date(Date.UTC(2026, 9, 1, 10, i)).toISOString();
+      const stamp = at.replace(/[-:]/g, "").replace("Z", "").replace(/\.(\d{3})$/, ".$1");
+      names.push(makeStream(dir, `${stamp}-s${i}.jsonl`, at));
+    }
+    return names.reverse(); // newest first
+  }
+
+  it("pages back from a listed name, 20 at a time, newest first, without repeating", () => {
+    const dir = makeDir();
+    try {
+      const names = fill(dir, 45);
+      const poller = makePoller(dir);
+      poller.pass();
+      const live = poller.list().rows.map((r) => r.name);
+      expect(live).toEqual(names.slice(0, 20));
+      const page1 = poller.history(live[live.length - 1]);
+      expect(page1?.rows.map((r) => r.name)).toEqual(names.slice(20, 40));
+      expect(page1?.nextBefore).toBe(names[39]);
+      const page2 = poller.history(page1!.nextBefore!);
+      expect(page2?.rows.map((r) => r.name)).toEqual(names.slice(40, 45));
+      expect(page2?.nextBefore).toBeNull();
+      expect(page2?.rows[0].state).toBe("ok");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a cursor the folder listing did not hold, even a path that exists", () => {
+    const dir = makeDir();
+    try {
+      fill(dir, 3);
+      writeFileSync(join(dir, "..", "outside.jsonl"), "");
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.history("nope.jsonl")).toBeNull();
+      expect(poller.history("../outside.jsonl")).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(join(dir, "..", "outside.jsonl"), { force: true });
+    }
+  });
+
+  it("reads older streams on request only: they get no reader that keeps polling", () => {
+    const dir = makeDir();
+    try {
+      const names = fill(dir, 30);
+      const poller = makePoller(dir);
+      poller.pass();
+      poller.history(names[19]);
+      // An older stream that grows is not re-read by the next pass: it was never listed live.
+      appendFileSync(join(dir, names[25]), JSON.stringify(startEvent("2026-10-03T12:00:00.000Z")) + "\n");
+      poller.pass();
+      expect(poller.list().rows.map((r) => r.name)).not.toContain(names[25]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
