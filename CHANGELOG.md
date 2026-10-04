@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #15 — 2026-10-04 — feat: search and filter the delegations shown
+
+### Added
+
+- **Search and filters over the list**: words from the title (all of them, any order),
+  state, kind and model, applied to the live rows and any older pages loaded, with how many
+  of the loaded rows are shown and a Clear button. Finding one delegation meant scrolling
+  through cards. The filtering runs in the page over what is loaded; it reads no more files.
+
 ## #14 — 2026-10-04 — feat: start the tracker at logon without a manual command
 
 ### Added
