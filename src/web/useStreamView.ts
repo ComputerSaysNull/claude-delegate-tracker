@@ -1,6 +1,7 @@
 // Follows one stream's view: the whole view once on connect, then the patches the
 // followed stream sends. The apply rule lives in applyPatch so it can be unit tested.
 import { useEffect, useState } from "react";
+import { closeLive, openLive } from "./live.ts";
 import type { StreamView, ViewPatch } from "../server/view.ts";
 
 // Apply one patch to the held view. Returns "refetch" when the seq is a gap (the
@@ -92,7 +93,7 @@ export function useStreamView(name: string): { view: StreamView | null; connecte
       }
     };
 
-    const source = new EventSource("/api/updates?stream=" + encodeURIComponent(name));
+    const source = openLive("/api/updates?stream=" + encodeURIComponent(name));
     source.addEventListener("open", () => {
       if (disposed) return;
       setConnected(true);
@@ -119,7 +120,7 @@ export function useStreamView(name: string): { view: StreamView | null; connecte
 
     return () => {
       disposed = true;
-      source.close();
+      closeLive(source);
     };
   }, [name]);
 
