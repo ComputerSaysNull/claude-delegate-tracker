@@ -52,11 +52,11 @@ export function groupRows(rows: ListRow[], now: Date): RowGroup[] {
   return groups;
 }
 
-// What is running and queued now, whenever it started, and what failed today.
+// What is running (asking its caller included) and queued now, whenever it started, and what failed today.
 export function todayCounts(rows: ListRow[], now: Date): { running: number; queued: number; failed: number } {
   const startOfToday = midnight(now).getTime();
   return {
-    running: rows.filter((r) => r.state === "live").length,
+    running: rows.filter((r) => r.state === "live" || r.state === "asking").length, // asking is still running
     queued: rows.filter((r) => r.state === "queued").length,
     failed: rows.filter((r) => r.state === "failed" && r.startedAt !== null && Date.parse(r.startedAt) >= startOfToday).length,
   };

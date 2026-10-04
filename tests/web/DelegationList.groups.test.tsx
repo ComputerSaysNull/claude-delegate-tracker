@@ -99,6 +99,18 @@ describe("DelegationList grouped by date", () => {
     expect(screen.getByRole("link", { name: "Delegation q" }).closest("li")!.textContent).toContain("queued 1m of 10m");
   });
 
+  it("an asking card is tinted like a running one and says it waits for an answer", () => {
+    render(<DelegationList list={list([row("a", { state: "asking", age: "48s" })])} />);
+    const card = screen.getByRole("link", { name: "Delegation a" }).closest("li")!;
+    expect(card.className).toMatch(/\bbg-state-asking\//);
+    expect(card.textContent).toContain("waiting for an answer 48s");
+  });
+
+  it("counts an asking run as running in the summary line", () => {
+    render(<DelegationList list={list([row("r", { state: "live" }), row("a", { state: "asking" })])} />);
+    expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "2 running · 0 queued · 0 failed today")).toBeTruthy();
+  });
+
   it("a finished card shows no progress", () => {
     render(<DelegationList list={list([row("done", { turns: "4 of 4" })])} />);
     expect(screen.queryByRole("progressbar")).toBeNull();

@@ -21,7 +21,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null,
     toolTime: null, attempts: null, repeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
-    clock: null, at: null, ...overrides,
+    clock: null, at: null, question: null, answer: null, ...overrides,
   };
 }
 
@@ -172,6 +172,49 @@ describe("the conversation", () => {
   it("has no copy buttons", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { reply: "done" })], summary: summary() })} />);
     expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
+  });
+});
+
+describe("a question to the caller", () => {
+  const asked = turn(1, { closed: false, question: { questions: ["Should I count the vendored callers?"] } });
+
+  it("shows the question as a highlighted message from the delegation, waiting and for how long", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "asking", age: "48s" }), turns: [asked] })} />);
+    const note = screen.getByRole("note", { name: "Question for the caller" });
+    expect(note.textContent).toContain("Should I count the vendored callers?");
+    expect(note.textContent).toContain("Waiting for an answer · 48s");
+    expect(note.closest('[data-from="delegation"]')).not.toBeNull();
+  });
+
+  it("shows the caller's answer as the caller's message, and stops waiting", () => {
+    const answered = turn(1, { closed: false, question: asked.question, answer: { text: "Leave them out", waited: "48s", bestReading: false } });
+    render(<StreamViewBody view={view({ row: row({ state: "live" }), task: null, turns: [answered] })} />);
+    const [reply] = document.querySelectorAll('[data-from="caller"]');
+    expect(reply.textContent).toContain("Leave them out");
+    expect(reply.textContent).toContain("48s");
+    expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).not.toContain("Waiting for an answer");
+  });
+
+  it("says in the question how long the answer took, once it came", () => {
+    const answered = turn(1, { question: asked.question, answer: { text: "Leave them out", waited: "1m12s", bestReading: false } });
+    render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
+    expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).toContain("Answered after 1m12s");
+  });
+
+  it("marks a question still waiting with a pulsing dot", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "asking", age: "48s" }), turns: [asked] })} />);
+    expect(screen.getByRole("note", { name: "Question for the caller" }).querySelector(".animate-pulse")).not.toBeNull();
+  });
+
+  it("says when the caller left the choice to the delegation", () => {
+    const answered = turn(1, { question: asked.question, answer: { text: "Proceed on your best reading.", waited: "1m01s", bestReading: true } });
+    render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
+    expect(document.querySelector('[data-from="caller"]')!.textContent).toMatch(/left the choice to the delegation/);
+  });
+
+  it("does not claim to be waiting once the run has stopped", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "failed" }), turns: [asked] })} />);
+    expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).not.toContain("Waiting for an answer");
   });
 });
 

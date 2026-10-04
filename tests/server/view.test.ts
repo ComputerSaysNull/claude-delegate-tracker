@@ -366,6 +366,37 @@ describe("when a turn started", () => {
   });
 });
 
+describe("a question to the caller and its answer", () => {
+  it("belong to the turn that was open when the question was asked", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: "2026-10-01T13:00:00.000Z", questions: ["Which file should the summary quote?"] },
+      { t: "answer", at: at(0), text: "quote CHANGELOG.md", waited_seconds: 5.4 },
+      { t: "turn", at: at(0), turn: 1, text: "" },
+      { t: "priced", at: at(0), turn: 2 },
+    ]);
+    expect(v.turns[0].question).toEqual({ questions: ["Which file should the summary quote?"] });
+    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false });
+    expect([v.turns[1].question, v.turns[1].answer]).toEqual([null, null]);
+  });
+
+  it("says when the caller left the choice to the delegation", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: at(0), questions: ["A or B?"] },
+      { t: "answer", at: at(0), text: "Proceed on your best reading.", waited_seconds: 61, best_reading: true },
+    ]);
+    expect(v.turns[0].answer).toEqual({ text: "Proceed on your best reading.", waited: "1m01s", bestReading: true });
+  });
+
+  it("leaves out a question that lists no text", () => {
+    const v = viewOf([start(), { t: "priced", at: at(0), turn: 1 }, { t: "question", at: at(0), questions: [42, "Which?"] }]);
+    expect(v.turns[0].question).toEqual({ questions: ["Which?"] });
+  });
+});
+
 describe("a turn's figures and the run's clock", () => {
   it("a closed turn carries its tokens in and out and its decode speed", () => {
     const t = viewOf([

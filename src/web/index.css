@@ -12,6 +12,7 @@
   --warn: #955800;
   --hot: #c42b2b;
   --state-live: #1c65bf;
+  --state-asking: #17549e;
   --state-queued: #955800;
   --state-quiet: #566273;
   --state-ok: #127648;
@@ -30,6 +31,7 @@
     --warn: #f0b445;
     --hot: #ff7a7a;
     --state-live: #5eb1ff;
+    --state-asking: #8cc6ff;
     --state-queued: #f0b445;
     --state-quiet: #9ba7b5;
     --state-ok: #46d19a;
@@ -48,6 +50,7 @@
   --color-warn: var(--warn);
   --color-hot: var(--hot);
   --color-state-live: var(--state-live);
+  --color-state-asking: var(--state-asking);
   --color-state-queued: var(--state-queued);
   --color-state-quiet: var(--state-quiet);
   --color-state-ok: var(--state-ok);

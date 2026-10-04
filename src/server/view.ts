@@ -35,6 +35,8 @@ export interface TurnView {
   attempts: number | null;      // only when above 1
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
+  question: { questions: string[] } | null;  // the `question` asked during this turn
+  answer: { text: string; waited: string; bestReading: boolean } | null; // the caller's reply to it
   tokensIn: number | null;      // closed turn: input_tokens
   tokensOut: number | null;     // closed turn: output_tokens
   tokS: number | null;          // closed turn: out_tok_s, the decode speed
@@ -93,10 +95,11 @@ export interface TurnSlot {
   priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
   turn: Record<string, unknown> | null; alive: Record<string, unknown> | null;
   partialReasoning: string; partialAnswer: string; partialSeen: boolean;
+  question: Record<string, unknown> | null; answer: Record<string, unknown> | null;
 }
 
 function newSlot(): TurnSlot {
-  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false };
+  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false, question: null, answer: null };
 }
 
 export function newViewState(): ViewState {
@@ -139,14 +142,19 @@ export function applyViewEvent(v: ViewState, evt: Record<string, unknown>): bool
     v.seq += 1;
     return true;
   }
-  if (t === "alive") {
+  // These carry no turn number: they belong to the newest turn that has been priced.
+  if (t === "alive" || t === "question" || t === "answer") {
     let highest = -1;
     for (const [key, slot] of v.turns) {
       if (slot.priced !== null && key > highest) highest = key;
     }
     if (highest === -1) return false;
     const slot = v.turns.get(highest);
-    if (slot !== undefined) slot.alive = evt;
+    if (slot !== undefined) {
+      if (t === "alive") slot.alive = evt;
+      else if (t === "question") slot.question = evt;
+      else slot.answer = evt;
+    }
     v.seq += 1;
     return true;
   }
@@ -331,6 +339,8 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
+    question: questionOf(slot.question),
+    answer: answerOf(slot.answer),
     tokensIn: num(slot.turn?.input_tokens),
     tokensOut: num(slot.turn?.output_tokens),
     tokS: num(slot.turn?.out_tok_s),
@@ -338,6 +348,17 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     // Read through parseAt: the server writes six decimal places, which Date cannot parse.
     at: (() => { const ms = parseAt(slot.priced?.at); return ms === null ? null : new Date(ms).toISOString(); })(),
   };
+}
+
+function questionOf(evt: Record<string, unknown> | null): TurnView["question"] {
+  if (evt === null || !Array.isArray(evt.questions)) return null;
+  const questions = evt.questions.filter((q): q is string => typeof q === "string" && q !== "");
+  return questions.length === 0 ? null : { questions };
+}
+
+function answerOf(evt: Record<string, unknown> | null): TurnView["answer"] {
+  if (evt === null || typeof evt.text !== "string" || typeof evt.waited_seconds !== "number") return null;
+  return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true };
 }
 
 function fileView(e: unknown): FileView | null {

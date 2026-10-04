@@ -7,7 +7,7 @@ import { groupRows, todayCounts } from "./groups.ts";
 import { localTime } from "./time.ts";
 import { StateIcon, STATE_TEXT, STATE_LABEL, cardClass } from "./states.tsx";
 
-const STATES: ListRow["state"][] = ["live", "queued", "quiet", "ok", "failed", "cut off"];
+const STATES: ListRow["state"][] = ["live", "asking", "queued", "quiet", "ok", "failed", "cut off"];
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-line bg-card px-2 text-sm";
@@ -93,6 +93,12 @@ function RowCard({
     );
   } else if (row.state === "quiet") {
     meta = <>quiet for {row.age ?? ""}</>;
+  } else if (row.state === "asking") {
+    meta = (
+      <span className="text-state-asking">
+        waiting for an answer <span className="font-mono tabular-nums">{row.age ?? ""}</span>
+      </span>
+    );
   } else {
     const nodes = metaNodes(row);
     meta = nodes.map((node, i) => (

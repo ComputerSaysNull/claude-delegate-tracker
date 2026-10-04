@@ -1,7 +1,7 @@
 // Build stream state from transcript events, and a list row for the page.
 import { titleOf } from "./titles.ts";
 
-export const STATES = ["live", "queued", "quiet", "ok", "failed", "cut off"] as const;
+export const STATES = ["live", "asking", "queued", "quiet", "ok", "failed", "cut off"] as const;
 export type State = (typeof STATES)[number];
 export const KNOWN_MAJOR = 1;
 
@@ -16,10 +16,11 @@ export interface StreamState {
   badLines: number;
   waitOfSeconds: number | null;  // the newest `waiting.of_seconds`: how long it may wait
   endsInSeconds: number | null;  // the newest `alive.ends_in_seconds`: the deadline that ends the run
+  askedAtMs: number | null;      // when the open `question` was asked; null once answered
 }
 
 export function newStreamState(): StreamState {
-  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null };
+  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null, askedAtMs: null };
 }
 
 // Normalise a 6-digit (or any) fraction to at most 3 digits before Date.parse.
@@ -52,7 +53,9 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
     s.lastSignal = t;
     if (typeof evt.turn === "number") s.maxTurn = Math.max(s.maxTurn, evt.turn);
     if (typeof evt.of_turns === "number") s.ofTurns = evt.of_turns;
-  } else if (t === "alive") {
+  } else if (t === "question") s.askedAtMs = atMs ?? s.lastAtMs;
+  else if (t === "answer") s.askedAtMs = null;
+  else if (t === "alive") {
     s.lastSignal = "alive";
     s.endsInSeconds = typeof evt.ends_in_seconds === "number" ? evt.ends_in_seconds : null;
   }
@@ -63,6 +66,8 @@ function stateOf(s: StreamState, nowMs: number, quietAfterSeconds: number): Stat
   if (s.end !== null && s.end.ok === false) return "failed";
   if (s.end !== null && s.end.ok === true && (s.end.finish_reason === "length" || s.end.finish_reason === "content_filter")) return "cut off";
   if (s.end !== null) return "ok";
+  // Waiting on its caller is not going quiet, however long the answer takes.
+  if (s.askedAtMs !== null) return "asking";
   if (s.lastAtMs === null || nowMs - s.lastAtMs >= quietAfterSeconds * 1000) return "quiet";
   return s.lastSignal === "waiting" ? "queued" : "live";
 }
@@ -91,6 +96,7 @@ function whyOf(state: State, s: StreamState): string | null {
 function ageOf(state: State, s: StreamState, nowMs: number): string | null {
   if (state === "quiet") return s.lastAtMs === null ? null : formatAge(Math.floor((nowMs - s.lastAtMs) / 1000));
   if (state === "queued") return s.waitedSeconds === null ? null : formatAge(s.waitedSeconds);
+  if (state === "asking") return s.askedAtMs === null ? null : formatAge(Math.floor((nowMs - s.askedAtMs) / 1000));
   return null;
 }
 
