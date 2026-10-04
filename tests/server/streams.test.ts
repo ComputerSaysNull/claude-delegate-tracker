@@ -139,6 +139,47 @@ describe("the title", () => {
   });
 });
 
+describe("progress on a card", () => {
+  const rowOf = (events: unknown[]) => listRow("x.jsonl", build(events), NOW, QUIET);
+
+  it("a running delegation shows the newest heartbeat's ends_in_seconds as its time left, as given", () => {
+    const r = rowOf([
+      start(),
+      { t: "alive", at: at(50_000), elapsed_seconds: 40, ends_in_seconds: 400 },
+      { t: "priced", at: at(40_000), turn: 1 },
+      { t: "alive", at: at(30_000), elapsed_seconds: 60, ends_in_seconds: 200 },
+    ]);
+    expect(r.state).toBe("live");
+    expect(r.left).toBe("3m20s");
+  });
+
+  it("shows no time left without a heartbeat that carries one", () => {
+    expect(rowOf([start(), { t: "alive", at: at(10_000), elapsed_seconds: 60, ends_in_seconds: null }]).left).toBeNull();
+    expect(rowOf([start(), { t: "priced", at: at(1_000), turn: 1 }]).left).toBeNull();
+  });
+
+  it("a queued delegation shows how long it may wait", () => {
+    const r = rowOf([start(), { t: "waiting", at: at(1_000), waited_seconds: 60, of_seconds: 600 }]);
+    expect(r.state).toBe("queued");
+    expect(r.queueOf).toBe("10m");
+  });
+
+  it("a wait limit of 0 is no limit, and shows none", () => {
+    expect(rowOf([start(), { t: "waiting", at: at(1_000), waited_seconds: 60, of_seconds: 0 }]).queueOf).toBeNull();
+    expect(rowOf([start(), { t: "waiting", at: at(1_000), waited_seconds: 60 }]).queueOf).toBeNull();
+  });
+
+  it("a finished delegation shows neither", () => {
+    const r = rowOf([
+      start(),
+      { t: "waiting", at: at(5_000), waited_seconds: 60, of_seconds: 600 },
+      { t: "alive", at: at(3_000), elapsed_seconds: 60, ends_in_seconds: 200 },
+      { t: "end", at: at(1_000), ok: true, turns: 1, elapsed_seconds: 70 },
+    ]);
+    expect([r.left, r.queueOf]).toEqual([null, null]);
+  });
+});
+
 describe("formatAge", () => {
   it("boundaries", () => {
     expect(formatAge(59)).toBe("59s");

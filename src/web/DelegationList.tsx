@@ -1,37 +1,77 @@
-import { useState } from "react";
+import { useState, Fragment, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
 import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "./filter.ts";
-import { localDateTime } from "./time.ts";
-import { StateBadge, STATE_TEXT, STATE_BADGE, cardClass } from "./states.tsx";
+import { groupRows, todayCounts } from "./groups.ts";
+import { localTime } from "./time.ts";
+import { StateIcon, STATE_TEXT, STATE_LABEL, cardClass } from "./states.tsx";
 
 const STATES: ListRow["state"][] = ["live", "queued", "quiet", "ok", "failed", "cut off"];
 
-const CONTROL_CLASS =
-  "rounded border border-line bg-card px-2 py-1 text-sm text-text";
+const SELECT_CLASS =
+  "h-9 rounded-lg border border-line bg-card px-2 text-sm";
 
 const CLEAR_CLASS =
   "rounded border border-line px-2 py-1 text-sm text-text hover:bg-line/50";
 
-function metaLine(row: ListRow): string {
-  const pieces = [
-    row.kind,
-    row.model,
-    row.effort,
-    row.turns === null ? null : `turns ${row.turns}`,
-    row.elapsed,
-  ].filter((p): p is string => p !== null && p !== "");
-  return pieces.join(" · ");
+// A live run's turns as "N of M"; null when the row is not that shape.
+function turnsRange(row: ListRow): { n: number; m: number } | null {
+  if (row.turns === null) return null;
+  const m = row.turns.match(/^(\d+) of (\d+)$/);
+  return m === null ? null : { n: Number(m[1]), m: Number(m[2]) };
 }
 
-function startLine(row: ListRow): string {
-  const time = localDateTime(row.startedAt);
-  let text = time;
-  if (row.age !== null && row.age !== "") {
-    if (row.state === "quiet") text += ` · quiet for ${row.age}`;
-    else if (row.state === "queued") text += ` · queued ${row.age}`;
+// The turns as they read on a card: "turn N of M" for a run in progress, else "N turns".
+function turnsText(row: ListRow): string | null {
+  if (row.turns === null) return null;
+  if (row.state === "live") {
+    const range = turnsRange(row);
+    if (range !== null) return `turn ${range.n} of ${range.m}`;
   }
-  return text;
+  const first = row.turns.match(/^\d+/);
+  if (first === null) return null;
+  return `${first[0]} turn${first[0] === "1" ? "" : "s"}`;
+}
+
+// The pieces of a card's second line, in order, with their own markup; " · " is added between.
+function metaNodes(row: ListRow): ReactNode[] {
+  const pieces: ReactNode[] = [];
+  if (row.kind !== "") pieces.push(row.kind);
+  const turns = turnsText(row);
+  if (turns !== null) pieces.push(turns);
+  if (row.elapsed !== null && row.elapsed !== "") {
+    pieces.push(<span className="font-mono tabular-nums">{row.elapsed}</span>);
+  }
+  if (row.state === "live" && row.left !== null) pieces.push(`${row.left} left`);
+  return pieces;
+}
+
+// A live run that reports its turns as "N of M" gets a bar of segments under its meta line.
+function turnsBar(row: ListRow): ReactNode {
+  if (row.state !== "live") return null;
+  const range = turnsRange(row);
+  if (range === null) return null;
+  const { n, m } = range;
+  return (
+    <div
+      role="progressbar"
+      aria-label="Turns"
+      aria-valuenow={n}
+      aria-valuemin={0}
+      aria-valuemax={m}
+      className="ml-[26px] mt-2.5 flex gap-[3px]"
+    >
+      {Array.from({ length: m }, (_, i) => (
+        <span
+          key={i}
+          className={`h-[5px] flex-1 rounded-[3px] ${
+            i < n - 1 ? "bg-state-live" : i === n - 1 ? "bg-state-live/45" : "bg-line"
+          }`}
+        />
+      ))}
+    </div>
+  );
 }
 
 function RowCard({
@@ -43,17 +83,35 @@ function RowCard({
   selected?: string | null;
   onOpen?: (name: string) => void;
 }) {
-  const meta = metaLine(row);
+  let meta: ReactNode;
+  if (row.state === "queued") {
+    meta = (
+      <>
+        queued {row.age ?? ""}
+        {row.queueOf !== null && row.queueOf !== "" ? ` of ${row.queueOf}` : ""}
+      </>
+    );
+  } else if (row.state === "quiet") {
+    meta = <>quiet for {row.age ?? ""}</>;
+  } else {
+    const nodes = metaNodes(row);
+    meta = nodes.map((node, i) => (
+      <Fragment key={i}>
+        {i > 0 && " · "}
+        {node}
+      </Fragment>
+    ));
+  }
   return (
     <li
-      className={`rounded-lg border p-4 ${cardClass(row.state)} ${selected === row.name ? "ring-2 ring-accent" : ""}`}
+      className={`rounded-xl border px-3.5 py-3 ${cardClass(row.state)} ${selected === row.name ? "ring-2 ring-accent" : ""}`}
       aria-current={selected === row.name ? "true" : undefined}
     >
-      <div className="flex items-center gap-2">
-        <StateBadge state={row.state} />
+      <div className="flex items-center gap-2.5">
+        <StateIcon state={row.state} />
         <a
           href={"/s/" + encodeURIComponent(row.name)}
-          className="min-w-0 truncate font-medium hover:underline"
+          className="min-w-0 flex-1 truncate font-semibold hover:underline text-text"
           title={row.title}
           onClick={(e) => {
             if (
@@ -71,13 +129,12 @@ function RowCard({
         >
           {row.title}
         </a>
+        <span className="font-mono tabular-nums text-[13px] text-muted">{localTime(row.startedAt)}</span>
       </div>
-      {meta !== "" && (
-        <p className="mt-1 text-sm text-muted">{meta}</p>
-      )}
-      <p className="mt-1 text-sm text-muted font-mono tabular-nums">{startLine(row)}</p>
+      <p className={`ml-[26px] text-[13.5px] ${row.state === "queued" ? "text-warn" : "text-muted"}`}>{meta}</p>
+      {turnsBar(row)}
       {row.why !== null && row.why !== "" && (
-        <p className={`mt-1 text-sm ${STATE_TEXT[row.state]}`}>{row.why}</p>
+        <p className={`ml-[26px] text-[13.5px] ${STATE_TEXT[row.state]}`}>{row.why}</p>
       )}
       {row.unknownFormat !== null && row.unknownFormat !== "" && (
         <p className="mt-1 text-sm text-warn">
@@ -113,6 +170,7 @@ export function DelegationList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [ownFilter, setOwnFilter] = useState<RowFilter>(NO_FILTER);
+  const [folded, setFolded] = useState<Set<string>>(new Set()); // groups folded by key; all start open
   const filter = shownFilter ?? ownFilter;
   const setFilter = (next: RowFilter | ((prev: RowFilter) => RowFilter)) => {
     const value = typeof next === "function" ? next(filter) : next;
@@ -124,6 +182,7 @@ export function DelegationList({
     return <p className="text-muted">Waiting for the first list…</p>;
   }
 
+  const now = new Date();
   const live = list.rows;
   const loaded = [...live, ...older];
   const filtering = isFiltering(filter);
@@ -132,6 +191,17 @@ export function DelegationList({
   const shownCount = filteredLive.length + filteredOlder.length;
   const kindChoices = choices(loaded, "kind");
   const modelChoices = choices(loaded, "model");
+  const groups = groupRows([...filteredLive, ...filteredOlder], now);
+  const counts = todayCounts(loaded, now);
+
+  const toggleGroup = (key: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   async function loadOlder(): Promise<void> {
     if (loading) return;
@@ -160,7 +230,17 @@ export function DelegationList({
 
   return (
     <section>
-      <h2 className="text-lg font-semibold">Delegations</h2>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="whitespace-nowrap text-[17px] font-semibold">Delegations</h2>
+        <p className="text-sm text-muted">
+          <span className="font-medium text-state-live">{counts.running} running</span>
+          {" · "}
+          <span className="font-medium text-state-queued">{counts.queued} queued</span>
+          {" · "}
+          <span className="font-medium text-state-failed">{counts.failed} failed</span>
+          {" today"}
+        </p>
+      </div>
       {list.capped && (
         <p className="text-sm text-muted">
           Showing the newest {list.rows.length} of {list.total.toLocaleString()}
@@ -170,38 +250,43 @@ export function DelegationList({
         <p className="text-muted">No delegations yet.</p>
       ) : (
         <>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input
-              type="search"
-              placeholder="Search titles"
-              aria-label="Search titles"
-              value={filter.text}
-              onChange={(e) => setFilter((prev) => ({ ...prev, text: e.target.value }))}
-              className={`${CONTROL_CLASS} placeholder-muted`}
-            />
-            {STATES.map((state) => {
-              const pressed = filter.states.includes(state);
-              return (
-                <button
-                  key={state}
-                  type="button"
-                  aria-pressed={pressed}
-                  onClick={() => setFilter((prev) => toggleState(prev, state))}
-                  className={
-                    pressed
-                      ? `rounded border px-2 py-0.5 text-xs font-medium ${STATE_BADGE[state]}`
-                      : "rounded border border-line px-2 py-0.5 text-xs font-medium text-text hover:bg-line/50"
-                  }
-                >
-                  {state}
-                </button>
-              );
-            })}
+          <div className="mt-2 flex flex-wrap gap-2">
+            <div className="relative flex-[1_1_180px]">
+              <Search size={15} aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+              <input
+                type="search"
+                placeholder="Search titles"
+                aria-label="Search titles"
+                value={filter.text}
+                onChange={(e) => setFilter((prev) => ({ ...prev, text: e.target.value }))}
+                className="h-9 w-full rounded-lg border border-line bg-card pl-8 pr-3 text-sm"
+              />
+            </div>
+            <details className="relative">
+              <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-line bg-card px-3 text-sm">
+                {filter.states.length === 0
+                  ? "All states"
+                  : `${filter.states.length} state${filter.states.length === 1 ? "" : "s"}`}
+                <ChevronDown size={14} aria-hidden="true" />
+              </summary>
+              <div className="absolute z-10 mt-1 flex w-44 flex-col gap-1 rounded-lg border border-line bg-card p-2 shadow">
+                {STATES.map((state) => (
+                  <label key={state} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={filter.states.includes(state)}
+                      onChange={() => setFilter((prev) => toggleState(prev, state))}
+                    />
+                    {STATE_LABEL[state]}
+                  </label>
+                ))}
+              </div>
+            </details>
             <select
               aria-label="Kind"
               value={filter.kind ?? ""}
               onChange={(e) => setFilter((prev) => ({ ...prev, kind: e.target.value === "" ? null : e.target.value }))}
-              className={CONTROL_CLASS}
+              className={SELECT_CLASS}
             >
               <option value="">All kinds</option>
               {kindChoices.map((kind) => (
@@ -214,7 +299,7 @@ export function DelegationList({
               aria-label="Model"
               value={filter.model ?? ""}
               onChange={(e) => setFilter((prev) => ({ ...prev, model: e.target.value === "" ? null : e.target.value }))}
-              className={CONTROL_CLASS}
+              className={SELECT_CLASS}
             >
               <option value="">All models</option>
               {modelChoices.map((model) => (
@@ -239,15 +324,48 @@ export function DelegationList({
             </div>
           )}
           {(!filtering || shownCount > 0) && (
-            <ul className="mt-2 flex flex-col gap-3">
-              {filteredLive.map((row) => (
-                <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
-              ))}
-              {list.capped &&
-                filteredOlder.map((row) => (
-                  <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
-                ))}
-            </ul>
+            <div className="mt-2 flex flex-col gap-3">
+              {groups.map((group) => {
+                const open = !folded.has(group.key);
+                const idx = group.label.indexOf(" · ");
+                const name = idx === -1 ? group.label : group.label.slice(0, idx);
+                const date = idx === -1 ? null : group.label.slice(idx + 3);
+                return (
+                  <section key={group.key}>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(group.key)}
+                      className="flex w-full min-h-9 items-center gap-2 px-0.5 text-left text-[15px]"
+                    >
+                      {open ? (
+                        <ChevronDown size={16} aria-hidden="true" />
+                      ) : (
+                        <ChevronRight size={16} aria-hidden="true" />
+                      )}
+                      <span className="font-semibold">{name}</span>
+                      {date !== null && (
+                        <>
+                          {/* A space between the two, so the header reads "Today · 4 Oct" aloud. */}
+                          {" "}
+                          <span className="font-normal text-muted">· {date}</span>
+                        </>
+                      )}
+                      <span className="ml-auto font-mono tabular-nums text-muted">
+                        {group.rows.length}
+                      </span>
+                    </button>
+                    {open && (
+                      <ul className="mt-2 flex flex-col gap-3">
+                        {group.rows.map((row) => (
+                          <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
           )}
         </>
       )}

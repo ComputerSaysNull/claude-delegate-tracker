@@ -100,7 +100,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
         <nav
           aria-label="Delegations"
-          className={`${selected === null ? "flex" : "hidden lg:flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:max-w-[460px] lg:flex-[1_1_340px] lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
+          className={`${selected === null ? "flex" : "hidden lg:flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:w-[420px] lg:max-w-[460px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
         >
           <DelegationList
             list={list}
