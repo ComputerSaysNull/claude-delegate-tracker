@@ -16,7 +16,8 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
     quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
     metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1,
-    nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1, ...overrides,
+    nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1,
+    limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 }, ...overrides,
   };
 }
 
@@ -48,7 +49,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     follow: () => null,
     history: () => null,
     clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
-    cluster: () => ({ model: MODEL, nodes: [] }),
+    cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
     subscribeCluster: () => () => {},
     ...overrides,
   });
@@ -104,14 +105,14 @@ describe("cluster figures", () => {
   it("serves the figures at /api/cluster", async () => {
     const res = await makeApp().request("/api/cluster", goodHost);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ model: MODEL, nodes: [] });
+    expect(await res.json()).toEqual({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } });
   });
 
   it("sends a cluster event on connect", async () => {
     const res = await makeApp().request("/api/updates", goodHost);
     const text = await readUntil(res, "event: cluster");
     expect(text).toContain("event: cluster");
-    expect(text).toContain(JSON.stringify({ model: MODEL, nodes: [] }));
+    expect(text).toContain(JSON.stringify({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }));
   });
 
   it("sends another cluster event when the figures change, and unsubscribes on disconnect", async () => {
@@ -119,7 +120,7 @@ describe("cluster figures", () => {
     const unsubscribe = vi.fn();
     const app = makeApp({ subscribeCluster: (l) => { listener = l; return unsubscribe; } });
     const res = await app.request("/api/updates", goodHost);
-    const changed = { model: { ...MODEL, running: 5 }, nodes: [] };
+    const changed = { model: { ...MODEL, running: 5 }, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } };
     listener!(changed);
     const text = await readUntil(res, '"running":5');
     expect(text).toContain(JSON.stringify(changed));

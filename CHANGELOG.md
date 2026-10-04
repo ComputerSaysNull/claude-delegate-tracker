@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #30 — 2026-10-04 — feat: show the cluster at a glance, coloured by load and heat
+
+### Added
+
+- **CPU and GPU use as donuts coloured by load, temperatures coloured by heat.** A number
+  alone did not say whether it was fine, and the cluster figures are how you decide whether
+  to start another delegation. The thresholds are settings (`LOAD_WARN_PERCENT`,
+  `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), sent with the figures.
+- **A 15 min / 1 h switch for the charts**, and on a phone the cluster folds into one
+  line that opens it in full, so the list comes first.
+
 ## #29 — 2026-10-04 — feat: tell a stopped or timed-out run apart from a real failure
 
 ### Added

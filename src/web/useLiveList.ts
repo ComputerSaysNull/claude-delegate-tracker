@@ -4,8 +4,9 @@ import type { ListResponse } from "../server/poller.ts";
 import type { ModelFigures } from "../server/metrics.ts";
 import type { NodeFigures } from "../server/nodes.ts";
 import type { Health } from "../server/health.ts";
+import type { Limits } from "../server/settings.ts";
 
-export type Cluster = { model: ModelFigures; nodes: NodeFigures[] };
+export type Cluster = { model: ModelFigures; nodes: NodeFigures[]; limits: Limits };
 
 export function useLiveList(): {
   list: ListResponse | null;

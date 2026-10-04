@@ -2,11 +2,13 @@
 // the top, the live delegation list on the left and the open delegation on the right on a
 // wide screen, one of the two on a phone. Opening a delegation never reloads the page; the
 // address follows the open delegation and the filters, so Back, reload and bookmarks work.
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { Check, CircleDot, TriangleAlert, X } from "lucide-react";
 import { addressFor, readAddress, type Address } from "./address.ts";
 import { DelegationList } from "./DelegationList.tsx";
 import { HealthBanners } from "./HealthBanners.tsx";
+import type { Series } from "../server/history.ts";
+import { LEVEL_TEXT, level, sinceMs } from "./load.ts";
 import { ModelPanel } from "./ModelPanel.tsx";
 import { NodePanel } from "./NodePanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
@@ -19,10 +21,22 @@ type Status = "readable" | "not readable" | "not set";
 export default function App() {
   const { list, cluster, health, connected } = useLiveList();
   const history = useClusterHistory(cluster);
+
+  // The cluster band charts either the last hour or the last 15 minutes, counted back from
+  // each series' newest point (not the clock, so a render stays pure), so the labels and the
+  // points agree.
+  const [rangeSeconds, setRangeSeconds] = useState(3600);
+  const inRange = (series: Series) => sinceMs(series, (series.at.at(-1) ?? 0) - rangeSeconds * 1000);
   const histories =
     history === null
       ? undefined
-      : Object.fromEntries(history.nodes.map((node) => [node.name, node.series] as const));
+      : Object.fromEntries(history.nodes.map((node) => [node.name, inRange(node.series)] as const));
+  const modelSeries = history === null ? undefined : inRange(history.model);
+  const panelWindowSeconds = history === null ? undefined : Math.min(rangeSeconds, history.windowSeconds);
+
+  // On a phone the cluster band folds into one tappable line.
+  const [clusterOpen, setClusterOpen] = useState(false);
+  const toggle = () => setClusterOpen((open) => !open);
 
   const status: Status | null = health
     ? health.transcriptFolder.configured
@@ -64,6 +78,36 @@ export default function App() {
     else window.history.replaceState(null, "", url);
   };
 
+  // The phone line: one piece per figure, skipping any whose value is missing.
+  const phonePieces: ReactNode[] = [];
+  if (cluster !== null) {
+    const model = cluster.model;
+    if (model.decodeTokensPerSecond !== null) {
+      phonePieces.push(`${model.decodeTokensPerSecond.toLocaleString()} tok/s`);
+    }
+    if (model.running !== null) {
+      phonePieces.push(`${model.running.toLocaleString()} running`);
+    }
+    if (model.kvCachePercent !== null) {
+      phonePieces.push(`KV ${model.kvCachePercent.toLocaleString()}%`);
+    }
+    const temps = cluster.nodes
+      .flatMap((node) => [node.cpuTempC, node.gpuTempC])
+      .filter((t): t is number => t !== null);
+    if (temps.length > 0) {
+      const hottest = Math.max(...temps);
+      const lvl = level(hottest, cluster.limits.tempWarn, cluster.limits.tempHot);
+      phonePieces.push(
+        <span
+          aria-label="Hottest temperature"
+          className={`font-mono tabular-nums ${lvl === "warn" || lvl === "hot" ? LEVEL_TEXT[lvl] : ""}`}
+        >
+          {`${hottest.toLocaleString()}°C`}
+        </span>,
+      );
+    }
+  }
+
   return (
     <div className="flex min-h-screen flex-col text-base lg:h-screen lg:overflow-hidden">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
@@ -89,12 +133,45 @@ export default function App() {
       <div className="px-4 lg:px-6">
         <HealthBanners banners={health?.banners ?? []} />
       </div>
-      <section aria-label="Cluster" className="flex flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6">
+      {cluster !== null && (
+        <button
+          type="button"
+          aria-expanded={clusterOpen}
+          onClick={toggle}
+          className="mx-4 my-2 flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2 text-sm lg:hidden"
+        >
+          {phonePieces.map((piece, i) => (
+            <Fragment key={i}>
+              {i > 0 && <span className="text-muted">·</span>}
+              {piece}
+            </Fragment>
+          ))}
+        </button>
+      )}
+      <section aria-label="Cluster" className={`${clusterOpen ? "flex" : "hidden lg:flex"} flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}>
+        <div role="group" aria-label="Chart range" className="flex w-full gap-1 rounded-lg bg-line/40 p-1 sm:w-auto">
+          <button
+            type="button"
+            aria-pressed={rangeSeconds === 900}
+            onClick={() => setRangeSeconds(900)}
+            className={rangeSeconds === 900 ? "bg-card font-semibold" : "text-muted"}
+          >
+            15 min
+          </button>
+          <button
+            type="button"
+            aria-pressed={rangeSeconds === 3600}
+            onClick={() => setRangeSeconds(3600)}
+            className={rangeSeconds === 3600 ? "bg-card font-semibold" : "text-muted"}
+          >
+            1 hour
+          </button>
+        </div>
         <div className="min-w-0 flex-[3_1_560px]">
-          <ModelPanel model={cluster?.model ?? null} history={history?.model} windowSeconds={history?.windowSeconds} />
+          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} />
         </div>
         <div className="min-w-0 flex-[2_1_420px]">
-          <NodePanel nodes={cluster?.nodes ?? null} histories={histories} windowSeconds={history?.windowSeconds} />
+          <NodePanel nodes={cluster?.nodes ?? null} histories={histories} windowSeconds={panelWindowSeconds} limits={cluster?.limits} />
         </div>
       </section>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
