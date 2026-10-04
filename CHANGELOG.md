@@ -19,7 +19,8 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   state's own tint: six light colours came out under 4.5:1 and were darkened. Another
   test refuses a colour named anywhere else; it replaces the dark-variant scan.
 - **Each state has its own icon besides its colour**, and running and queued cards are
-  tinted. States differed by colour alone.
+  tinted. States differed by colour alone, and badges showed the stream's own codes
+  ("live", "ok"); a badge is now a pill with a word: Running, Done, Cut off.
 - **IBM Plex Sans for words, Plex Mono with tabular digits for figures.** The font was
   whatever the system had, and ticking numbers jiggled. Both are bundled from Fontsource,
   so the page asks no other host.

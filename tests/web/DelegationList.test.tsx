@@ -60,7 +60,7 @@ describe("DelegationList", () => {
   it("gives each card its state's badge, with the state's icon", () => {
     const { container } = render(<DelegationList list={list([row({ state: "failed" })])} />);
     const badge = container.querySelector("li")!.querySelector("span.inline-flex")!;
-    expect(badge.textContent).toBe("failed");
+    expect(badge.textContent).toBe("Failed");
     expect(badge.querySelector("svg")).not.toBeNull();
   });
 

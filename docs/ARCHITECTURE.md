@@ -285,7 +285,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Elapsed time: a finished stream uses `end.elapsed_seconds`; a running one counts up from `start.at`. Never use file times.
 - Show times in local time (`at` is UTC), all through one formatter: a 24-hour clock ("19:00"), dates as "12 Nov", with the year ("12 Nov 2025") only when it is not this year.
 - Follow the system's light or dark setting. Every colour is a named token in `index.css`, with a light and a dark value; text is at least 4.5:1 on its ground in both.
-- Every state has its own icon besides its colour, the same in badges, cards and the conversation. A run in progress (running, queued) gets a tinted card; a finished one stays plain.
+- Every state has its own icon besides its colour, the same in badges, cards and the conversation. A badge is a pill naming the state in a word: Running, Queued, Quiet, Done, Failed, Cut off. A run in progress (running, queued) gets a tinted card; a finished one stays plain.
 - Words in IBM Plex Sans. A figure, time, duration or piece of code that stands on its own is in IBM Plex Mono, with tabular digits so a ticking number keeps its width; one inside a sentence stays in the sentence's font.
 
 ## Security

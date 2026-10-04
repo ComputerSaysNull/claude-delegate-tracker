@@ -1,16 +1,26 @@
 // How each state looks, in one place: its icon, its colour and, while a run is in progress,
 // the card's tint. A state never differs by colour alone. Class names are written out in
 // full so Tailwind finds them.
-import { Check, CircleDot, Clock, Pause, Scissors, X, type LucideIcon } from "lucide-react";
+import { Check, Circle, Clock, Pause, Scissors, X, type LucideIcon } from "lucide-react";
 import type { State } from "../server/streams.ts";
 
 export const STATE_ICON: Record<State, LucideIcon> = {
-  live: CircleDot,
+  live: Circle,
   queued: Clock,
   quiet: Pause,
   ok: Check,
   failed: X,
   "cut off": Scissors,
+};
+
+// The word a reader sees for each state; the stream's own codes ("live", "ok") stay inside.
+export const STATE_LABEL: Record<State, string> = {
+  live: "Running",
+  queued: "Queued",
+  quiet: "Quiet",
+  ok: "Done",
+  failed: "Failed",
+  "cut off": "Cut off",
 };
 
 export const STATE_TEXT: Record<State, string> = {
@@ -41,9 +51,15 @@ export function cardClass(state: State): string {
 export function StateBadge({ state, className = "" }: { state: State; className?: string }) {
   const Icon = STATE_ICON[state];
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-xs font-medium ${STATE_BADGE[state]} ${className}`}>
-      <Icon size={12} strokeWidth={2.4} aria-hidden="true" className={state === "live" ? "animate-pulse" : undefined} />
-      {state}
+    <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[13px] font-semibold ${STATE_BADGE[state]} ${className}`}>
+      <Icon
+        size={state === "live" ? 8 : 13}
+        strokeWidth={2.4}
+        aria-hidden="true"
+        fill={state === "live" ? "currentColor" : "none"}
+        className={state === "live" ? "animate-pulse" : undefined}
+      />
+      {STATE_LABEL[state]}
     </span>
   );
 }
