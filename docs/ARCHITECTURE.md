@@ -189,6 +189,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 - The backend keeps a point per reading for `HISTORY_WINDOW_SECONDS`, in memory only, so a restart starts the charts afresh.
 - A missing figure is a gap, never 0, and a source that is down adds a point of gaps, so a chart shows the outage instead of joining across it.
 - The page fetches the history once, then adds each `cluster` event's figures itself.
+- A chart is a bare line with no axes. It follows its container's width, and keeps its size while hidden.
 
 ## Titles
 

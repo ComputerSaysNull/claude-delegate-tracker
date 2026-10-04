@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #20 — 2026-10-04 — fix: hide the sparklines' axes and follow the container's width
+
+### Fixed
+
+- **Chart lines overlapped their times and ran outside the chart.** The sparkline passed
+  uPlot an empty axes list to mean "no axes", but uPlot fills an empty list with its default
+  x and y axes, so every 32 px chart drew a time axis and a value axis over its line and
+  squeezed the plot. Both axes are now hidden one by one. The chart was also drawn at its
+  first width only; it now redraws when its container's width changes.
+
 ## #19 — 2026-10-04 — feat: one colour palette, an icon per state, and IBM Plex served by the tracker
 
 ### Changed
