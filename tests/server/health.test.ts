@@ -40,6 +40,8 @@ function row(over: Partial<ListRow> = {}): ListRow {
     elapsed: null,
     turns: null,
     unknownFormat: null,
+    left: null,
+    queueOf: null,
     ...over,
   };
 }

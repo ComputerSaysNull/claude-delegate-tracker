@@ -14,10 +14,12 @@ export interface StreamState {
   maxTurn: number;
   ofTurns: number | null;
   badLines: number;
+  waitOfSeconds: number | null;  // the newest `waiting.of_seconds`: how long it may wait
+  endsInSeconds: number | null;  // the newest `alive.ends_in_seconds`: the deadline that ends the run
 }
 
 export function newStreamState(): StreamState {
-  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0 };
+  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null };
 }
 
 // Normalise a 6-digit (or any) fraction to at most 3 digits before Date.parse.
@@ -41,12 +43,19 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
   const t = evt.t;
   if (t === "start") s.start = evt;
   else if (t === "end") { s.end = evt; s.lastSignal = "end"; }
-  else if (t === "waiting") { s.lastSignal = "waiting"; if (typeof evt.waited_seconds === "number") s.waitedSeconds = evt.waited_seconds; }
+  else if (t === "waiting") {
+    s.lastSignal = "waiting";
+    if (typeof evt.waited_seconds === "number") s.waitedSeconds = evt.waited_seconds;
+    s.waitOfSeconds = typeof evt.of_seconds === "number" ? evt.of_seconds : null;
+  }
   else if (t === "priced" || t === "turn") {
     s.lastSignal = t;
     if (typeof evt.turn === "number") s.maxTurn = Math.max(s.maxTurn, evt.turn);
     if (typeof evt.of_turns === "number") s.ofTurns = evt.of_turns;
-  } else if (t === "alive") s.lastSignal = "alive";
+  } else if (t === "alive") {
+    s.lastSignal = "alive";
+    s.endsInSeconds = typeof evt.ends_in_seconds === "number" ? evt.ends_in_seconds : null;
+  }
   return evt;
 }
 
@@ -123,6 +132,10 @@ export function listRow(name: string, s: StreamState, now: Date, quietAfterSecon
     elapsed: elapsedOf(s, nowMs),
     turns: turnsOf(s),
     unknownFormat: unknownFormatOf(s),
+    // As the newest heartbeat gives it, never a deadline of our own.
+    left: state === "live" && s.endsInSeconds !== null ? formatDuration(s.endsInSeconds) : null,
+    // A limit of 0 is no limit.
+    queueOf: state === "queued" && s.waitOfSeconds !== null && s.waitOfSeconds > 0 ? formatAge(s.waitOfSeconds) : null,
   };
 }
 
@@ -130,6 +143,8 @@ export interface ListRow {
   name: string; state: State; why: string | null; age: string | null; kind: string;
   model: string | null; effort: string | null; title: string; startedAt: string | null;
   elapsed: string | null; turns: string | null; unknownFormat: string | null;
+  left: string | null;          // a running delegation's time left
+  queueOf: string | null;       // a queued delegation's longest wait
 }
 
 export function formatAge(seconds: number): string {

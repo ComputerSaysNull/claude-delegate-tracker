@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
 import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "./filter.ts";
+import { groupRows, todayCounts } from "./groups.ts";
 import { localDateTime } from "./time.ts";
 import { StateBadge, STATE_TEXT, STATE_BADGE, cardClass } from "./states.tsx";
 
@@ -29,9 +31,37 @@ function startLine(row: ListRow): string {
   let text = time;
   if (row.age !== null && row.age !== "") {
     if (row.state === "quiet") text += ` · quiet for ${row.age}`;
-    else if (row.state === "queued") text += ` · queued ${row.age}`;
+    else if (row.state === "queued") {
+      text += ` · queued ${row.age}`;
+      if (row.queueOf !== null) text += ` of ${row.queueOf}`;
+    }
   }
+  if (row.state === "live" && row.left !== null) text += ` · ${row.left} left`;
   return text;
+}
+
+// A live run that reports its turns as "N of M" gets a bar under its start line.
+function turnsBar(row: ListRow): ReactNode {
+  if (row.state !== "live" || row.turns === null) return null;
+  const m = row.turns.match(/^(\d+) of (\d+)$/);
+  if (m === null) return null;
+  const n = Number(m[1]);
+  const total = Number(m[2]);
+  return (
+    <div
+      role="progressbar"
+      aria-label="Turns"
+      aria-valuenow={n}
+      aria-valuemin={0}
+      aria-valuemax={total}
+      className="mt-2 h-1.5 overflow-hidden rounded bg-line"
+    >
+      <div
+        className="h-full bg-state-live"
+        style={{ width: `${Math.min(100, (n / total) * 100)}%` }}
+      />
+    </div>
+  );
 }
 
 function RowCard({
@@ -76,6 +106,7 @@ function RowCard({
         <p className="mt-1 text-sm text-muted">{meta}</p>
       )}
       <p className="mt-1 text-sm text-muted font-mono tabular-nums">{startLine(row)}</p>
+      {turnsBar(row)}
       {row.why !== null && row.why !== "" && (
         <p className={`mt-1 text-sm ${STATE_TEXT[row.state]}`}>{row.why}</p>
       )}
@@ -113,6 +144,7 @@ export function DelegationList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [ownFilter, setOwnFilter] = useState<RowFilter>(NO_FILTER);
+  const [folded, setFolded] = useState<Set<string>>(new Set()); // groups folded by key; all start open
   const filter = shownFilter ?? ownFilter;
   const setFilter = (next: RowFilter | ((prev: RowFilter) => RowFilter)) => {
     const value = typeof next === "function" ? next(filter) : next;
@@ -124,6 +156,7 @@ export function DelegationList({
     return <p className="text-muted">Waiting for the first list…</p>;
   }
 
+  const now = new Date();
   const live = list.rows;
   const loaded = [...live, ...older];
   const filtering = isFiltering(filter);
@@ -132,6 +165,17 @@ export function DelegationList({
   const shownCount = filteredLive.length + filteredOlder.length;
   const kindChoices = choices(loaded, "kind");
   const modelChoices = choices(loaded, "model");
+  const groups = groupRows([...filteredLive, ...filteredOlder], now);
+  const counts = todayCounts(loaded, now);
+
+  const toggleGroup = (key: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   async function loadOlder(): Promise<void> {
     if (loading) return;
@@ -238,16 +282,47 @@ export function DelegationList({
               </button>
             </div>
           )}
+          <p className="text-sm text-muted">
+            <span className="font-medium text-state-live">{counts.running} running</span>
+            {" · "}
+            <span className="font-medium text-state-queued">{counts.queued} queued</span>
+            {" · "}
+            <span className="font-medium text-state-failed">{counts.failed} failed</span>
+            {" today"}
+          </p>
           {(!filtering || shownCount > 0) && (
-            <ul className="mt-2 flex flex-col gap-3">
-              {filteredLive.map((row) => (
-                <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
-              ))}
-              {list.capped &&
-                filteredOlder.map((row) => (
-                  <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
-                ))}
-            </ul>
+            <div className="mt-2 flex flex-col gap-3">
+              {groups.map((group) => {
+                const open = !folded.has(group.key);
+                return (
+                  <section key={group.key}>
+                    <button
+                      type="button"
+                      aria-expanded={open}
+                      onClick={() => toggleGroup(group.key)}
+                      className="flex w-full items-center gap-2 rounded border border-line bg-card px-2 py-1 text-sm text-text hover:bg-line/50"
+                    >
+                      {open ? (
+                        <ChevronDown size={16} aria-hidden="true" />
+                      ) : (
+                        <ChevronRight size={16} aria-hidden="true" />
+                      )}
+                      <span className="font-medium">{group.label}</span>
+                      <span className="ml-auto font-mono tabular-nums text-muted">
+                        {group.rows.length}
+                      </span>
+                    </button>
+                    {open && (
+                      <ul className="mt-2 flex flex-col gap-3">
+                        {group.rows.map((row) => (
+                          <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
           )}
         </>
       )}

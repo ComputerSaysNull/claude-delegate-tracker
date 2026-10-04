@@ -218,6 +218,9 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Say when the list is capped at 20, and offer older ones a page at a time; older pages are a snapshot, not live.
 - Search and filters (title words, state, kind, model) apply to the rows loaded so far, live and older alike, and say how many of them they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
+- Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
+- Above the list, count what is running and queued now, and what failed today.
+- A running card shows its turns as a bar and the newest heartbeat's `ends_in_seconds` as the time left; a queued card shows its wait and its limit.
 
 ### Layout
 
