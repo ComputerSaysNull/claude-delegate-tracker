@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #17 — 2026-10-04 — chore: vendor the contract from server v0.7.0
+
+### Changed
+
+- **The contract moves from v0.6.0 to v0.7.0, transcript format 1.1 to 1.4.** The server
+  now writes a caller's title in `start`, `question` and `answer` events, and `end.ended`,
+  but the tracker may read only what its vendored contract has. Only additions, so a
+  minor. A new sample, `asked_the_caller.jsonl`, joins the others; the tracker still
+  leaves the new kinds out until it shows them.
+
 ## #16 — 2026-10-04 — feat: chart the cluster figures over time
 
 ### Added

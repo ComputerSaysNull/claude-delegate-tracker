@@ -130,7 +130,7 @@ The repo vendors the schema and the samples into `contract/`, with a `VERSION` f
 
 ### Versioning rules
 
-- The first event of every stream, `start`, carries `format: "<major>.<minor>"`. Today it is `"1.1"`. A stream without `format` was written before versioning existed: read it as 1.0.
+- The first event of every stream, `start`, carries `format: "<major>.<minor>"`. Today it is `"1.4"`. A stream without `format` was written before versioning existed: read it as 1.0.
 - minor = something was added (a field, or an event kind). Keep working.
 - major = something was removed, renamed, or changed meaning. Show a banner, and render on a best-effort basis.
 - Ignore what you do not know, and never treat it as an error. An unknown field: use the rest of the event. An event of an unknown kind: leave it out of the display. Never drop a known event because it has an unknown field. That is what lets the tracker pin 1.x while the server adds things.
