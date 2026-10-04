@@ -27,12 +27,30 @@ export default function App() {
   // points agree.
   const [rangeSeconds, setRangeSeconds] = useState(3600);
   const inRange = (series: Series) => sinceMs(series, (series.at.at(-1) ?? 0) - rangeSeconds * 1000);
-  const histories =
-    history === null
-      ? undefined
-      : Object.fromEntries(history.nodes.map((node) => [node.name, inRange(node.series)] as const));
   const modelSeries = history === null ? undefined : inRange(history.model);
   const panelWindowSeconds = history === null ? undefined : Math.min(rangeSeconds, history.windowSeconds);
+
+  // The model card's chart-range switch; the nodes have no charts, so it lives with the model.
+  const chartRange = (
+    <div role="group" aria-label="Chart range" className="flex gap-0.5 rounded-md bg-line/40 p-0.5 text-xs">
+      <button
+        type="button"
+        aria-pressed={rangeSeconds === 900}
+        onClick={() => setRangeSeconds(900)}
+        className={rangeSeconds === 900 ? "rounded px-2 py-0.5 bg-card font-semibold" : "rounded px-2 py-0.5 text-muted"}
+      >
+        15 min
+      </button>
+      <button
+        type="button"
+        aria-pressed={rangeSeconds === 3600}
+        onClick={() => setRangeSeconds(3600)}
+        className={rangeSeconds === 3600 ? "rounded px-2 py-0.5 bg-card font-semibold" : "rounded px-2 py-0.5 text-muted"}
+      >
+        1 hour
+      </button>
+    </div>
+  );
 
   // On a phone the cluster band folds into one tappable line.
   const [clusterOpen, setClusterOpen] = useState(false);
@@ -149,29 +167,11 @@ export default function App() {
         </button>
       )}
       <section aria-label="Cluster" className={`${clusterOpen ? "flex" : "hidden lg:flex"} flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}>
-        <div role="group" aria-label="Chart range" className="flex w-full gap-1 rounded-lg bg-line/40 p-1 sm:w-auto">
-          <button
-            type="button"
-            aria-pressed={rangeSeconds === 900}
-            onClick={() => setRangeSeconds(900)}
-            className={rangeSeconds === 900 ? "bg-card font-semibold" : "text-muted"}
-          >
-            15 min
-          </button>
-          <button
-            type="button"
-            aria-pressed={rangeSeconds === 3600}
-            onClick={() => setRangeSeconds(3600)}
-            className={rangeSeconds === 3600 ? "bg-card font-semibold" : "text-muted"}
-          >
-            1 hour
-          </button>
-        </div>
         <div className="min-w-0 flex-[3_1_560px]">
-          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} />
+          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} />
         </div>
         <div className="min-w-0 flex-[2_1_420px]">
-          <NodePanel nodes={cluster?.nodes ?? null} histories={histories} windowSeconds={panelWindowSeconds} limits={cluster?.limits} />
+          <NodePanel nodes={cluster?.nodes ?? null} limits={cluster?.limits} />
         </div>
       </section>
       <div className="flex min-h-0 flex-1 flex-col lg:flex-row">

@@ -59,7 +59,6 @@ describe("the cluster band", () => {
     fireEvent.click(screen.getByRole("button", { name: "15 min" }));
     expect(screen.getByRole("button", { name: "15 min" }).getAttribute("aria-pressed")).toBe("true");
     expect(lastPoints(/^Decode speed/)).toBe(2);
-    expect(lastPoints(/^CPU use/)).toBe(2);
   });
 
   it("names the range it charts", () => {

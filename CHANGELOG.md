@@ -19,6 +19,9 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), sent with the figures.
 - **A 15 min / 1 h switch for the charts**, and on a phone the cluster folds into one
   line that opens it in full, so the list comes first.
+- **The band as on the design canvas**: the model server's four figures side by side, large,
+  with small charts under them and the range switch in the card; the nodes side by side,
+  with donuts and temperatures and no charts.
 
 ## #29 — 2026-10-04 — feat: tell a stopped or timed-out run apart from a real failure
 

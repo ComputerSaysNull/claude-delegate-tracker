@@ -194,6 +194,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 
 ### The cluster at a glance
 
+- The model server's four figures (decode speed, requests running and waiting, KV-cache use, prefix-cache hits) sit side by side, each large under its label, with a small chart under each that has a history; the range switch sits in that card's header. The nodes sit side by side, without charts.
 - Each node's CPU and GPU use is a donut with the number in the middle, its ring green under the load warning threshold, amber from it and red from the hot one. CPU and GPU temperatures are numbers, amber and red by the heat thresholds. The thresholds are settings, sent with the figures; a missing figure is an empty ring or `—`, never 0.
 - On a phone the cluster folds into one line (decode speed, requests running, KV-cache use, the hottest temperature) that opens the figures in full.
 
