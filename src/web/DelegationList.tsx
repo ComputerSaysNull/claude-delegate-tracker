@@ -1,5 +1,6 @@
 import type { ListResponse } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
+import { localDateTime } from "./time.ts";
 
 export const STATE_COLOR: Record<ListRow["state"], string> = {
   live: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
@@ -31,15 +32,7 @@ function metaLine(row: ListRow): string {
 }
 
 function startLine(row: ListRow): string {
-  const time =
-    row.startedAt === null
-      ? "—"
-      : new Date(row.startedAt).toLocaleString([], {
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+  const time = localDateTime(row.startedAt);
   let text = time;
   if (row.age !== null && row.age !== "") {
     if (row.state === "quiet") text += ` · quiet for ${row.age}`;

@@ -5,6 +5,7 @@ import { ModelPanel } from "./ModelPanel.tsx";
 import { NodePanel } from "./NodePanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
 import { useLiveList } from "./useLiveList.ts";
+import { localTime } from "./time.ts";
 
 type Status = "readable" | "not readable" | "not set";
 
@@ -46,7 +47,7 @@ export default function App() {
             </p>
             <p className="mt-1">
               Checked at{" "}
-              {health ? new Date(health.checkedAt).toLocaleTimeString() : "—"}
+              {localTime(health?.checkedAt ?? null)}
             </p>
           </section>
           <ModelPanel model={cluster?.model ?? null} />

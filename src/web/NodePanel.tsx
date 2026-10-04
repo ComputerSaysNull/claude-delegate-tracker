@@ -1,5 +1,6 @@
 // The nodes' figures, as the backend sends them on the cluster event.
 import type { NodeFigures } from "../server/nodes.ts";
+import { localTime } from "./time.ts";
 
 const SLATE = "text-slate-500 dark:text-slate-400";
 const AMBER = "text-amber-600 dark:text-amber-400";
@@ -42,11 +43,11 @@ function statusLine(node: NodeFigures): StatusLine {
     case "ok":
       return node.readAt === null
         ? { text: "as of —", color: SLATE }
-        : { text: `as of ${new Date(node.readAt).toLocaleTimeString()}`, color: SLATE };
+        : { text: `as of ${localTime(node.readAt)}`, color: SLATE };
     case "unreachable":
       return node.readAt === null
         ? { text: "Unreachable; no figures yet", color: AMBER }
-        : { text: `Unreachable; no figures since ${new Date(node.readAt).toLocaleTimeString()}`, color: AMBER };
+        : { text: `Unreachable; no figures since ${localTime(node.readAt)}`, color: AMBER };
     case "host key refused":
       return { text: "Host key does not match the pinned key; figures refused", color: RED };
   }
