@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { StreamViewBody } from "../../src/web/StreamPage.tsx";
 import type { CallView, StreamView, SummaryView, TurnView } from "../../src/server/view.ts";
 import type { ListRow } from "../../src/server/streams.ts";
+import { localTime } from "../../src/web/time.ts";
 
 function row(overrides: Partial<ListRow> = {}): ListRow {
   return {
@@ -20,7 +21,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null,
     toolTime: null, attempts: null, repeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
-    clock: null, ...overrides,
+    clock: null, at: null, ...overrides,
   };
 }
 
@@ -104,7 +105,7 @@ describe("the conversation", () => {
 
   it("closes a turn with a small line of its figures", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { tokensIn: 5100, tokensOut: 160, tokS: 40.2, toolTime: "1s" })] })} />);
-    expect(screen.getByText(`${(5100).toLocaleString()} in · 160 out · ${(40.2).toLocaleString()} tok/s · tool 1s`)).toBeTruthy();
+    expect(screen.getByText(`5.1k in · 160 out · ${(40.2).toLocaleString()} tok/s · tool 1s`)).toBeTruthy();
   });
 
   it("leaves a figure it does not have out of that line, never as 0", () => {
@@ -131,6 +132,43 @@ describe("the conversation", () => {
     expect(end.textContent).toContain("backend unreachable");
   });
 
+  it("heads each turn with the model, its number and when it started", () => {
+    const at = "2026-10-04T17:04:00.000Z";
+    render(<StreamViewBody view={view({ turns: [turn(1, { at })] })} />);
+    const [msg] = message("delegation");
+    expect(msg.textContent).toContain(`flash · turn 1 · ${localTime(at)}`);
+  });
+
+  it("puts a call's main argument on the same line as its name", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ name: "read_file", args: [["path", "src/dates.py"]] })] })] })} />);
+    const name = screen.getByText("read_file");
+    expect(name.parentElement!.textContent).toContain("src/dates.py");
+  });
+
+  it("writes large token counts short, as 4.6k", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { tokensIn: 4600, tokensOut: 1_250_000 })] })} />);
+    expect(screen.getByText("4.6k in · 1.3M out")).toBeTruthy();
+  });
+
+  it("sums a finished run up on one line: how it ended, how long, its turns and its cache use", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "ok" }), summary: summary({ turns: "2 of 8", reuse: "71%" }) })} />);
+    const [end] = message("end");
+    expect(end.firstElementChild!.textContent).toBe("Finished in 4m02s · 2 of 8 turns · 71% cached");
+  });
+
+  it("offers no jump back once the run has ended, even when scrolled up", () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
+    Object.defineProperty(window, "innerHeight", { value: 800, configurable: true });
+    Object.defineProperty(document.documentElement, "scrollHeight", { value: 4000, configurable: true });
+    render(<StreamViewBody view={view({ row: row({ state: "ok" }), summary: summary() })} />);
+    act(() => {
+      window.dispatchEvent(new Event("scroll"));
+    });
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    scrollTo.mockRestore();
+  });
+
   it("has no copy buttons", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { reply: "done" })], summary: summary() })} />);
     expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
@@ -142,8 +180,14 @@ describe("the header", () => {
     render(<StreamViewBody view={view()} />);
     const header = screen.getByRole("banner");
     expect(header.className).toMatch(/\bsticky\b/);
-    expect(header.textContent).toContain("live");
+    expect(header.textContent).toContain("Running");
     expect(header.textContent).toContain("Find every caller of load_config");
+  });
+
+  it("draws the turns as segments, as the list does", () => {
+    render(<StreamViewBody view={view({ row: row({ turns: "2 of 8" }) })} />);
+    const bar = within(screen.getByRole("banner")).getByRole("progressbar", { name: "Turns" });
+    expect(bar.children).toHaveLength(8);
   });
 
   it("shows the turns as a bar", () => {

@@ -350,6 +350,22 @@ describe("tool time", () => {
   });
 });
 
+describe("when a turn started", () => {
+  it("is its priced event's time", () => {
+    const v = viewOf([start(), { t: "priced", at: "2026-10-01T13:00:05.000Z", turn: 1 }]);
+    expect(v.turns[0].at).toBe("2026-10-01T13:00:05.000Z");
+  });
+
+  it("reads a time written with six decimal places, as the server writes it", () => {
+    const v = viewOf([start(), { t: "priced", at: "2026-10-01T13:00:05.123456+00:00", turn: 1 }]);
+    expect(v.turns[0].at).toBe("2026-10-01T13:00:05.123Z");
+  });
+
+  it("is unknown without a priced event", () => {
+    expect(viewOf([start(), { t: "turn", at: at(0), turn: 1, text: "" }]).turns[0].at).toBeNull();
+  });
+});
+
 describe("a turn's figures and the run's clock", () => {
   it("a closed turn carries its tokens in and out and its decode speed", () => {
     const t = viewOf([

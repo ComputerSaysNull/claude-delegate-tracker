@@ -3,23 +3,13 @@
 // the run is done, and the reply followed unless the reader has scrolled up. StreamViewBody
 // is split out so the presentational part can be rendered in tests without the hook.
 import { useEffect, useState } from "react";
-import { Check, X } from "lucide-react";
+import { Asterisk, Check, ChevronRight, File, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
-import { StateBadge, STATE_TEXT } from "./states.tsx";
-import { localDateTime } from "./time.ts";
-
-function metaLine(row: ListRow): string {
-  const pieces = [
-    row.kind,
-    row.model,
-    row.effort,
-    row.turns === null ? null : `turns ${row.turns}`,
-    row.elapsed,
-  ].filter((p): p is string => p !== null && p !== "");
-  return pieces.join(" · ");
-}
+import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
+import { localTime } from "./time.ts";
+import { compactCount } from "./format.ts";
 
 export function StreamPage({ name, onClose }: { name: string; onClose: () => void }) {
   const { view, connected, missing } = useStreamView(name);
@@ -48,7 +38,6 @@ export function StreamPage({ name, onClose }: { name: string; onClose: () => voi
 
 export function StreamViewBody({ view }: { view: StreamView }) {
   const row = view.row;
-  const meta = metaLine(row);
   const [following, setFollowing] = useState(true);
 
   useEffect(() => {
@@ -80,58 +69,74 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page py-3">
         <div className="flex items-center gap-2">
           <StateBadge state={row.state} />
-          <h2 className="min-w-0 truncate font-medium" title={row.title}>
+          <h2 className="min-w-0 truncate text-xl font-semibold" title={row.title}>
             {row.title}
           </h2>
         </div>
-        {meta !== "" && <p className="text-sm font-mono tabular-nums text-muted">{meta}</p>}
-        <p className="text-sm font-mono tabular-nums text-muted">
-          started {localDateTime(row.startedAt)}
+        <p className="text-sm text-muted">
+          {row.kind}
+          {row.model !== null && row.model !== "" && <> · {row.model}</>}
+          {row.effort !== null && row.effort !== "" && <> · {row.effort} effort</>}
+          <> · started <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
+          {row.elapsed !== null && row.elapsed !== "" && (
+            <> · elapsed <span className="font-mono tabular-nums">{row.elapsed}</span></>
+          )}
         </p>
-        {turnsMatch !== null && (
-          <>
-            <div className="flex justify-between text-xs text-muted">
-              <span>Turn</span>
-              <span className="font-mono tabular-nums">{row.turns}</span>
-            </div>
-            <div
-              role="progressbar"
-              aria-label="Turns"
-              aria-valuenow={Number(turnsMatch[1])}
-              aria-valuemin={0}
-              aria-valuemax={Number(turnsMatch[2])}
-              className="h-1.5 overflow-hidden rounded bg-line"
-            >
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+          {turnsMatch !== null && (
+            <div className="w-56 flex flex-col gap-1.5">
+              <div className="flex justify-between text-xs text-muted">
+                <span>Turn</span>
+                <span className="font-mono tabular-nums">{row.turns}</span>
+              </div>
               <div
-                className="h-full bg-state-live"
-                style={{ width: `${(Number(turnsMatch[1]) / Number(turnsMatch[2])) * 100}%` }}
-              />
+                role="progressbar"
+                aria-label="Turns"
+                aria-valuenow={Number(turnsMatch[1])}
+                aria-valuemin={0}
+                aria-valuemax={Number(turnsMatch[2])}
+                className="flex gap-[3px]"
+              >
+                {Array.from({ length: Number(turnsMatch[2]) }).map((_, i) => (
+                  <span
+                    key={i}
+                    className={`h-[5px] flex-1 rounded-[3px] ${
+                      i < Number(turnsMatch[1]) - 1
+                        ? "bg-state-live"
+                        : i === Number(turnsMatch[1]) - 1
+                          ? "bg-state-live/45"
+                          : "bg-line"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
-          </>
-        )}
-        {lastClock !== null && (
-          <>
-            <div
-              role="progressbar"
-              aria-label="Time"
-              aria-valuenow={lastClock.elapsed}
-              aria-valuemin={0}
-              aria-valuemax={lastClock.of}
-              className="h-1.5 overflow-hidden rounded bg-line"
-            >
+          )}
+          {lastClock !== null && (
+            <div className="w-64 flex flex-col gap-1.5">
+              <div className="flex justify-between text-xs text-muted">
+                <span>Time left</span>
+                {row.left !== null && <span className="font-mono tabular-nums">{row.left} left</span>}
+              </div>
               <div
-                className="h-full bg-state-live"
-                style={{ width: `${(lastClock.elapsed / lastClock.of) * 100}%` }}
-              />
+                role="progressbar"
+                aria-label="Time"
+                aria-valuenow={lastClock.elapsed}
+                aria-valuemin={0}
+                aria-valuemax={lastClock.of}
+                className="h-[5px] rounded-[3px] bg-line"
+              >
+                <div
+                  className="h-full bg-muted"
+                  style={{ width: `${(lastClock.elapsed / lastClock.of) * 100}%` }}
+                />
+              </div>
             </div>
-            {row.left !== null && (
-              <p className="text-xs font-mono tabular-nums text-muted">{row.left} left</p>
-            )}
-          </>
-        )}
-        {heartbeat !== null && (
-          <p className="text-xs font-mono tabular-nums text-muted">{heartbeat}</p>
-        )}
+          )}
+          {heartbeat !== null && (
+            <p className="text-[13px] font-mono tabular-nums text-muted">{heartbeat}</p>
+          )}
+        </div>
         {row.why !== null && row.why !== "" && (
           <p className={`text-sm ${STATE_TEXT[row.state]}`}>{row.why}</p>
         )}
@@ -146,23 +151,42 @@ export function StreamViewBody({ view }: { view: StreamView }) {
         {(view.task !== null || view.files.length > 0) && (
           <li
             data-from="caller"
-            className="ml-auto flex max-w-[88%] flex-col gap-2 rounded-2xl rounded-br-sm border border-line bg-card px-3 py-2"
+            className="ml-auto max-w-[88%] rounded-2xl border border-line bg-card px-4 py-3"
           >
-            <p className="text-xs text-muted">Task</p>
+            <p className="text-xs text-muted">
+              Task
+              {row.startedAt !== null && (
+                <> · <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
+              )}
+            </p>
             {view.task !== null && <p className="whitespace-pre-wrap">{view.task}</p>}
             {view.files.length > 0 && (
-              <ul className="flex flex-col gap-1 text-sm">
+              <div className="mt-2 flex flex-wrap gap-2">
                 {view.files.map((file) => (
-                  <li key={file.path} className="flex flex-wrap gap-2">
-                    <Clipped text={file.path} className="font-medium" />
-                    {file.size !== null && (
-                      <span className="font-mono tabular-nums text-muted">{file.size}</span>
-                    )}
-                    {file.skipped !== null && <span className="text-warn">{file.skipped}</span>}
-                  </li>
+                  <span
+                    key={file.path}
+                    className={`inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
+                      file.skipped !== null ? "border-warn/60 text-warn" : ""
+                    }`}
+                  >
+                    <File size={12} aria-hidden="true" />
+                    <span className="min-w-0 max-w-[22rem]">
+                      <Clipped text={file.path} className="min-w-0" />
+                    </span>
+                    {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
+                    {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
+                  </span>
                 ))}
-              </ul>
+              </div>
             )}
+            {/* Why a file was refused, in full, under the chips. */}
+            {view.files
+              .filter((file) => file.skipped !== null)
+              .map((file) => (
+                <p key={file.path} className="text-xs text-warn">
+                  <span className="font-mono">{file.path}</span>: {file.skipped}
+                </p>
+              ))}
           </li>
         )}
         {view.waiting !== null && (
@@ -171,12 +195,12 @@ export function StreamViewBody({ view }: { view: StreamView }) {
           </li>
         )}
         {view.turns.map((turn) => (
-          <DelegationMessage key={turn.n} turn={turn} />
+          <DelegationMessage key={turn.n} turn={turn} model={row.model} />
         ))}
-        {view.summary !== null && <SummaryItem summary={view.summary} />}
+        {view.summary !== null && <SummaryItem summary={view.summary} state={row.state} />}
       </ol>
 
-      {!following && (
+      {going && !following && (
         <button
           type="button"
           onClick={() => {
@@ -192,7 +216,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
   );
 }
 
-function DelegationMessage({ turn }: { turn: TurnView }) {
+function DelegationMessage({ turn, model }: { turn: TurnView; model: string | null }) {
   const writing = turn.reply === null && turn.partial !== null && turn.partial.answer !== "";
   const answer =
     turn.reply !== null
@@ -200,45 +224,54 @@ function DelegationMessage({ turn }: { turn: TurnView }) {
       : turn.partial !== null && turn.partial.answer !== ""
         ? turn.partial.answer
         : null;
+  const head = [model, `turn ${turn.n}`, turn.at !== null ? localTime(turn.at) : null].filter(
+    (p): p is string => p !== null,
+  );
   const figures = [
-    turn.tokensIn !== null ? `${turn.tokensIn.toLocaleString()} in` : null,
-    turn.tokensOut !== null ? `${turn.tokensOut.toLocaleString()} out` : null,
+    turn.tokensIn !== null ? `${compactCount(turn.tokensIn)} in` : null,
+    turn.tokensOut !== null ? `${compactCount(turn.tokensOut)} out` : null,
     turn.tokS !== null ? `${turn.tokS.toLocaleString()} tok/s` : null,
     turn.toolTime !== null ? `tool ${turn.toolTime}` : null,
   ].filter((p): p is string => p !== null);
   return (
-    <li data-from="delegation" className="flex flex-col gap-2">
-      <p className="text-xs text-muted">
-        {turn.heading}
-        {turn.budget !== null && ` · ${turn.budget}`}
-      </p>
-      {turn.partial !== null && turn.partial.reasoning !== "" && (
-        <details>
-          <summary className="cursor-pointer text-sm text-muted">Thinking</summary>
-          <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial.reasoning}</pre>
-        </details>
-      )}
-      {turn.calls.length > 0 && (
-        <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
-          {turn.calls.map((call, i) => (
-            <CallViewItem key={i} call={call} />
-          ))}
-        </ul>
-      )}
-      {writing && <p className="text-xs text-muted">writing…</p>}
-      {answer !== null && <div className="whitespace-pre-wrap">{answer}</div>}
-      {figures.length > 0 && (
-        <p className="text-xs font-mono tabular-nums text-muted">{figures.join(" · ")}</p>
-      )}
-      {turn.attempts !== null && (
-        <p className="text-sm font-mono tabular-nums text-muted">attempts {turn.attempts}</p>
-      )}
-      {turn.repeated !== null && (
-        <p className="text-sm font-mono tabular-nums text-muted">repeated output {turn.repeated}</p>
-      )}
-      {turn.evicted !== null && (
-        <p className="text-sm font-mono tabular-nums text-muted">tool results evicted {turn.evicted}</p>
-      )}
+    <li data-from="delegation" className="flex gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
+        <Asterisk size={15} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <p className="text-xs text-muted">{head.join(" · ")}</p>
+        {turn.budget !== null && <p className="text-[11px] text-muted">{turn.budget}</p>}
+        {turn.partial !== null && turn.partial.reasoning !== "" && (
+          <details>
+            <summary className="cursor-pointer text-sm text-muted">
+              <ChevronRight size={14} />
+              Thinking
+            </summary>
+            <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial.reasoning}</pre>
+          </details>
+        )}
+        {turn.calls.length > 0 && (
+          <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
+            {turn.calls.map((call, i) => (
+              <CallViewItem key={i} call={call} />
+            ))}
+          </ul>
+        )}
+        {writing && <p className="text-xs text-muted">writing…</p>}
+        {answer !== null && <div className="whitespace-pre-wrap">{answer}</div>}
+        {figures.length > 0 && (
+          <p className="text-xs font-mono tabular-nums text-muted">{figures.join(" · ")}</p>
+        )}
+        {turn.attempts !== null && (
+          <p className="text-xs font-mono tabular-nums text-muted">attempts {turn.attempts}</p>
+        )}
+        {turn.repeated !== null && (
+          <p className="text-xs font-mono tabular-nums text-muted">repeated output {turn.repeated}</p>
+        )}
+        {turn.evicted !== null && (
+          <p className="text-xs font-mono tabular-nums text-muted">tool results evicted {turn.evicted}</p>
+        )}
+      </div>
     </li>
   );
 }
@@ -254,20 +287,26 @@ function Clipped({ text, className }: { text: string; className: string }) {
 }
 
 function CallViewItem({ call }: { call: CallView }) {
+  const [first, ...rest] = call.args;
   return (
-    <li className="flex flex-col gap-0.5 border-t border-line px-3 py-2 first:border-t-0 bg-card">
+    <li className={`border-t border-line px-3 py-2 bg-card first:border-t-0 ${call.ok === false ? "bg-hot/5" : ""}`}>
       <div className="flex items-center gap-2">
         {call.ok === true && <Check aria-label="succeeded" role="img" size={14} className="text-state-ok" />}
         {call.ok === false && <X aria-label="failed" role="img" size={14} className="text-hot" />}
-        <span className="font-mono tabular-nums">{call.name}</span>
-        <span className="ml-auto flex items-center gap-2 text-sm font-mono tabular-nums text-muted">
+        <span className="font-mono text-sm font-semibold">{call.name}</span>
+        {first !== undefined && (
+          <Clipped text={`${first[0]}: ${first[1]}`} className="min-w-0 flex-1 font-mono text-sm text-muted" />
+        )}
+        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-xs text-muted">
           {call.status !== null && <span>{call.status}</span>}
           {call.result !== null && <span>{call.result}</span>}
-          {call.exitCode !== null && <span>exit {call.exitCode}</span>}
+          {call.exitCode !== null && (
+            <span className={call.ok === false ? "text-hot" : undefined}>exit {call.exitCode}</span>
+          )}
           {call.time !== null && <span>{call.time}</span>}
         </span>
       </div>
-      {call.args.map(([key, value], i) => (
+      {rest.map(([key, value], i) => (
         <Clipped key={i} text={`${key}: ${value}`} className="text-sm font-mono tabular-nums text-muted" />
       ))}
       {call.message !== null && (
@@ -277,20 +316,40 @@ function CallViewItem({ call }: { call: CallView }) {
   );
 }
 
-function SummaryItem({ summary }: { summary: SummaryView }) {
+function SummaryItem({ summary, state }: { summary: SummaryView; state: ListRow["state"] }) {
   if (summary.finished) {
     return (
-      <li data-from="end" className="rounded-lg border border-line p-3">
-        <p className={summary.ok === false ? "text-hot" : undefined}>
-          {summary.ok === false ? "Failed" : "Finished"}
+      <li data-from="end" className="rounded-xl border border-line px-4 py-3">
+        <p>
+          <span className={`inline-flex items-center gap-1 ${STATE_TEXT[state]}`}>
+            <StateIcon state={state} size={16} />
+            {summary.ok === false ? "Failed" : "Finished"}
+          </span>
           {summary.elapsed !== null && ` in ${summary.elapsed}`}
+          {summary.turns !== null && ` · ${summary.turns} turns`}
+          {summary.reuse !== null && ` · ${summary.reuse} cached`}
         </p>
-        <SummaryFigures summary={summary} />
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
+          {summary.cached !== null && <span>cached {summary.cached.toLocaleString()}</span>}
+          {summary.returned !== null && <span>returned {summary.returned.toLocaleString()}</span>}
+          {summary.load !== null && <span>load {summary.load.toLocaleString()}</span>}
+          {summary.failures !== null && (
+            <span className={summary.failures > 0 ? "text-hot" : "text-muted"}>
+              failures {summary.failures.toLocaleString()}
+            </span>
+          )}
+          {summary.toolTime !== null && <span>tool time {summary.toolTime}</span>}
+          {summary.shellCalls !== null && <span>shell calls {summary.shellCalls.toLocaleString()}</span>}
+          {summary.finishReason !== null && <span>finish reason {summary.finishReason}</span>}
+        </div>
+        {summary.error !== null && (
+          <p className="whitespace-pre-wrap font-mono tabular-nums text-hot">{summary.error}</p>
+        )}
       </li>
     );
   }
   return (
-    <li className="rounded-lg border border-line p-4">
+    <li className="rounded-xl border border-line px-4 py-3">
       <h3 className="font-semibold">Summary</h3>
       <SummaryFigures summary={summary} />
     </li>

@@ -44,6 +44,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     tokensOut: null,
     tokS: null,
     clock: null,
+    at: null,
     ...overrides,
   };
 }
