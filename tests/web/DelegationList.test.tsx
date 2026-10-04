@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
+import { localDateTime } from "../../src/web/time.ts";
 import type { HistoryPage, ListResponse } from "../../src/server/poller.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 
@@ -95,12 +96,7 @@ describe("DelegationList", () => {
 
   it("shows the start time in local time", () => {
     const startedAt = new Date("2024-01-15T13:45:00Z").toISOString();
-    const expected = new Date(startedAt).toLocaleString([], {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const expected = localDateTime(startedAt);
     render(<DelegationList list={list([row({ startedAt })])} />);
     expect(screen.getByText(expected)).toBeTruthy();
   });
