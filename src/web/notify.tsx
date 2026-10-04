@@ -3,6 +3,7 @@
 // never do. The browser offers notifications only in a secure context: on localhost, not
 // over the overlay VPN's plain HTTP, so a phone gets no button.
 import { useEffect, useRef, useState } from "react";
+import { Bell } from "lucide-react";
 import type { ListRow } from "../server/streams.ts";
 
 const GOING = new Set<ListRow["state"]>(["live", "asking", "queued", "quiet"]);
@@ -43,14 +44,16 @@ export function useNotifications(rows: ListRow[], onOpen: (name: string) => void
 export function NotifyButton() {
   const [permission, setPermission] = useState(() => (available() ? Notification.permission : null));
   if (permission === null || permission === "granted") return null;
-  if (permission === "denied") return <span className="text-sm text-muted">Notifications are blocked in this browser</span>;
+  if (permission === "denied") return <span className="rounded-full border border-line px-3 py-1 text-sm text-muted">Notifications blocked</span>;
   return (
     <button
       type="button"
       onClick={async () => setPermission(await Notification.requestPermission())}
-      className="rounded border border-line px-2 py-1 text-sm text-accent hover:bg-line/50"
+      title="Notify me when a delegation ends"
+      className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-sm text-accent hover:bg-line/50"
     >
-      Notify me when a delegation ends
+      <Bell size={14} aria-hidden="true" />
+      Notify me
     </button>
   );
 }

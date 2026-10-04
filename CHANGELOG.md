@@ -17,7 +17,8 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   allows them; clicking it opens that delegation. Following a run meant watching the page.
   Only runs seen still going on the page notify, so opening it never floods old endings.
   The browser allows notifications only in a secure context, so this works on `localhost`
-  and not on the phone over the overlay VPN's plain HTTP, which gets no offer.
+  and not on the phone over the overlay VPN's plain HTTP, which gets no offer. The offer
+  is a "Notify me" pill with a bell beside the header's other pills.
 
 ## #32 — 2026-10-04 — feat: move through the list from the keyboard
 

@@ -241,7 +241,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### Notifications
 
-- Once the viewer allows them, a desktop notification says how a delegation ended ("Finished", "Failed", "Stopped", "Timed out", "Cut off", with the reason), once, and clicking it opens that delegation. Only a run seen still going on the page can notify. The browser offers notifications only in a secure context, so the page asks on `localhost` and shows no offer over the overlay VPN's plain HTTP, where a phone cannot get them.
+- Once the viewer allows them, a desktop notification says how a delegation ended ("Finished", "Failed", "Stopped", "Timed out", "Cut off", with the reason), once, and clicking it opens that delegation. Only a run seen still going on the page can notify. The browser offers notifications only in a secure context, so the page offers them on `localhost`, with a "Notify me" pill in the header, and shows no offer over the overlay VPN's plain HTTP, where a phone cannot get them.
 
 ### Keyboard
 
