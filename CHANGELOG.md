@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #31 — 2026-10-04 — feat: show how things stand in a background tab's title and icon
+
+### Added
+
+- **A background tab says how things stand**: "(2 running) Delegation tracker", "1 failed"
+  for a failure since the tab was last looked at, and a blue or red dot on its icon. At
+  the desk the tracker sits in a background tab that said nothing until opened. Showing
+  the tab clears the failures; the icon is drawn from the page's colour tokens.
+
 ## #30 — 2026-10-04 — feat: show the cluster at a glance, coloured by load and heat
 
 ### Added

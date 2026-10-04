@@ -187,6 +187,14 @@ describe("App", () => {
     expect(screen.queryByRole("link", { name: "First delegation" })).toBeNull();
   });
 
+  it("keeps the tab's title and icon up to date", () => {
+    document.querySelector('link[rel="icon"]')?.remove();
+    document.title = "something else";
+    render(<App />);
+    expect(document.title).toBe("Delegation tracker");
+    expect(document.querySelector('link[rel="icon"]')).not.toBeNull();
+  });
+
   it("uses the screen's width rather than a narrow column", () => {
     const { container } = render(<App />);
     expect(container.innerHTML).not.toMatch(/\bmax-w-xl\b/);
