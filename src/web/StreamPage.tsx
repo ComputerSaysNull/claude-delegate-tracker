@@ -304,9 +304,15 @@ function DelegationMessage({
               <Markdown key={i} text={q} />
             ))}
             {waitingFor !== undefined && (
-              <p className="text-sm text-muted">
+              <p className="flex items-center gap-2 text-[13px] text-muted">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-state-asking" aria-hidden="true" />
                 Waiting for an answer
-                {waitingFor !== null && <span className="font-mono tabular-nums"> · {waitingFor}</span>}
+                {waitingFor !== null && <span className="font-mono tabular-nums text-text"> · {waitingFor}</span>}
+              </p>
+            )}
+            {turn.answer !== null && (
+              <p className="text-[13px] text-muted">
+                Answered after <span className="font-mono tabular-nums">{turn.answer.waited}</span>
               </p>
             )}
           </div>

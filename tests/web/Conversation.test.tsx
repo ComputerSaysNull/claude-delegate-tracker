@@ -195,6 +195,17 @@ describe("a question to the caller", () => {
     expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).not.toContain("Waiting for an answer");
   });
 
+  it("says in the question how long the answer took, once it came", () => {
+    const answered = turn(1, { question: asked.question, answer: { text: "Leave them out", waited: "1m12s", bestReading: false } });
+    render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
+    expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).toContain("Answered after 1m12s");
+  });
+
+  it("marks a question still waiting with a pulsing dot", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "asking", age: "48s" }), turns: [asked] })} />);
+    expect(screen.getByRole("note", { name: "Question for the caller" }).querySelector(".animate-pulse")).not.toBeNull();
+  });
+
   it("says when the caller left the choice to the delegation", () => {
     const answered = turn(1, { question: asked.question, answer: { text: "Proceed on your best reading.", waited: "1m01s", bestReading: true } });
     render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
