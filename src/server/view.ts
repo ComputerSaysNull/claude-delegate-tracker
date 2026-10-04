@@ -30,6 +30,7 @@ export interface TurnView {
   reply: string | null;         // the closing `turn` event's `text`
   closed: boolean;              // a `turn` event for this number has landed
   heartbeat: string | null;     // open turn only, from the newest `alive` after its `priced`
+  partial: { reasoning: string; answer: string } | null; // open turn only: its `partial` text so far
   toolTime: string | null;      // closed turn: Σ calls' ms, else ms − backend_ms when there are calls; null without calls
   attempts: number | null;      // only when above 1
 }
@@ -67,20 +68,28 @@ export interface ViewPatch {
   seq: number;                  // the page refetches the whole view when this isn't its seq + 1
   row: ListRow;
   waiting: string | null;
-  turns: { index: number; turn: TurnView }[]; // only turns that changed since the previous seq
+  // Only turns that changed since the previous seq. With `append`, the turn's `partial`
+  // holds only the text added since then, for the page to add to what it holds.
+  turns: { index: number; turn: TurnView; append?: true }[];
   summary: SummaryView | null;
 }
 
 // Raw events kept per stream; StreamState (streams.ts) keeps start and end.
 export interface ViewState {
   seq: number;
-  turns: Map<number, { priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
-    turn: Record<string, unknown> | null; alive: Record<string, unknown> | null }>;
+  turns: Map<number, TurnSlot>;
   waiting: Record<string, unknown> | null;
 }
 
-type TurnSlot = { priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
-  turn: Record<string, unknown> | null; alive: Record<string, unknown> | null };
+export interface TurnSlot {
+  priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
+  turn: Record<string, unknown> | null; alive: Record<string, unknown> | null;
+  partialReasoning: string; partialAnswer: string; partialSeen: boolean;
+}
+
+function newSlot(): TurnSlot {
+  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false };
+}
 
 export function newViewState(): ViewState {
   return { seq: 0, turns: new Map(), waiting: null };
@@ -99,12 +108,26 @@ export function applyViewEvent(v: ViewState, evt: Record<string, unknown>): bool
     if (typeof turn !== "number") return false;
     let slot = v.turns.get(turn);
     if (slot === undefined) {
-      slot = { priced: null, tools: null, turn: null, alive: null };
+      slot = newSlot();
       v.turns.set(turn, slot);
     }
     if (t === "priced") slot.priced = evt;
     else if (t === "tools") slot.tools = evt;
     else slot.turn = evt;
+    v.seq += 1;
+    return true;
+  }
+  if (t === "partial") {
+    const turn = evt.turn;
+    if (typeof turn !== "number") return false;
+    let slot = v.turns.get(turn);
+    if (slot === undefined) {
+      slot = newSlot();
+      v.turns.set(turn, slot);
+    }
+    if (typeof evt.reasoning === "string") slot.partialReasoning += evt.reasoning;
+    if (typeof evt.answer === "string") slot.partialAnswer += evt.answer;
+    slot.partialSeen = true;
     v.seq += 1;
     return true;
   }
@@ -271,6 +294,11 @@ function ofTurnsOf(slot: TurnSlot): number | null {
   return null;
 }
 
+function partialOf(slot: TurnSlot, closed: boolean): { reasoning: string; answer: string } | null {
+  if (closed || !slot.partialSeen) return null;
+  return { reasoning: slot.partialReasoning, answer: slot.partialAnswer };
+}
+
 function buildTurn(n: number, slot: TurnSlot): TurnView {
   const closed = slot.turn !== null;
   const of = ofTurnsOf(slot);
@@ -284,6 +312,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     reply: typeof reply === "string" ? reply : null,
     closed,
     heartbeat: closed ? null : heartbeatOf(slot),
+    partial: partialOf(slot, closed),
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
   };
@@ -417,14 +446,36 @@ export function buildView(name: string, v: ViewState, s: StreamState, row: ListR
   };
 }
 
+// A changed turn is sent as an append only when the new partial extends the old one.
+function appendDiff(prevTurn: TurnView | undefined, nextTurn: TurnView): { turn: TurnView; append: true } | null {
+  const prevP = prevTurn?.partial;
+  const nextP = nextTurn.partial;
+  if (prevP === undefined || prevP === null || nextP === null) return null;
+  if (!nextP.reasoning.startsWith(prevP.reasoning) || !nextP.answer.startsWith(prevP.answer)) return null;
+  return {
+    turn: {
+      ...nextTurn,
+      partial: {
+        reasoning: nextP.reasoning.slice(prevP.reasoning.length),
+        answer: nextP.answer.slice(prevP.answer.length),
+      },
+    },
+    append: true,
+  };
+}
+
 // The patch from the view last sent to the view now: only turns whose content changed.
 export function diffView(prev: StreamView | null, next: StreamView): ViewPatch {
-  const turns: { index: number; turn: TurnView }[] = [];
+  const turns: { index: number; turn: TurnView; append?: true }[] = [];
   if (prev === null) {
     next.turns.forEach((turn, i) => turns.push({ index: i, turn }));
   } else {
     next.turns.forEach((turn, i) => {
-      if (JSON.stringify(prev.turns[i]) !== JSON.stringify(turn)) turns.push({ index: i, turn });
+      if (JSON.stringify(prev.turns[i]) !== JSON.stringify(turn)) {
+        const appended = appendDiff(prev.turns[i], turn);
+        if (appended === null) turns.push({ index: i, turn });
+        else turns.push({ index: i, turn: appended.turn, append: true });
+      }
     });
   }
   return { name: next.name, seq: next.seq, row: next.row, waiting: next.waiting, turns, summary: next.summary };

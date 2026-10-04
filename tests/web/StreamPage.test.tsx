@@ -33,6 +33,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     reply: null,
     closed: false,
     heartbeat: null,
+    partial: null,
     toolTime: null,
     attempts: null,
     ...overrides,
@@ -130,6 +131,66 @@ describe("applyPatch", () => {
     expect(result.turns).not.toBe(before);
     expect(result.turns[0].reply).toBe("changed");
   });
+
+  it("appends the patch partial onto the held turn's partial", () => {
+    const held = view({
+      seq: 1,
+      turns: [turn(1, { partial: { reasoning: "thinking", answer: "hello" } })],
+    });
+    const result = applyPatch(
+      held,
+      patch({
+        seq: 2,
+        turns: [{ index: 0, turn: turn(1, { partial: { reasoning: " hard", answer: " world" } }), append: true }],
+      }),
+    ) as StreamView;
+    expect(result.turns[0].partial).toEqual({ reasoning: "thinking hard", answer: "hello world" });
+  });
+
+  it("refetches when appending onto a held turn with a null partial", () => {
+    const held = view({ seq: 1, turns: [turn(1)] });
+    expect(
+      applyPatch(
+        held,
+        patch({
+          seq: 2,
+          turns: [{ index: 0, turn: turn(1, { partial: { reasoning: "x", answer: "y" } }), append: true }],
+        }),
+      ),
+    ).toBe("refetch");
+  });
+
+  it("refetches when appending onto a missing turn index", () => {
+    const held = view({ seq: 1, turns: [] });
+    expect(
+      applyPatch(
+        held,
+        patch({
+          seq: 2,
+          turns: [{ index: 0, turn: turn(1, { partial: { reasoning: "x", answer: "y" } }), append: true }],
+        }),
+      ),
+    ).toBe("refetch");
+  });
+
+  it("does not mutate the held view when appending", () => {
+    const held = view({
+      seq: 1,
+      turns: [turn(1, { partial: { reasoning: "thinking", answer: "hello" } })],
+    });
+    const before = held.turns;
+    const result = applyPatch(
+      held,
+      patch({
+        seq: 2,
+        turns: [{ index: 0, turn: turn(1, { partial: { reasoning: " hard", answer: " world" } }), append: true }],
+      }),
+    ) as StreamView;
+    expect(held.turns).toBe(before);
+    expect(held.turns[0].partial).toEqual({ reasoning: "thinking", answer: "hello" });
+    expect(result.turns).not.toBe(before);
+    expect(result.turns[0].partial).toEqual({ reasoning: "thinking hard", answer: "hello world" });
+  });
 });
 
 describe("StreamViewBody", () => {
@@ -167,5 +228,33 @@ describe("StreamViewBody", () => {
     expect(screen.queryByText("null")).toBeNull();
     const failures = screen.getByText(/failures/);
     expect(failures.className).toContain("text-red-600");
+  });
+
+  it("shows an open turn's partial answer and folds its reasoning away", () => {
+    const v = view({
+      turns: [
+        turn(1, {
+          partial: { reasoning: "thinking hard", answer: "The loop retries" },
+        }),
+      ],
+    });
+    render(<StreamViewBody view={v} />);
+
+    expect(screen.getByText("The loop retries")).toBeTruthy();
+    const reasoning = screen.getByText("thinking hard");
+    const details = reasoning.closest("details");
+    expect(details).not.toBeNull();
+    expect((details as HTMLDetailsElement).open).toBe(false);
+    expect(screen.getByText("reasoning").closest("details")).toBe(details);
+  });
+
+  it("shows the final reply and no writing label for a closed turn", () => {
+    const v = view({
+      turns: [turn(1, { closed: true, reply: "final answer" })],
+    });
+    render(<StreamViewBody view={v} />);
+
+    expect(screen.getByText("final answer")).toBeTruthy();
+    expect(screen.queryByText("writing…")).toBeNull();
   });
 });
