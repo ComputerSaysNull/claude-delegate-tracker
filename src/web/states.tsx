@@ -48,6 +48,22 @@ export function cardClass(state: State): string {
   return "bg-card border-line";
 }
 
+// The state's icon alone, coloured like the badge but without the badge's pill: the list's
+// cards lead with it. A running delegation is a filled dot, as the badge draws it.
+export function StateIcon({ state, size = 16 }: { state: State; size?: number }) {
+  const Icon = STATE_ICON[state];
+  return (
+    <Icon
+      size={size}
+      strokeWidth={2.2}
+      role="img"
+      aria-label={STATE_LABEL[state]}
+      fill={state === "live" ? "currentColor" : "none"}
+      className={`shrink-0 ${STATE_TEXT[state]}`}
+    />
+  );
+}
+
 export function StateBadge({ state, className = "" }: { state: State; className?: string }) {
   const Icon = STATE_ICON[state];
   return (

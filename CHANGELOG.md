@@ -19,6 +19,9 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 - **A line above the list counts what is running, queued and failed today**, and a running
   card shows its turns as a bar and its time left; a queued card shows its wait and its
   limit. What was running looked like what had finished.
+- **Cards and filters as on the design canvas**: a card leads with the state's icon, the
+  title and the start time, then its kind, turns and duration; the nine state buttons
+  became one states menu.
 
 ## #24 — 2026-10-04 — fix: apply the repeated-output, shell-count and evicted-results rules
 

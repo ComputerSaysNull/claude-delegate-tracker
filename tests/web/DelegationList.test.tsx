@@ -2,7 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
-import { localDateTime } from "../../src/web/time.ts";
+import { localTime } from "../../src/web/time.ts";
+import { STATE_LABEL } from "../../src/web/states.tsx";
 import type { HistoryPage, ListResponse } from "../../src/server/poller.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 
@@ -59,11 +60,10 @@ describe("DelegationList", () => {
     expect(link.className).toMatch(/\btruncate\b/);
   });
 
-  it("gives each card its state's badge, with the state's icon", () => {
-    const { container } = render(<DelegationList list={list([row({ state: "failed" })])} />);
-    const badge = container.querySelector("li")!.querySelector("span.inline-flex")!;
-    expect(badge.textContent).toBe("Failed");
-    expect(badge.querySelector("svg")).not.toBeNull();
+  it("gives each card its state's icon, named for a screen reader", () => {
+    render(<DelegationList list={list([row({ state: "failed" })])} />);
+    const icon = screen.getByRole("img", { name: "Failed" });
+    expect(icon.tagName.toLowerCase()).toBe("svg");
   });
 
   it("tints a running card and leaves a finished one plain", () => {
@@ -71,14 +71,6 @@ describe("DelegationList", () => {
     const [running, finished] = [...container.querySelectorAll("li")];
     expect(running.className).toMatch(/\bbg-state-live\//);
     expect(finished.className).toMatch(/\bbg-card\b/);
-  });
-
-  it("shows the start line in Plex Mono with tabular digits", () => {
-    const startedAt = "2026-01-15T13:45:00.000Z";
-    render(<DelegationList list={list([row({ startedAt })])} />);
-    const line = screen.getByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").includes(localDateTime(startedAt)));
-    expect(line.className).toMatch(/\bfont-mono\b/);
-    expect(line.className).toMatch(/\btabular-nums\b/);
   });
 
   it("shows the waiting line for a null list", () => {
@@ -102,10 +94,10 @@ describe("DelegationList", () => {
     expect(screen.getByText("No delegations yet.")).toBeTruthy();
   });
 
-  it("renders a badge for every state", () => {
+  it("renders a state icon for every state", () => {
     for (const state of STATES) {
       render(<DelegationList list={list([row({ state })])} />);
-      expect(screen.getAllByText(state).length).toBeGreaterThan(0);
+      expect(screen.getByRole("img", { name: STATE_LABEL[state] })).toBeTruthy();
     }
   });
 
@@ -120,9 +112,8 @@ describe("DelegationList", () => {
 
   it("shows the start time in local time", () => {
     const startedAt = new Date("2024-01-15T13:45:00Z").toISOString();
-    const expected = localDateTime(startedAt);
     render(<DelegationList list={list([row({ startedAt })])} />);
-    expect(screen.getByText(expected)).toBeTruthy();
+    expect(screen.getByText(localTime(startedAt))).toBeTruthy();
   });
 
   it("shows a dash when startedAt is null", () => {
@@ -228,7 +219,7 @@ describe("DelegationList", () => {
     expect(screen.queryByText("Fix the login screen")).toBeNull();
   });
 
-  it("shows only the selected state and flips aria-pressed", () => {
+  it("shows only the selected state from the states menu", () => {
     render(
       <DelegationList
         list={list([
@@ -237,14 +228,13 @@ describe("DelegationList", () => {
         ])}
       />,
     );
-    const okButton = screen.getByRole("button", { name: "ok" });
-    expect(okButton.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(okButton);
-    expect(okButton.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByText("All states"));
+    const okBox = screen.getByRole("checkbox", { name: STATE_LABEL.ok });
+    fireEvent.click(okBox);
+    expect(screen.getByText("1 state")).toBeTruthy();
     expect(screen.getByText("Ok task")).toBeTruthy();
     expect(screen.queryByText("Live task")).toBeNull();
-    fireEvent.click(okButton);
-    expect(okButton.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(screen.getByRole("checkbox", { name: STATE_LABEL.ok }));
     expect(screen.getByText("Live task")).toBeTruthy();
     expect(screen.getByText("Ok task")).toBeTruthy();
   });

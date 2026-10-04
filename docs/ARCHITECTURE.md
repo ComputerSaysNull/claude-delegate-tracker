@@ -220,7 +220,8 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
 - Above the list, count what is running and queued now, and what failed today.
-- A running card shows its turns as a bar and the newest heartbeat's `ends_in_seconds` as the time left; a queued card shows its wait and its limit.
+- A card leads with the state's icon (named for a screen reader), the title and the start time; under them its kind, its turns ("turn N of M" while running, "N turns" after) and how long it took. A running card shows its turns as segments (done, the current one, those to come) and the newest heartbeat's `ends_in_seconds` as the time left; a queued card shows its wait and its limit.
+- The states filter is one menu of checkboxes, beside the search box.
 
 ### Layout
 
