@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #24 — 2026-10-04 — fix: apply the repeated-output, shell-count and evicted-results rules
+
+### Fixed
+
+- **Three rendering rules were written down but never applied**: a turn's repeated-output
+  share from 15%, the run's shell-call count above 0, and a turn's evicted tool results
+  when the field is a number. No code read `duplicate_line_share`, `bash_calls` or
+  `tool_results_evicted`, so the detail page never showed them; the item that built the
+  page missed them. Each now shows under its rule, with a test at its edge.
+
 ## #23 — 2026-10-04 — feat: show the title the caller gave a delegation
 
 ### Added

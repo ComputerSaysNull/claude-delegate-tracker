@@ -113,6 +113,12 @@ function TurnSection({ turn }: { turn: TurnView }) {
       {turn.attempts !== null && (
         <p className="mt-1 text-sm font-mono tabular-nums text-muted">attempts {turn.attempts}</p>
       )}
+      {turn.repeated !== null && (
+        <p className="mt-1 text-sm font-mono tabular-nums text-muted">repeated output {turn.repeated}</p>
+      )}
+      {turn.evicted !== null && (
+        <p className="mt-1 text-sm font-mono tabular-nums text-muted">tool results evicted {turn.evicted}</p>
+      )}
       {turn.partial !== null && <TurnPartial partial={turn.partial} />}
       {turn.reply !== null && <pre className="mt-2 whitespace-pre-wrap font-mono tabular-nums text-sm">{turn.reply}</pre>}
     </section>
@@ -197,6 +203,7 @@ function SummarySection({ summary }: { summary: SummaryView }) {
           </p>
         )}
         {summary.toolTime !== null && <p>tool time {summary.toolTime}</p>}
+        {summary.shellCalls !== null && <p>shell calls {summary.shellCalls.toLocaleString()}</p>}
         {summary.finishReason !== null && <p>finish reason {summary.finishReason}</p>}
         {summary.error !== null && (
           <p className="whitespace-pre-wrap font-mono tabular-nums text-hot">{summary.error}</p>

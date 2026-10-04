@@ -36,6 +36,8 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     partial: null,
     toolTime: null,
     attempts: null,
+    repeated: null,
+    evicted: null,
     ...overrides,
   };
 }
@@ -218,6 +220,7 @@ describe("StreamViewBody", () => {
         toolTime: "1m",
         finishReason: "stop",
         error: null,
+        shellCalls: null,
       },
     });
     render(<StreamViewBody view={v} />);
@@ -228,6 +231,30 @@ describe("StreamViewBody", () => {
     expect(screen.queryByText("null")).toBeNull();
     const failures = screen.getByText(/failures/);
     expect(failures.className).toContain("text-hot");
+  });
+
+  it("shows a turn's repeated output share and its evicted tool results", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { closed: true, repeated: "23%", evicted: 0 })] })} />);
+    expect(screen.getByText("repeated output 23%")).toBeTruthy();
+    expect(screen.getByText("tool results evicted 0")).toBeTruthy();
+  });
+
+  it("leaves both out when the view has none", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { closed: true })] })} />);
+    expect(screen.queryByText(/repeated output/)).toBeNull();
+    expect(screen.queryByText(/tool results evicted/)).toBeNull();
+  });
+
+  it("shows the shell count in the summary when there is one", () => {
+    const summary = {
+      finished: true, ok: true, elapsed: "5s", turns: null, cached: null, reuse: null, returned: null,
+      load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: 4,
+    };
+    const { unmount } = render(<StreamViewBody view={view({ summary })} />);
+    expect(screen.getByText("shell calls 4")).toBeTruthy();
+    unmount();
+    render(<StreamViewBody view={view({ summary: { ...summary, shellCalls: null } })} />);
+    expect(screen.queryByText(/shell calls/)).toBeNull();
   });
 
   it("shows an open turn's partial answer and folds its reasoning away", () => {

@@ -33,6 +33,8 @@ export interface TurnView {
   partial: { reasoning: string; answer: string } | null; // open turn only: its `partial` text so far
   toolTime: string | null;      // closed turn: Σ calls' ms, else ms − backend_ms when there are calls; null without calls
   attempts: number | null;      // only when above 1
+  repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
+  evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
 }
 
 // While running, built from the closed turns; null when none of its fields are present.
@@ -49,6 +51,7 @@ export interface SummaryView {
   toolTime: string | null;      // end.tool_seconds as a duration
   finishReason: string | null;
   error: string | null;         // end.error in full
+  shellCalls: number | null;    // end.bash_calls, only above 0
 }
 
 export interface StreamView {
@@ -304,6 +307,8 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
   const of = ofTurnsOf(slot);
   const reply = slot.turn?.text;
   const attempts = slot.turn?.attempts;
+  const share = slot.turn?.duplicate_line_share;
+  const evicted = slot.turn?.tool_results_evicted;
   return {
     n,
     heading: of === null ? `turn ${n}` : `turn ${n} of ${of}`,
@@ -315,6 +320,9 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     partial: partialOf(slot, closed),
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
+    repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
+    // The schema also allows a boolean here, which says nothing countable.
+    evicted: typeof evicted === "number" ? evicted : null,
   };
 }
 
@@ -417,10 +425,12 @@ function buildSummary(s: StreamState, closedTurns: TurnSlot[]): SummaryView | nu
   const toolTime = end !== null && typeof end.tool_seconds === "number" ? formatDuration(end.tool_seconds) : null;
   const finishReason = end !== null && typeof end.finish_reason === "string" ? end.finish_reason : null;
   const error = end !== null && typeof end.error === "string" && end.error !== "" ? end.error : null;
+  const shellCalls = end !== null && typeof end.bash_calls === "number" && end.bash_calls > 0 ? end.bash_calls : null;
 
   if (elapsed === null && turns === null && cached === null && reuse === null && returned === null &&
-      loadVal === null && failures === null && toolTime === null && finishReason === null && error === null) return null;
-  return { finished, ok, elapsed, turns, cached, reuse, returned, load: loadVal, failures, toolTime, finishReason, error };
+      loadVal === null && failures === null && toolTime === null && finishReason === null && error === null &&
+      shellCalls === null) return null;
+  return { finished, ok, elapsed, turns, cached, reuse, returned, load: loadVal, failures, toolTime, finishReason, error, shellCalls };
 }
 
 export function buildView(name: string, v: ViewState, s: StreamState, row: ListRow): StreamView {
