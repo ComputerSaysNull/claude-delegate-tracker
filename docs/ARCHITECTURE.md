@@ -71,6 +71,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name, ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. Each is read whole on request and never polled. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
+| `GET /api/cluster/history` | The same figures over time, for the charts. See "Figures over time". |
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
 | `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and `cluster` and `health` events with the figures and the health report the same way. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
@@ -92,7 +93,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 
 ## Settings
 
-`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
+`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
 
 Defaults live only in the settings module, never in docs or tests.
 
@@ -182,6 +183,12 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 - Which thermal zones and `nvidia-smi` fields are read is settled by measuring the nodes, not assumed. Measured: every zone is of type `acpitz` and none is named for the CPU, so the hottest zone is shown as "CPU"; `nvidia-smi` gives numbers, and `[N/A]` would show `—`. Memory figures are not shown. Sensors are shown with plain names ("CPU", "GPU"); raw zone and chip names are never shown.
 - The command prints three sections, `==stat`, `==thermal` and `==gpu`, so one missing section blanks only its own figures.
 - A node refused for its host key says so on its panel; one that can't be reached keeps the time of its last good reading. Each node fails alone.
+
+## Figures over time
+
+- The backend keeps a point per reading for `HISTORY_WINDOW_SECONDS`, in memory only, so a restart starts the charts afresh.
+- A missing figure is a gap, never 0, and a source that is down adds a point of gaps, so a chart shows the outage instead of joining across it.
+- The page fetches the history once, then adds each `cluster` event's figures itself.
 
 ## Titles
 

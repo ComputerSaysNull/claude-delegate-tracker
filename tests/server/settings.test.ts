@@ -50,6 +50,12 @@ describe('loadSettings', () => {
     expect(s.nodeKnownHosts).toBe('C:\\k\\hosts');
   });
 
+  it('HISTORY_WINDOW_SECONDS defaults and is used when valid', () => {
+    expect(loadSettings({}).historyWindowSeconds).toBe(DEFAULTS.historyWindowSeconds);
+    expect(loadSettings({ HISTORY_WINDOW_SECONDS: '600' }).historyWindowSeconds).toBe(600);
+    expect(() => loadSettings({ HISTORY_WINDOW_SECONDS: '0' })).toThrow(/HISTORY_WINDOW_SECONDS/);
+  });
+
   it('NODES_POLL_SECONDS defaults and is used when valid', () => {
     expect(loadSettings({}).nodesPollSeconds).toBe(DEFAULTS.nodesPollSeconds);
     expect(loadSettings({ NODES_POLL_SECONDS: '15' }).nodesPollSeconds).toBe(15);

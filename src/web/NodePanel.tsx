@@ -1,6 +1,9 @@
 // The nodes' figures, as the backend sends them on the cluster event.
 import type { NodeFigures } from "../server/nodes.ts";
+import type { Series } from "../server/history.ts";
 import { localTime } from "./time.ts";
+import { Sparkline, windowLabel } from "./Sparkline.tsx";
+import { toUplotData } from "./sparkData.ts";
 
 const SLATE = "text-slate-500 dark:text-slate-400";
 const AMBER = "text-amber-600 dark:text-amber-400";
@@ -18,6 +21,7 @@ interface Row {
   label: string;
   value: string;
   note?: string;
+  spark?: string; // history key for a sparkline under this row
 }
 
 function nodeRows(node: NodeFigures): Row[] {
@@ -26,10 +30,11 @@ function nodeRows(node: NodeFigures): Row[] {
       label: "CPU use",
       value: percent(node.cpuPercent),
       note: node.cpuWindowSeconds === null ? undefined : `over ${node.cpuWindowSeconds.toLocaleString()}s`,
+      spark: "cpuPercent",
     },
-    { label: "CPU temperature", value: celsius(node.cpuTempC) },
-    { label: "GPU use", value: percent(node.gpuPercent) },
-    { label: "GPU temperature", value: celsius(node.gpuTempC) },
+    { label: "CPU temperature", value: celsius(node.cpuTempC), spark: "cpuTempC" },
+    { label: "GPU use", value: percent(node.gpuPercent), spark: "gpuPercent" },
+    { label: "GPU temperature", value: celsius(node.gpuTempC), spark: "gpuTempC" },
   ];
 }
 
@@ -53,18 +58,32 @@ function statusLine(node: NodeFigures): StatusLine {
   }
 }
 
-function NodeBlock({ node }: { node: NodeFigures }) {
+function NodeBlock({
+  node,
+  history,
+  windowSeconds,
+}: {
+  node: NodeFigures;
+  history?: Series;
+  windowSeconds?: number;
+}) {
   const status = statusLine(node);
+  const span = windowSeconds ?? 3600;
   return (
     <li className="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
       <h3 className="font-medium">{node.name}</h3>
       <div className="mt-2 flex flex-col gap-1 text-sm">
         {nodeRows(node).map((row) => (
-          <p key={row.label} className={SLATE}>
-            <span>{row.label}: </span>
-            <span>{row.value}</span>
-            {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
-          </p>
+          <div key={row.label} className="flex flex-col gap-1">
+            <p className={SLATE}>
+              <span>{row.label}: </span>
+              <span>{row.value}</span>
+              {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
+            </p>
+            {row.spark !== undefined && history !== undefined && (
+              <Sparkline data={toUplotData(history, row.spark)} label={`${row.label} over the ${windowLabel(span)}`} />
+            )}
+          </div>
         ))}
       </div>
       <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
@@ -72,7 +91,15 @@ function NodeBlock({ node }: { node: NodeFigures }) {
   );
 }
 
-export function NodePanel({ nodes }: { nodes: NodeFigures[] | null }) {
+export function NodePanel({
+  nodes,
+  histories,
+  windowSeconds,
+}: {
+  nodes: NodeFigures[] | null;
+  histories?: Record<string, Series>;
+  windowSeconds?: number;
+}) {
   return (
     <section className="mt-6 rounded-lg border border-slate-300 p-4 dark:border-slate-700">
       <h2 className="text-lg font-semibold">Nodes</h2>
@@ -83,7 +110,12 @@ export function NodePanel({ nodes }: { nodes: NodeFigures[] | null }) {
       ) : (
         <ul className="mt-2 flex flex-col gap-3">
           {nodes.map((node) => (
-            <NodeBlock key={node.name} node={node} />
+            <NodeBlock
+              key={node.name}
+              node={node}
+              history={histories?.[node.name]}
+              windowSeconds={windowSeconds}
+            />
           ))}
         </ul>
       )}

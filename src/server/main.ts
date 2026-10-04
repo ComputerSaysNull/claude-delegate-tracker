@@ -5,6 +5,7 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
 import { buildHealth, makeSchemaCheck, type Health } from "./health.ts";
+import { ClusterHistoryStore } from "./history.ts";
 import { MetricsPoller } from "./metrics.ts";
 import { NodesPoller, sshRunner } from "./nodes.ts";
 import { Poller } from "./poller.ts";
@@ -51,6 +52,11 @@ const runner = settings.nodes.length > 0 && settings.nodeKey !== null && setting
 const nodes = new NodesPoller({ targets: runner === null ? [] : settings.nodes, runner, now: () => new Date() });
 nodes.start(settings.nodesPollSeconds);
 
+// The figures over time, kept in memory; a point per reading, a gap while a source is down.
+const figureHistory = new ClusterHistoryStore(settings.historyWindowSeconds);
+metrics.onChange((model) => figureHistory.pushModel(Date.now(), model));
+nodes.onChange((figures) => figureHistory.pushNodes(Date.now(), figures));
+
 // The health report, rebuilt whenever one of its sources changes; sent only when it differs.
 const healthNow = (): Health => buildHealth({
   folderConfigured: settings.transcriptDir !== null,
@@ -90,6 +96,7 @@ const app = createApp({
   follow: (name, listener) => poller.follow(name, listener),
   history: (before) => poller.history(before),
   cluster: () => ({ model: metrics.figures(), nodes: nodes.figures() }),
+  clusterHistory: () => figureHistory.snapshot(),
   subscribeCluster: (listener) => {
     const offModel = metrics.onChange((model) => listener({ model, nodes: nodes.figures() }));
     const offNodes = nodes.onChange((figures) => listener({ model: metrics.figures(), nodes: figures }));

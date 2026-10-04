@@ -16,7 +16,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
     quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
     metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1,
-    nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, ...overrides,
+    nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1, ...overrides,
   };
 }
 
@@ -47,6 +47,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     view: () => null,
     follow: () => null,
     history: () => null,
+    clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
     cluster: () => ({ model: MODEL, nodes: [] }),
     subscribeCluster: () => () => {},
     ...overrides,
@@ -87,6 +88,15 @@ describe("history", () => {
     const res = await makeApp({ history }).request("/api/streams", goodHost);
     expect(await res.json()).toEqual(LIST);
     expect(history).not.toHaveBeenCalled();
+  });
+});
+
+describe("figures over time", () => {
+  it("serves the history at /api/cluster/history", async () => {
+    const history = { windowSeconds: 3600, model: { at: [1], values: { running: [null] } }, nodes: [] };
+    const res = await makeApp({ clusterHistory: () => history }).request("/api/cluster/history", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(history);
   });
 });
 
