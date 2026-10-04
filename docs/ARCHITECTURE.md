@@ -222,7 +222,8 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 ### Layout
 
 - A header bar names the tracker and says whether updates are live (with the newest check's time, or "Reconnecting…") and whether the backend is healthy, as two pills. The cluster figures run across the top. Below them, on a wide screen, the list sits on the left in a capped column and the open delegation on the right, each scrolling on its own while the header and cluster stay in place; with none open, the right side asks for a choice.
-- Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works. An address `/s/<name>` opens that delegation.
+- Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works.
+- The address holds the open delegation (`/s/<name>`) and the filters (`q`, `state`, `kind`, `model`), so Back, reload and a bookmark land on the same view. Opening or closing a delegation is a step Back undoes; a filter change only rewrites the current address. A state the page does not know is left out, and a name that cannot be decoded opens nothing.
 
 ### On a phone
 

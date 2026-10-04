@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #22 — 2026-10-04 — feat: keep the open delegation and the filters in the address
+
+### Added
+
+- **The address follows the open delegation and the filters**, so Back closes a
+  delegation on the phone, a reload keeps the view, and "failed only" can be bookmarked.
+  With delegations opening in place, the address no longer changed at all, so Back left
+  the page and a reload lost the view. Opening or closing is a history step; typing a
+  search only rewrites the current address, so it does not fill the history.
+
 ## #21 — 2026-10-04 — feat: put the list and the open delegation side by side
 
 ### Changed

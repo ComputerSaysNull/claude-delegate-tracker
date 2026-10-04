@@ -1,8 +1,10 @@
 // The page frame: the tracker's backend health in the header, the cluster figures across
 // the top, the live delegation list on the left and the open delegation on the right on a
-// wide screen, one of the two on a phone. Opening a delegation never reloads the page.
-import { useState } from "react";
+// wide screen, one of the two on a phone. Opening a delegation never reloads the page; the
+// address follows the open delegation and the filters, so Back, reload and bookmarks work.
+import { useEffect, useState } from "react";
 import { Check, CircleDot, TriangleAlert, X } from "lucide-react";
+import { addressFor, readAddress, type Address } from "./address.ts";
 import { DelegationList } from "./DelegationList.tsx";
 import { HealthBanners } from "./HealthBanners.tsx";
 import { ModelPanel } from "./ModelPanel.tsx";
@@ -42,10 +44,25 @@ export default function App() {
             ? { text: "Check the banners", tone: "border-warn/50 text-warn", Icon: TriangleAlert }
             : null;
 
-  const [selected, setSelected] = useState<string | null>(() => {
-    const pathname = window.location.pathname;
-    return pathname.startsWith("/s/") ? decodeURIComponent(pathname.slice(3)) : null;
-  });
+  const [address, setAddress] = useState<Address>(() => readAddress(window.location.pathname, window.location.search));
+  const selected = address.selected;
+
+  // Back and Forward move between addresses this page wrote; follow them without a reload.
+  useEffect(() => {
+    const follow = () => setAddress(readAddress(window.location.pathname, window.location.search));
+    window.addEventListener("popstate", follow);
+    return () => window.removeEventListener("popstate", follow);
+  }, []);
+
+  // Opening or closing a delegation is a step Back can undo; a filter change only rewrites
+  // the current entry, so typing a search does not fill the history.
+  const go = (next: Address, step: boolean) => {
+    setAddress(next);
+    const url = addressFor(next);
+    if (url === window.location.pathname + window.location.search) return;
+    if (step) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
+  };
 
   return (
     <div className="flex min-h-screen flex-col text-base lg:h-screen lg:overflow-hidden">
@@ -85,7 +102,13 @@ export default function App() {
           aria-label="Delegations"
           className={`${selected === null ? "flex" : "hidden lg:flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:max-w-[460px] lg:flex-[1_1_340px] lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
         >
-          <DelegationList list={list} selected={selected} onOpen={setSelected} />
+          <DelegationList
+            list={list}
+            selected={selected}
+            onOpen={(name) => go({ ...address, selected: name }, true)}
+            filter={address.filter}
+            onFilterChange={(filter) => go({ ...address, filter }, false)}
+          />
         </nav>
         <main
           className={`${selected === null ? "hidden lg:flex" : "flex"} min-w-0 flex-col px-4 py-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
@@ -93,7 +116,7 @@ export default function App() {
           {selected === null ? (
             <p className="text-muted">Choose a delegation on the left to follow it.</p>
           ) : (
-            <StreamPage key={selected} name={selected} onClose={() => setSelected(null)} />
+            <StreamPage key={selected} name={selected} onClose={() => go({ ...address, selected: null }, true)} />
           )}
         </main>
       </div>

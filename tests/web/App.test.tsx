@@ -3,7 +3,7 @@
 // delegation on the right on a wide screen, one of the two on a phone. Opening a delegation
 // never reloads the page.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 import { localTime } from "../../src/web/time.ts";
@@ -134,6 +134,57 @@ describe("App", () => {
     expect((container.firstChild as HTMLElement).className).toMatch(/\blg:overflow-hidden\b/);
     expect(listPane().className).toMatch(/\blg:overflow-y-auto\b/);
     expect(detailPane().className).toMatch(/\blg:overflow-y-auto\b/);
+  });
+
+  it("puts the open delegation in the address, as a new history entry", () => {
+    render(<App />);
+    const before = window.history.length;
+    fireEvent.click(screen.getByRole("link", { name: "Second delegation" }));
+    expect(window.location.pathname).toBe("/s/s2");
+    expect(window.history.length).toBe(before + 1);
+  });
+
+  it("Back closes the delegation without a page load", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: "Second delegation" }));
+    act(() => {
+      window.history.replaceState(null, "", "/");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.queryByTestId("detail")).toBeNull();
+  });
+
+  it("Forward opens it again", () => {
+    render(<App />);
+    act(() => {
+      window.history.replaceState(null, "", "/s/s1");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    expect(screen.getByTestId("detail").textContent).toContain("detail of s1");
+  });
+
+  it("stops following Back and Forward once it is gone", () => {
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { unmount } = render(<App />);
+    unmount();
+    expect(remove.mock.calls.some(([type]) => type === "popstate")).toBe(true);
+    remove.mockRestore();
+  });
+
+  it("keeps the search in the address without adding history for each key", () => {
+    render(<App />);
+    const before = window.history.length;
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Second" } });
+    expect(new URLSearchParams(window.location.search).get("q")).toBe("Second");
+    expect(window.history.length).toBe(before);
+  });
+
+  it("a reload or a bookmark restores the open delegation and the search", () => {
+    window.history.replaceState(null, "", "/s/s1?q=Second");
+    render(<App />);
+    expect(screen.getByTestId("detail").textContent).toContain("detail of s1");
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("Second");
+    expect(screen.queryByRole("link", { name: "First delegation" })).toBeNull();
   });
 
   it("uses the screen's width rather than a narrow column", () => {
