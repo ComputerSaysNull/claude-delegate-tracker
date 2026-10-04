@@ -116,6 +116,26 @@ describe("App", () => {
     expect(screen.getByTestId("detail").textContent).toContain("detail of s1");
   });
 
+  it("says in the header that updates are live, with the time of the newest check", () => {
+    render(<App />);
+    const live = screen.getByRole("status", { name: "Live updates" });
+    expect(live.textContent).toContain("Live");
+    expect(live.textContent).toContain(localTime(CHECKED_AT));
+  });
+
+  it("says in the header that the backend is healthy", () => {
+    render(<App />);
+    expect(screen.getByRole("status", { name: "Health" }).textContent).toBe("Health ok");
+  });
+
+  it("on a wide screen keeps the header and cluster in place and scrolls the list and the delegation on their own", () => {
+    const { container } = render(<App />);
+    expect((container.firstChild as HTMLElement).className).toMatch(/\blg:h-screen\b/);
+    expect((container.firstChild as HTMLElement).className).toMatch(/\blg:overflow-hidden\b/);
+    expect(listPane().className).toMatch(/\blg:overflow-y-auto\b/);
+    expect(detailPane().className).toMatch(/\blg:overflow-y-auto\b/);
+  });
+
   it("uses the screen's width rather than a narrow column", () => {
     const { container } = render(<App />);
     expect(container.innerHTML).not.toMatch(/\bmax-w-xl\b/);

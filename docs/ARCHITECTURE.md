@@ -221,7 +221,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 
 ### Layout
 
-- The cluster figures run across the top. Below them, on a wide screen, the list sits on the left in a capped column and the open delegation on the right; with none open, the right side asks for a choice.
+- A header bar names the tracker and says whether updates are live (with the newest check's time, or "Reconnecting…") and whether the backend is healthy, as two pills. The cluster figures run across the top. Below them, on a wide screen, the list sits on the left in a capped column and the open delegation on the right, each scrolling on its own while the header and cluster stay in place; with none open, the right side asks for a choice.
 - Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works. An address `/s/<name>` opens that delegation.
 
 ### On a phone

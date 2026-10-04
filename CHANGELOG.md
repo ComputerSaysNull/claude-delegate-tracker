@@ -19,6 +19,9 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   hid the list. A row now opens in place; a click with a modifier key still opens a new
   tab, and an old `/s/<name>` address still opens its delegation. A phone shows one pane
   at a time.
+- **A header bar with a Live pill and a Health pill**, as on the design canvas, in place
+  of two plain lines; on a wide screen the header and cluster stay in place while the
+  list and the delegation scroll on their own.
 
 ## #20 — 2026-10-04 — fix: hide the sparklines' axes and follow the container's width
 
