@@ -3,5 +3,7 @@
 @layer base {
   body {
     @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    /* Paths, commands and replies hold long unbroken strings; on a phone they must wrap. */
+    overflow-wrap: anywhere;
   }
 }

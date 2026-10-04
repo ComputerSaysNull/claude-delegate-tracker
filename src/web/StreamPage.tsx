@@ -84,9 +84,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
         <ul className="flex flex-col gap-1 text-sm">
           {view.files.map((file) => (
             <li key={file.path} className="flex flex-wrap gap-2">
-              <span className="min-w-0 truncate font-medium" title={file.path}>
-                {file.path}
-              </span>
+              <Clipped text={file.path} className="font-medium" />
               {file.size !== null && <span className="text-slate-500 dark:text-slate-400">{file.size}</span>}
               {file.skipped !== null && (
                 <span className="text-amber-600 dark:text-amber-400">{file.skipped}</span>
@@ -150,6 +148,16 @@ function TurnPartial({ partial }: { partial: NonNullable<TurnView["partial"]> })
   );
 }
 
+// A value that may not fit on one line: cut with "…", and all of it one tap away, since a
+// phone has no hover to show a tooltip.
+function Clipped({ text, className }: { text: string; className: string }) {
+  return (
+    <details className={`group w-full min-w-0 ${className}`}>
+      <summary className="cursor-pointer list-none truncate group-open:whitespace-pre-wrap">{text}</summary>
+    </details>
+  );
+}
+
 function CallViewItem({ call }: { call: CallView }) {
   return (
     <div className="rounded border border-slate-200 p-2 dark:border-slate-700">
@@ -162,9 +170,7 @@ function CallViewItem({ call }: { call: CallView }) {
         )}
       </div>
       {call.args.map(([key, value], i) => (
-        <p key={i} className="truncate text-sm text-slate-500 dark:text-slate-400" title={`${key}: ${value}`}>
-          {key}: {value}
-        </p>
+        <Clipped key={i} text={`${key}: ${value}`} className="text-sm text-slate-500 dark:text-slate-400" />
       ))}
       {call.message !== null && (
         <p className="mt-1 whitespace-pre-wrap text-sm text-red-600 dark:text-red-400">{call.message}</p>
