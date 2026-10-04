@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #21 — 2026-10-04 — feat: put the list and the open delegation side by side
+
+### Changed
+
+- **On a wide screen the list sits on the left and the open delegation on the right**,
+  with the model server and nodes in a band across the top. The page was one 576 px
+  column in the middle of the screen, and opening a delegation loaded a new page that
+  hid the list. A row now opens in place; a click with a modifier key still opens a new
+  tab, and an old `/s/<name>` address still opens its delegation. A phone shows one pane
+  at a time.
+
 ## #20 — 2026-10-04 — fix: hide the sparklines' axes and follow the container's width
 
 ### Fixed

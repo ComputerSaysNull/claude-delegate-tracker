@@ -219,8 +219,14 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Search and filters (title words, state, kind, model) apply to the rows loaded so far, live and older alike, and say how many of them they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 
+### Layout
+
+- The cluster figures run across the top. Below them, on a wide screen, the list sits on the left in a capped column and the open delegation on the right; with none open, the right side asks for a choice.
+- Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works. An address `/s/<name>` opens that delegation.
+
 ### On a phone
 
+- One pane at a time: the list, or the open delegation with a way back to the list.
 - Long unbroken text (paths, commands, replies) wraps; nothing widens the page past the screen.
 - A value cut to one line opens in full on a tap, since a phone has no hover for a tooltip.
 
