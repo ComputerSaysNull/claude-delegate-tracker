@@ -193,7 +193,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 
 ## Titles
 
-The title of a delegation is derived from its task. Take the first non-blank line of the task, trimmed. If it is longer than 60 characters, cut it at the last space before character 60 and add `…`; with no space, cut at 59 and add `…`. An empty task shows `(no task)`.
+A delegation shows the title its caller gave in `start.title` (format 1.2), trimmed. Without one, or with a blank one, the title is derived from its task: take the first non-blank line of the task, trimmed. If it is longer than 60 characters, cut it at the last space before character 60 and add `…`; with no space, cut at 59 and add `…`. An empty task shows `(no task)`.
 
 ## Rendering rules
 

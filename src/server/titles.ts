@@ -18,3 +18,10 @@ export function titleFromTask(task: unknown): string {
   }
   return slice.slice(0, 59).trimEnd() + "\u2026";
 }
+
+// The title a delegation shows: the caller's own (format 1.2) when it gave a non-blank
+// one, otherwise one built from the task.
+export function titleOf(start: Record<string, unknown> | null): string {
+  const given = start?.title;
+  return typeof given === "string" && given.trim() !== "" ? given.trim() : titleFromTask(start?.task);
+}

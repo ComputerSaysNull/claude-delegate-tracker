@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #23 — 2026-10-04 — feat: show the title the caller gave a delegation
+
+### Added
+
+- **A delegation shows the title its caller gave, when its start event carries one.**
+  Titles cut from the task's first line were often poor, and the server now writes the
+  caller's own title into `start.title` (format 1.2). A stream without one, or with a
+  blank one, keeps the title derived from its task.
+
 ## #22 — 2026-10-04 — feat: keep the open delegation and the filters in the address
 
 ### Added
