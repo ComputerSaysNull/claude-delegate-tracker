@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #27 — 2026-10-04 — feat: render replies and tasks as Markdown, never running raw HTML
+
+### Added
+
+- **Replies and tasks render as Markdown**: headings, lists, emphasis, inline code and code
+  blocks. As plain text, lists and code were hard to read, especially on a phone. The
+  renderer, react-markdown, builds page elements rather than an HTML string, so raw HTML
+  in a reply shows as text and never runs; links open in a new tab without a handle on
+  the tracker, and a `javascript:` link is not made clickable.
+
 ## #26 — 2026-10-04 — feat: show a delegation as a conversation, with a header that stays on screen
 
 ### Changed

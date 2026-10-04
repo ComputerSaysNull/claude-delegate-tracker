@@ -10,6 +10,7 @@ import { useStreamView } from "./useStreamView.ts";
 import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
 import { localTime } from "./time.ts";
 import { compactCount } from "./format.ts";
+import { Markdown } from "./Markdown.tsx";
 
 export function StreamPage({ name, onClose }: { name: string; onClose: () => void }) {
   const { view, connected, missing } = useStreamView(name);
@@ -159,7 +160,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                 <> · <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
               )}
             </p>
-            {view.task !== null && <p className="whitespace-pre-wrap">{view.task}</p>}
+            {view.task !== null && <Markdown text={view.task} />}
             {view.files.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {view.files.map((file) => (
@@ -258,7 +259,7 @@ function DelegationMessage({ turn, model }: { turn: TurnView; model: string | nu
           </ul>
         )}
         {writing && <p className="text-xs text-muted">writing…</p>}
-        {answer !== null && <div className="whitespace-pre-wrap">{answer}</div>}
+        {answer !== null && <Markdown text={answer} />}
         {figures.length > 0 && (
           <p className="text-xs font-mono tabular-nums text-muted">{figures.join(" · ")}</p>
         )}
