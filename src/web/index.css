@@ -17,6 +17,8 @@
   --state-quiet: #566273;
   --state-ok: #127648;
   --state-failed: #c42b2b;
+  --state-stopped: #4a5563;
+  --state-timed-out: #a94e0b;
   --state-cut-off: #a94e0b;
 }
 
@@ -36,6 +38,8 @@
     --state-quiet: #9ba7b5;
     --state-ok: #46d19a;
     --state-failed: #ff7a7a;
+    --state-stopped: #c3ccd6;
+    --state-timed-out: #ff9e57;
     --state-cut-off: #ff9e57;
   }
 }
@@ -55,6 +59,8 @@
   --color-state-quiet: var(--state-quiet);
   --color-state-ok: var(--state-ok);
   --color-state-failed: var(--state-failed);
+  --color-state-stopped: var(--state-stopped);
+  --color-state-timed-out: var(--state-timed-out);
   --color-state-cut-off: var(--state-cut-off);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;

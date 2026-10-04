@@ -1,7 +1,7 @@
 // Build stream state from transcript events, and a list row for the page.
 import { titleOf } from "./titles.ts";
 
-export const STATES = ["live", "asking", "queued", "quiet", "ok", "failed", "cut off"] as const;
+export const STATES = ["live", "asking", "queued", "quiet", "ok", "failed", "stopped", "timed out", "cut off"] as const;
 export type State = (typeof STATES)[number];
 export const KNOWN_MAJOR = 1;
 
@@ -62,7 +62,17 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
   return evt;
 }
 
+// How a run ended, from `end.ended` (format 1.4) only: never from the words in `error`.
+const TIMED_OUT = new Set(["queue_timeout", "deadline", "stalled"]);
+const WHY_TIMED_OUT: Record<string, string> = {
+  queue_timeout: "waited too long in the queue",
+  deadline: "ran past its deadline",
+  stalled: "stalled: the backend went quiet",
+};
+
 function stateOf(s: StreamState, nowMs: number, quietAfterSeconds: number): State {
+  if (s.end !== null && s.end.ended === "stopped") return "stopped";
+  if (s.end !== null && typeof s.end.ended === "string" && TIMED_OUT.has(s.end.ended)) return "timed out";
   if (s.end !== null && s.end.ok === false) return "failed";
   if (s.end !== null && s.end.ok === true && (s.end.finish_reason === "length" || s.end.finish_reason === "content_filter")) return "cut off";
   if (s.end !== null) return "ok";
@@ -86,6 +96,8 @@ function whyOf(state: State, s: StreamState): string | null {
     if (typeof err === "string" && err !== "") return err.split(/\r\n|\n/)[0];
     return null;
   }
+  if (state === "stopped") return "stopped by the caller";
+  if (state === "timed out") return WHY_TIMED_OUT[String(s.end?.ended)] ?? null;
   if (state === "cut off") {
     if (s.end?.finish_reason === "length") return "hit the token limit: raise max_tokens or split the task";
     if (s.end?.finish_reason === "content_filter") return "the endpoint stopped it";

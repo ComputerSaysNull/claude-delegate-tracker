@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #29 — 2026-10-04 — feat: tell a stopped or timed-out run apart from a real failure
+
+### Added
+
+- **Stopped and Timed out are states of their own**, apart from Failed. A run its caller
+  stopped, or one that ran out of time, showed as failed, so "failed" said little: of 123
+  runs that ended with `ok: false`, only about 7 were real errors. The contract's
+  `end.ended` (format 1.4) now decides: `stopped` shows Stopped, `queue_timeout`,
+  `deadline` and `stalled` show Timed out, and only an error is Failed. A stream without
+  the field keeps showing Failed, and the error text is never read for it.
+
 ## #28 — 2026-10-04 — feat: show a delegation's questions to its caller, and the answers
 
 ### Added

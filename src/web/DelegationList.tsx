@@ -7,7 +7,7 @@ import { groupRows, todayCounts } from "./groups.ts";
 import { localTime } from "./time.ts";
 import { StateIcon, STATE_TEXT, STATE_LABEL, cardClass } from "./states.tsx";
 
-const STATES: ListRow["state"][] = ["live", "asking", "queued", "quiet", "ok", "failed", "cut off"];
+const STATES: ListRow["state"][] = ["live", "asking", "queued", "quiet", "ok", "failed", "stopped", "timed out", "cut off"];
 
 const SELECT_CLASS =
   "h-9 rounded-lg border border-line bg-card px-2 text-sm";
@@ -244,6 +244,18 @@ export function DelegationList({
           <span className="font-medium text-state-queued">{counts.queued} queued</span>
           {" · "}
           <span className="font-medium text-state-failed">{counts.failed} failed</span>
+            {counts.timedOut > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-state-timed-out">{counts.timedOut} timed out</span>
+              </>
+            )}
+            {counts.stopped > 0 && (
+              <>
+                {" · "}
+                <span className="font-medium text-state-stopped">{counts.stopped} stopped</span>
+              </>
+            )}
           {" today"}
         </p>
       </div>

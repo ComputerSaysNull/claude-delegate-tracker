@@ -111,6 +111,17 @@ describe("DelegationList grouped by date", () => {
     expect(screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "2 running · 0 queued · 0 failed today")).toBeTruthy();
   });
 
+  it("counts stopped and timed-out runs apart from failed ones, only when there are any", () => {
+    render(
+      <DelegationList
+        list={list([row("f", { state: "failed" }), row("s", { state: "stopped" }), row("t", { state: "timed out" }), row("t2", { state: "timed out" })])}
+      />,
+    );
+    expect(
+      screen.getByText((_, el) => el?.tagName === "P" && el.textContent === "0 running · 0 queued · 1 failed · 2 timed out · 1 stopped today"),
+    ).toBeTruthy();
+  });
+
   it("a finished card shows no progress", () => {
     render(<DelegationList list={list([row("done", { turns: "4 of 4" })])} />);
     expect(screen.queryByRole("progressbar")).toBeNull();

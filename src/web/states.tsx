@@ -1,7 +1,7 @@
 // How each state looks, in one place: its icon, its colour and, while a run is in progress,
 // the card's tint. A state never differs by colour alone. Class names are written out in
 // full so Tailwind finds them.
-import { Check, Circle, CircleHelp, Clock, Pause, Scissors, X, type LucideIcon } from "lucide-react";
+import { Check, Circle, CircleHelp, Clock, Hourglass, Pause, Scissors, Square, X, type LucideIcon } from "lucide-react";
 import type { State } from "../server/streams.ts";
 
 export const STATE_ICON: Record<State, LucideIcon> = {
@@ -11,6 +11,8 @@ export const STATE_ICON: Record<State, LucideIcon> = {
   quiet: Pause,
   ok: Check,
   failed: X,
+  stopped: Square,
+  "timed out": Hourglass,
   "cut off": Scissors,
 };
 
@@ -22,6 +24,8 @@ export const STATE_LABEL: Record<State, string> = {
   quiet: "Quiet",
   ok: "Done",
   failed: "Failed",
+  stopped: "Stopped",
+  "timed out": "Timed out",
   "cut off": "Cut off",
 };
 
@@ -32,6 +36,8 @@ export const STATE_TEXT: Record<State, string> = {
   quiet: "text-state-quiet",
   ok: "text-state-ok",
   failed: "text-state-failed",
+  stopped: "text-state-stopped",
+  "timed out": "text-state-timed-out",
   "cut off": "text-state-cut-off",
 };
 
@@ -42,6 +48,8 @@ export const STATE_BADGE: Record<State, string> = {
   quiet: "bg-state-quiet/14 text-state-quiet",
   ok: "bg-state-ok/14 text-state-ok",
   failed: "bg-state-failed/14 text-state-failed",
+  stopped: "bg-state-stopped/14 text-state-stopped",
+  "timed out": "bg-state-timed-out/14 text-state-timed-out",
   "cut off": "bg-state-cut-off/14 text-state-cut-off",
 };
 

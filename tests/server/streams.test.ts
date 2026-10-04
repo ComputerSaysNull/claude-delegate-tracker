@@ -139,6 +139,42 @@ describe("the title", () => {
   });
 });
 
+describe("how a run ended", () => {
+  const ended = (end: Record<string, unknown>) =>
+    listRow("x.jsonl", build([start(), { t: "end", at: at(1_000), turns: 1, elapsed_seconds: 9, ...end }]), NOW, QUIET);
+
+  it("a run the caller stopped is stopped, not failed", () => {
+    const r = ended({ ok: false, ended: "stopped", error: "cancelled" });
+    expect([r.state, r.why]).toEqual(["stopped", "stopped by the caller"]);
+  });
+
+  it("a run that hit a time limit is timed out, and says which", () => {
+    expect([ended({ ok: false, ended: "queue_timeout" }).state, ended({ ok: false, ended: "queue_timeout" }).why]).toEqual(["timed out", "waited too long in the queue"]);
+    expect(ended({ ok: false, ended: "deadline" }).why).toBe("ran past its deadline");
+    expect(ended({ ok: false, ended: "stalled" }).state).toBe("timed out");
+    expect(ended({ ok: false, ended: "stalled" }).why).toBe("stalled: the backend went quiet");
+  });
+
+  it("only an error is failed", () => {
+    const r = ended({ ok: false, ended: "error", error: "backend unreachable\nmore" });
+    expect([r.state, r.why]).toEqual(["failed", "backend unreachable"]);
+  });
+
+  it("a stream without the field keeps showing failed, and its error text is never read for it", () => {
+    expect(ended({ ok: false, error: "stopped by the caller" }).state).toBe("failed");
+    expect(ended({ ok: false, error: "abandoned: past the deadline" }).state).toBe("failed");
+  });
+
+  it("a value it does not know is failed, never an error", () => {
+    expect(ended({ ok: false, ended: "evaporated" }).state).toBe("failed");
+  });
+
+  it("a finished run is still ok or cut off", () => {
+    expect(ended({ ok: true, ended: "finished" }).state).toBe("ok");
+    expect(ended({ ok: true, ended: "finished", finish_reason: "length" }).state).toBe("cut off");
+  });
+});
+
 describe("asking the caller", () => {
   const rowOf = (events: unknown[]) => listRow("x.jsonl", build(events), NOW, QUIET);
 
