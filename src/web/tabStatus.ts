@@ -44,10 +44,11 @@ function setIcon(dot: Dot): void {
   link.href = `data:image/svg+xml,${encodeURIComponent(faviconSvg(dot, tokenColours()))}`;
 }
 
-export function useTabStatus(rows: ListRow[]): void {
+// `rows` is null until the first list arrives: that list is what was there when the page opened.
+export function useTabStatus(rows: ListRow[] | null): void {
   const seen = useRef<Set<string> | null>(null); // failed delegations someone could have seen
   const unseen = useRef(new Set<string>());     // failed while the tab was hidden
-  const latest = useRef(rows);
+  const latest = useRef<ListRow[]>(rows ?? []);
 
   const show = (current: ListRow[]) => {
     const running = current.filter((r) => r.state === "live" || r.state === "asking").length;
@@ -56,6 +57,10 @@ export function useTabStatus(rows: ListRow[]): void {
   };
 
   useEffect(() => {
+    if (rows === null) {
+      show([]);
+      return;
+    }
     latest.current = rows;
     const failed = rows.filter((r) => r.state === "failed").map((r) => r.name);
     if (seen.current === null) seen.current = new Set(failed);

@@ -241,7 +241,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### A background tab
 
-- The tab's title counts what is running (asking included) and what failed while the tab was hidden: "(2 running, 1 failed) Delegation tracker". Its icon gets a blue dot while something runs and a red one after an unseen failure, the red winning. Showing the tab clears the failures; failures already there when the page opened never count.
+- The tab's title counts what is running (asking included) and what failed while the tab was hidden: "(2 running, 1 failed) Delegation tracker". Its icon gets a blue dot while something runs and a red one after an unseen failure, the red winning. Showing the tab clears the failures; failures already there when the page opened (the first list it receives) never count.
 
 ### On a phone
 

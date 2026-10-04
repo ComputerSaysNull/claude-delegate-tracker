@@ -91,4 +91,14 @@ describe("useTabStatus", () => {
     renderHook(() => useTabStatus([row("old", "failed")]));
     expect(document.title).toBe("Delegation tracker");
   });
+
+  it("treats the first list as what was there when the page opened, though the page started without one", () => {
+    // The page draws before its first list arrives; that list's failures are not news.
+    const { rerender } = renderHook(({ rows }: { rows: ListRow[] | null }) => useTabStatus(rows), { initialProps: { rows: null as ListRow[] | null } });
+    act(() => setHidden(true));
+    rerender({ rows: [row("old", "failed")] });
+    expect(document.title).toBe("Delegation tracker");
+    rerender({ rows: [row("old", "failed"), row("new", "failed")] });
+    expect(document.title).toBe("(1 failed) Delegation tracker");
+  });
 });
