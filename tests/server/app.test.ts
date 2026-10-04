@@ -6,11 +6,13 @@ import { createApp } from "../../src/server/app.ts";
 import type { AppDeps } from "../../src/server/app.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
+import type { ListRow } from "../../src/server/streams.ts";
+import type { StreamView, ViewPatch } from "../../src/server/view.ts";
 
 function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
-    quietAfterSeconds: 1, streamsPollSeconds: 1, ...overrides,
+    quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1, ...overrides,
   };
 }
 
@@ -26,8 +28,29 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     now: () => new Date("2026-10-03T12:00:00Z"),
     streams: () => LIST,
     subscribe: () => () => {},
+    view: () => null,
+    follow: () => null,
     ...overrides,
   });
+}
+
+function makeRow(name: string): ListRow {
+  return {
+    name, state: "ok", why: null, age: null, kind: "delegate",
+    model: null, effort: null, title: "", startedAt: null,
+    elapsed: null, turns: null, unknownFormat: null,
+  };
+}
+
+function makeView(name: string): StreamView {
+  return {
+    name, seq: 1, row: makeRow(name), task: null, files: [],
+    waiting: null, turns: [], summary: null,
+  };
+}
+
+function makePatch(name: string, seq: number): ViewPatch {
+  return { name, seq, row: makeRow(name), waiting: null, turns: [], summary: null };
 }
 
 const goodHost = { headers: { host: "localhost" } };
@@ -197,5 +220,81 @@ describe("app", () => {
   it("returns 404 for non-api paths when staticRoot is null", async () => {
     const res = await makeApp().request("/", goodHost);
     expect(res.status).toBe(404);
+  });
+});
+
+describe("stream view routes", () => {
+  it("returns the deps.view result for a known name", async () => {
+    const view = vi.fn((name: string) => makeView(name));
+    const app = makeApp({ view });
+    const res = await app.request("/api/streams/20261001T120000.000-a.jsonl", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(makeView("20261001T120000.000-a.jsonl"));
+    expect(view).toHaveBeenCalledWith("20261001T120000.000-a.jsonl");
+  });
+
+  it("returns 404 JSON when deps.view returns null", async () => {
+    const view = vi.fn(() => null);
+    const app = makeApp({ view });
+    const res = await app.request("/api/streams/20261001T120000.000-a.jsonl", goodHost);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it("never treats a stream name as a path", async () => {
+    const view = vi.fn(() => null);
+    const app = makeApp({ view });
+    const res = await app.request("/api/streams/..%2F..%2Fsecret.jsonl", goodHost);
+    // The lookup returns null (a name the backend did not list itself), so nothing is
+    // served from the filesystem, whatever decoding the router applied to the name.
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it("returns 404 for an unknown stream in /api/updates", async () => {
+    const follow = vi.fn(() => null);
+    const app = makeApp({ follow });
+    const res = await app.request("/api/updates?stream=missing", goodHost);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it("streams a followed stream's patch and unsubscribes on abort", async () => {
+    let captured: ((patch: ViewPatch) => void) | undefined;
+    const unfollow = vi.fn();
+    const name = "20261001T120000.000-a.jsonl";
+    const patch = makePatch(name, 2);
+    const app = makeApp({
+      follow: (n, listener) => {
+        expect(n).toBe(name);
+        captured = listener;
+        return unfollow;
+      },
+    });
+    const res = await app.request(`/api/updates?stream=${name}`, goodHost);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    await reader.read(); // the initial list event
+    expect(captured).toBeDefined();
+    captured!(patch);
+    let text = "";
+    while (!text.includes("event: stream")) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    expect(text).toContain("event: stream");
+    expect(text).toContain(JSON.stringify(patch));
+    await reader.cancel();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unfollow).toHaveBeenCalled();
+  });
+
+  it("rejects POST to a stream view route with 405", async () => {
+    const app = makeApp();
+    const res = await app.request("/api/streams/20261001T120000.000-a.jsonl", { method: "POST", ...goodHost });
+    expect(res.status).toBe(405);
   });
 });

@@ -1,9 +1,16 @@
-import { appendFileSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Poller } from "../../src/server/poller.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
+import { buildView } from "../../src/server/view.ts";
+import type { ViewPatch } from "../../src/server/view.ts";
+
+vi.mock("../../src/server/view.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/server/view.ts")>();
+  return { ...actual, buildView: vi.fn(actual.buildView) };
+});
 
 const NOW = new Date("2026-10-03T12:00:00.000Z");
 
@@ -215,7 +222,7 @@ describe("poller", () => {
       writeStream(dir, "20261001T120000.000-a.jsonl", [startEvent("2026-10-01T12:00:00.000Z")]);
       const poller = makePoller(dir);
       const passSpy = vi.spyOn(poller, "pass");
-      poller.start(0.01);
+      poller.start(0.01, 0.01);
       expect(passSpy).toHaveBeenCalledTimes(1);
       vi.advanceTimersByTime(100);
       const afterAdvance = passSpy.mock.calls.length;
@@ -225,6 +232,142 @@ describe("poller", () => {
       expect(passSpy.mock.calls.length).toBe(afterAdvance);
     } finally {
       vi.useRealTimers();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("follow and view", () => {
+  it("view() returns null for a name the listing did not hold, even one outside the folder", () => {
+    const parent = makeDir();
+    const dir = join(parent, "in");
+    mkdirSync(dir);
+    try {
+      writeStream(dir, "20261001T120000.000-a.jsonl", [startEvent("2026-10-01T12:00:00.000Z"), endEvent("2026-10-01T12:00:05.000Z")]);
+      writeFileSync(join(parent, "secret.jsonl"), "SECRET");
+      const poller = makePoller(dir);
+      poller.pass();
+      // ../secret.jsonl is a real file just outside the folder; the name is still unknown.
+      expect(poller.view("../secret.jsonl")).toBeNull();
+      expect(poller.view("20260901T120000.000-unknown.jsonl")).toBeNull();
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it("returns a listed name's view with its name and seq 1 after a pass", () => {
+    const dir = makeDir();
+    try {
+      const name = makeStream(dir, "20261001T120000.000-a.jsonl", "2026-10-01T12:00:00.000Z");
+      const poller = makePoller(dir);
+      poller.pass();
+      const view = poller.view(name);
+      expect(view).not.toBeNull();
+      expect(view!.name).toBe(name);
+      expect(view!.seq).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still lets an older stream, not among the newest 25, be viewed by name", () => {
+    const dir = makeDir();
+    try {
+      for (let i = 1; i <= 26; i++) {
+        const day = String(i).padStart(2, "0");
+        writeStream(dir, `202610${day}T120000.000-n${i}.jsonl`, [startEvent(`2026-10-${day}T12:00:00.000Z`), endEvent(`2026-10-${day}T12:00:05.000Z`)]);
+      }
+      const older = "20260930T120000.000-old.jsonl";
+      writeStream(dir, older, [startEvent("2026-09-30T12:00:00.000Z"), endEvent("2026-09-30T12:00:05.000Z")]);
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.list().rows.some((r) => r.name === older)).toBe(false);
+      const view = poller.view(older);
+      expect(view).not.toBeNull();
+      expect(view!.name).toBe(older);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("follow() returns null for an unknown name and delivers a seq-2 patch after an initial view", () => {
+    const dir = makeDir();
+    try {
+      const name = "20261001T120000.000-a.jsonl";
+      writeStream(dir, name, [startEvent("2026-10-01T12:00:00.000Z")]); // still open
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.follow("unknown", () => {})).toBeNull();
+
+      const patches: ViewPatch[] = [];
+      const off = poller.follow(name, (p) => patches.push(p));
+      expect(off).not.toBeNull();
+
+      // The initial view is numbered 1 and delivered to the follower.
+      expect(poller.view(name)).toMatchObject({ name, seq: 1 });
+      expect(patches[patches.length - 1].seq).toBe(1);
+
+      appendFileSync(join(dir, name), JSON.stringify(endEvent("2026-10-01T12:00:05.000Z")) + "\n");
+      poller.followPass();
+      expect(patches[patches.length - 1]).toMatchObject({ name, seq: 2 });
+
+      // A followPass with no change delivers nothing more.
+      poller.followPass();
+      expect(patches).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a followed stream that leaves the newest 25 and drops it after unfollow", () => {
+    const dir = makeDir();
+    try {
+      const target = "20260930T120000.000-target.jsonl";
+      writeStream(dir, target, [startEvent("2026-09-30T12:00:00.000Z")]); // still open
+      const poller = makePoller(dir);
+      poller.pass();
+
+      const patches: ViewPatch[] = [];
+      const off = poller.follow(target, (p) => patches.push(p));
+      expect(off).not.toBeNull();
+
+      for (let i = 1; i <= 26; i++) {
+        const day = String(i).padStart(2, "0");
+        writeStream(dir, `202610${day}T120000.000-n${i}.jsonl`, [startEvent(`2026-10-${day}T12:00:00.000Z`)]);
+      }
+      poller.pass();
+      expect(poller.list().rows.some((r) => r.name === target)).toBe(false);
+
+      appendFileSync(join(dir, target), JSON.stringify(endEvent("2026-09-30T12:00:05.000Z")) + "\n");
+      poller.followPass();
+      expect(patches[patches.length - 1]).toMatchObject({ name: target, seq: 2 });
+
+      off!();
+      poller.pass();
+      // The name stays known even though the entry was dropped.
+      expect(poller.view(target)).not.toBeNull();
+      expect(poller.view(target)!.name).toBe(target);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not build a view for a stream nobody follows or views", () => {
+    vi.mocked(buildView).mockClear();
+    const dir = makeDir();
+    try {
+      const a = "20261001T120000.000-a.jsonl";
+      const b = "20261002T120000.000-b.jsonl";
+      writeStream(dir, a, [startEvent("2026-10-01T12:00:00.000Z")]);
+      writeStream(dir, b, [startEvent("2026-10-02T12:00:00.000Z")]);
+      const poller = makePoller(dir);
+      poller.pass();
+      poller.follow(b, () => {});
+      poller.pass();
+      const built = vi.mocked(buildView).mock.calls.map((c) => c[0]);
+      expect(built).toContain(b);
+      expect(built).not.toContain(a);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });

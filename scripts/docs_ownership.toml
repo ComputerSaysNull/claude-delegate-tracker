@@ -79,6 +79,7 @@ plane = "product"
 owns = [
   "src/server/folder.ts",
   "src/server/streams.ts",
+  "src/server/view.ts",
   "src/server/metrics.ts",
   "src/server/nodes.ts",
   "src/server/titles.ts",

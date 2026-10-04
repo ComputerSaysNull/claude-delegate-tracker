@@ -29,10 +29,11 @@ export function parseAt(at: unknown): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-export function applyLine(s: StreamState, line: string): void {
+// Returns the event, so the stream view can use it too; null for a line that is not one.
+export function applyLine(s: StreamState, line: string): Record<string, unknown> | null {
   let value: unknown;
-  try { value = JSON.parse(line); } catch { s.badLines += 1; return; }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return;
+  try { value = JSON.parse(line); } catch { s.badLines += 1; return null; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const evt = value as Record<string, unknown>;
   const atMs = parseAt(evt.at);
   if (atMs !== null && (s.lastAtMs === null || atMs > s.lastAtMs)) s.lastAtMs = atMs;
@@ -45,6 +46,7 @@ export function applyLine(s: StreamState, line: string): void {
     if (typeof evt.turn === "number") s.maxTurn = Math.max(s.maxTurn, evt.turn);
     if (typeof evt.of_turns === "number") s.ofTurns = evt.of_turns;
   } else if (t === "alive") s.lastSignal = "alive";
+  return evt;
 }
 
 function stateOf(s: StreamState, nowMs: number, quietAfterSeconds: number): State {

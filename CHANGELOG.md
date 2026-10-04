@@ -9,6 +9,25 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #5 — 2026-10-03 — feat: follow one delegation on its own page, updating live
+
+### Added
+
+- **A page per delegation** at `/s/<name>`, opened from its title in the list: the task in
+  full, the files it was given or refused, then each turn with its budget line, its tool
+  calls (every argument, the outcome, a refusal in full, result size, exit code, time) and
+  its reply, then the run's summary and any error. Until now a delegation was a black box
+  until its reply landed.
+- **Live counters, not lines**: while a turn runs, its heartbeat (chunks, time since the
+  last chunk, the countdown) and the running tools' status update in place, and a queued
+  wait is one line that keeps the newest total.
+- **`GET /api/streams/<name>`** and **`/api/updates?stream=<name>`**: the whole view, then
+  only the turns that changed. Each patch is numbered, so the page refetches the whole view
+  after a reconnect or a skipped number instead of drifting. A followed stream is read
+  every `FOLLOW_POLL_SECONDS` and kept while a page has it open. A name is looked up among
+  the names the folder listing returned, never joined onto a path, so any listed stream
+  opens, old ones too, and nothing else does.
+
 ## #4 — 2026-10-03 — feat: show the delegation list on the page, updating live
 
 ### Added

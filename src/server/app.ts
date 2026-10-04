@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
+import type { StreamView, ViewPatch } from "./view.ts";
 
 export interface AppDeps {
   settings: Settings;
@@ -14,6 +15,9 @@ export interface AppDeps {
   now: () => Date;
   streams: () => ListResponse;
   subscribe: (listener: (list: ListResponse) => void) => () => void;
+  // Both return null for a name the backend did not list itself.
+  view: (name: string) => StreamView | null;
+  follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -35,7 +39,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, isReadableDir, now, streams, subscribe } = deps;
+  const { settings, staticRoot, isReadableDir, now, streams, subscribe, view, follow } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -67,18 +71,43 @@ export function createApp(deps: AppDeps): Hono {
   // The list rows, already derived by the poller; the page only lays them out.
   app.get("/api/streams", (c) => c.json(streams()));
 
-  // Stream the list to the page so it updates without a reload.
-  app.get("/api/updates", (c) =>
-    streamSSE(c, async (stream) => {
+  // One stream's whole view; the name is only ever looked up, never joined onto a path.
+  app.get("/api/streams/:name", (c) => {
+    const found = view(c.req.param("name"));
+    return found === null ? c.json({ error: "not found" }, 404) : c.json(found);
+  });
+
+  // Stream the list to the page so it updates without a reload; with ?stream=<name>,
+  // also that stream's patches.
+  app.get("/api/updates", (c) => {
+    const name = c.req.query("stream");
+    const patches: ViewPatch[] = [];
+    let wake: (() => void) | null = null;
+    let unfollow: (() => void) | null = null;
+    if (name !== undefined) {
+      unfollow = follow(name, (patch) => {
+        patches.push(patch);
+        wake?.();
+      });
+      if (unfollow === null) return c.json({ error: "not found" }, 404);
+    }
+    return streamSSE(c, async (stream) => {
       stream.writeSSE({ event: "list", data: JSON.stringify(streams()) });
       const unsubscribe = subscribe((list) => {
         stream.writeSSE({ event: "list", data: JSON.stringify(list) });
       });
+      // Patches may arrive before the stream opens; send them in order.
+      const flush = (): void => {
+        for (const patch of patches.splice(0)) stream.writeSSE({ event: "stream", data: JSON.stringify(patch) });
+      };
+      wake = flush;
+      flush();
 
       let timer: ReturnType<typeof setInterval> | null = null;
       const disconnected = new Promise<void>((resolve) => {
         stream.onAbort(() => {
           unsubscribe();
+          unfollow?.();
           if (timer !== null) clearInterval(timer);
           resolve();
         });
@@ -86,8 +115,8 @@ export function createApp(deps: AppDeps): Hono {
       timer = setInterval(() => stream.write(": ping\n\n"), PING_MS);
 
       await disconnected;
-    })
-  );
+    });
+  });
 
   app.all("/api/*", (c) => c.json({ error: "not found" }, 404));
 

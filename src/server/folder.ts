@@ -9,6 +9,7 @@ export const READ_CHUNK = 1024 * 1024;
 
 export interface Listing {
   names: string[];
+  all: Set<string>; // every name listed: the only names a URL may ask for
   total: number;
   unstamped: number;
 }
@@ -27,6 +28,7 @@ export function listNewest(dir: string, limit: number): Listing {
   unstamped.sort(desc);
   return {
     names: [...stamped, ...unstamped].slice(0, limit),
+    all: new Set([...stamped, ...unstamped]),
     total: stamped.length + unstamped.length,
     unstamped: unstamped.length,
   };
