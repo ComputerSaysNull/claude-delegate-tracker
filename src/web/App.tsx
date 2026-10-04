@@ -16,6 +16,7 @@ import { useClusterHistory } from "./useClusterHistory.ts";
 import { useLiveList } from "./useLiveList.ts";
 import { useTabStatus } from "./tabStatus.ts";
 import { KeyboardHelp, useKeyboard } from "./keyboard.tsx";
+import { NotifyButton, useNotifications } from "./notify.tsx";
 import { localTime } from "./time.ts";
 
 type Status = "readable" | "not readable" | "not set";
@@ -99,6 +100,9 @@ export default function App() {
     else window.history.replaceState(null, "", url);
   };
 
+  // A notification when a delegation ends; clicking it opens that delegation here.
+  useNotifications(list?.rows ?? [], (name) => go({ ...address, selected: name }, true));
+
   const { helpOpen, closeHelp } = useKeyboard(() => {
     if (address.selected !== null) go({ ...address, selected: null }, true);
   });
@@ -140,6 +144,7 @@ export default function App() {
         <CircleDot size={20} className="text-accent" aria-hidden="true" />
         <h1 className="text-[17px] font-semibold">Delegation tracker</h1>
         <div className="flex-1" />
+        <NotifyButton />
         <span
           role="status"
           aria-label="Live updates"

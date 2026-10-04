@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #33 — 2026-10-04 — feat: notify on the desktop when a delegation ends
+
+### Added
+
+- **A desktop notification when a delegation ends**, saying how and why, once the viewer
+  allows them; clicking it opens that delegation. Following a run meant watching the page.
+  Only runs seen still going on the page notify, so opening it never floods old endings.
+  The browser allows notifications only in a secure context, so this works on `localhost`
+  and not on the phone over the overlay VPN's plain HTTP, which gets no offer.
+
 ## #32 — 2026-10-04 — feat: move through the list from the keyboard
 
 ### Added
