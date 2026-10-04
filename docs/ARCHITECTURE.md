@@ -283,7 +283,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - Never act on a half-written line: keep the bytes up to the last newline, and read the rest next time. Offsets are in bytes, so a character split across two reads is never decoded half. A single line longer than one read is read on to its end.
 - When a stream finishes, leave it on screen: the last thing it wrote is usually what you were waiting for.
 - Elapsed time: a finished stream uses `end.elapsed_seconds`; a running one counts up from `start.at`. Never use file times.
-- Show times in local time (`at` is UTC), all through one formatter.
+- Show times in local time (`at` is UTC), all through one formatter: a 24-hour clock ("19:00"), dates as "12 Nov", with the year ("12 Nov 2025") only when it is not this year.
 - Follow the system's light or dark setting: every colour has a dark-mode variant.
 
 ## Security

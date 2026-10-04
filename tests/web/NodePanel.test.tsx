@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { NodePanel } from "../../src/web/NodePanel.tsx";
+import { localTime } from "../../src/web/time.ts";
 import type { NodeFigures } from "../../src/server/nodes.ts";
 
 function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
@@ -55,14 +56,14 @@ describe("NodePanel", () => {
   it("shows an as-of line when the status is ok", () => {
     const readAt = "2024-01-15T13:45:00.000Z";
     render(<NodePanel nodes={[figures({ status: "ok", readAt })]} />);
-    expect(screen.getByText(`as of ${new Date(readAt).toLocaleTimeString()}`)).toBeTruthy();
+    expect(screen.getByText(`as of ${localTime(readAt)}`)).toBeTruthy();
   });
 
   it("shows the unreachable line with the last reading time", () => {
     const readAt = "2024-01-15T13:45:00.000Z";
     render(<NodePanel nodes={[figures({ status: "unreachable", readAt })]} />);
     expect(
-      screen.getByText(`Unreachable; no figures since ${new Date(readAt).toLocaleTimeString()}`)
+      screen.getByText(`Unreachable; no figures since ${localTime(readAt)}`)
     ).toBeTruthy();
   });
 

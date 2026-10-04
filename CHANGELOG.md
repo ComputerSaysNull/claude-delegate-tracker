@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #18 — 2026-10-04 — feat: write dates as 12 Nov and times on a 24-hour clock
+
+### Changed
+
+- **Dates read "12 Nov 19:00", with the year only when it is not this year.** The page
+  left the format to the browser's locale, which gave "Nov 12, 07:00 PM" and "7:00:00 PM".
+  The formatter now writes day, short month and a 24-hour clock itself, in the viewer's
+  zone, so it reads the same in every browser.
+
 ## #17 — 2026-10-04 — chore: vendor the contract from server v0.7.0
 
 ### Changed
