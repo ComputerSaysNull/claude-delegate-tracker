@@ -139,6 +139,32 @@ describe("the title", () => {
   });
 });
 
+describe("asking the caller", () => {
+  const rowOf = (events: unknown[]) => listRow("x.jsonl", build(events), NOW, QUIET);
+
+  it("a run that asked and has no answer yet is asking, with how long it has waited", () => {
+    const r = rowOf([start({ at: at(60_000) }), { t: "priced", at: at(55_000), turn: 1 }, { t: "question", at: at(48_000), questions: ["Which file?"] }]);
+    expect(r.state).toBe("asking");
+    expect(r.age).toBe("48s");
+  });
+
+  it("is never called quiet while it waits, however long", () => {
+    const r = rowOf([start({ at: at(900_000) }), { t: "question", at: at(600_000), questions: ["Which file?"] }]);
+    expect(r.state).toBe("asking");
+    expect(r.age).toBe("10m");
+  });
+
+  it("runs on once the answer arrives", () => {
+    const r = rowOf([start(), { t: "question", at: at(3_000), questions: ["Which file?"] }, { t: "answer", at: at(1_000), text: "this one", waited_seconds: 2 }]);
+    expect(r.state).toBe("live");
+  });
+
+  it("ends as its end says, even if a question was left open", () => {
+    const r = rowOf([start(), { t: "question", at: at(3_000), questions: ["?"] }, { t: "end", at: at(1_000), ok: false, turns: 1, elapsed_seconds: 9 }]);
+    expect(r.state).toBe("failed");
+  });
+});
+
 describe("progress on a card", () => {
   const rowOf = (events: unknown[]) => listRow("x.jsonl", build(events), NOW, QUIET);
 

@@ -206,11 +206,12 @@ Every stream has exactly one state, picked by the first rule below that applies.
 1. **failed**: an `end` event exists and `end.ok` is false.
 2. **cut off**: an `end` event exists, `end.ok` is true, and `finish_reason` is `length` or `content_filter`. Show why: raise `max_tokens` or split the task, or "the endpoint stopped it", which is not a budget problem.
 3. **ok**: any other stream with an `end` event. A finished stream is never "quiet", however old.
-4. **quiet**: no event for `QUIET_AFTER_SECONDS`; show its age. Measure from the last event's `at`, not the file's time: the folder is synced and file times move.
-5. **queued**: the last signal (`waiting`, `priced`, `turn`, `alive`, `end`) is `waiting`. Its age comes from `waited_seconds`, not from silence.
-6. **live**: everything else.
+4. **asking**: a `question` with no `answer` after it. Its age is the time since the question. A run waiting on its caller is never "quiet", however long the answer takes; it shows blue like running, with a question-mark icon, and counts as running.
+5. **quiet**: no event for `QUIET_AFTER_SECONDS`; show its age. Measure from the last event's `at`, not the file's time: the folder is synced and file times move.
+6. **queued**: the last signal (`waiting`, `priced`, `turn`, `alive`, `end`) is `waiting`. Its age comes from `waited_seconds`, not from silence.
+7. **live**: everything else.
 
-Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` about every 30 s and a running one writes `alive` at least every 60 s, so the quiet threshold must stay well above the server's keepalive interval, which the tracker cannot see. Show an age as `59s`, `1m` … `89m`, `1h`.
+Rule 5 comes before rule 6 on purpose. A queued delegation writes `waiting` about every 30 s and a running one writes `alive` at least every 60 s, so the quiet threshold must stay well above the server's keepalive interval, which the tracker cannot see. Show an age as `59s`, `1m` … `89m`, `1h`.
 
 ### The list
 
@@ -255,6 +256,7 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - The task is the caller's message, on the right, with the files it was given or refused. Each turn is the delegation's message, on the left: its tool calls as one compact row each, its text, and a line of its figures (tokens in and out, `turn.out_tok_s`, tool time), leaving out any it does not have. A finished run ends with a note saying it finished or failed.
 - Each turn is headed by the model, its number and when it started (its `priced` event's `at`); a call shows its first argument on its own line beside its name; token counts are written short ("4.6k", "1.3M"). A refused file is a chip marked "refused", with the reason in full under the chips. The end note says in one line how the run ended, how long it took, its turns and its cache use, with the other figures in one line below. "Jump to latest" is offered only while the run is going.
 - A header stays on screen: the state, the title, the turns as a bar, and, while the run is going, the time used as a bar from the newest heartbeat's `elapsed_seconds` of `of_seconds` with the time left, and the heartbeat. A run stopped mid-turn never closes that turn, so its old clock and heartbeat are not shown.
+- A question to the caller shows in its turn as a highlighted message from the delegation, with "Waiting for an answer" and for how long while the run waits; the caller's answer follows as the caller's message, saying when the caller left the choice to the delegation (`best_reading`). `question` and `answer` carry no turn number: they belong to the newest turn that has been priced.
 - The task and every reply, as written and when done, render as Markdown. Raw HTML in them shows as text and never runs; a link opens in a new tab with `noopener noreferrer`, and a `javascript:` link is not made clickable.
 - The view follows the growing reply while the reader is at the bottom; scrolled up, it stays put and offers "Jump to latest". No copy buttons.
 

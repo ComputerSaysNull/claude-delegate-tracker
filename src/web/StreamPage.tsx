@@ -2,8 +2,8 @@
 // as the delegation's own message, a sticky header that stays on screen, an end note when
 // the run is done, and the reply followed unless the reader has scrolled up. StreamViewBody
 // is split out so the presentational part can be rendered in tests without the hook.
-import { useEffect, useState } from "react";
-import { Asterisk, Check, ChevronRight, File, X } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { Asterisk, Check, ChevronRight, CircleHelp, File, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -60,7 +60,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
   const turnsMatch = row.turns !== null ? row.turns.match(/^(\d+) of (\d+)$/) : null;
   // Only while the run is going: one stopped mid-turn never closes that turn, which keeps the
   // clock and heartbeat it had. The open turn, the only one with a clock, is always the last.
-  const going = row.state === "live" || row.state === "queued" || row.state === "quiet";
+  const going = row.state === "live" || row.state === "asking" || row.state === "queued" || row.state === "quiet";
   const lastTurn = going ? view.turns.at(-1) : undefined;
   const lastClock = lastTurn?.clock ?? null;
   const heartbeat = lastTurn !== undefined && !lastTurn.closed ? lastTurn.heartbeat : null;
@@ -196,7 +196,14 @@ export function StreamViewBody({ view }: { view: StreamView }) {
           </li>
         )}
         {view.turns.map((turn) => (
-          <DelegationMessage key={turn.n} turn={turn} model={row.model} />
+          <Fragment key={turn.n}>
+            <DelegationMessage
+              turn={turn}
+              model={row.model}
+              waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
+            />
+            {turn.answer !== null && <CallerAnswer answer={turn.answer} />}
+          </Fragment>
         ))}
         {view.summary !== null && <SummaryItem summary={view.summary} state={row.state} />}
       </ol>
@@ -217,7 +224,32 @@ export function StreamViewBody({ view }: { view: StreamView }) {
   );
 }
 
-function DelegationMessage({ turn, model }: { turn: TurnView; model: string | null }) {
+// The caller's reply to a question, on the caller's side like the task.
+function CallerAnswer({ answer }: { answer: NonNullable<TurnView["answer"]> }) {
+  return (
+    <li
+      data-from="caller"
+      className="ml-auto flex max-w-[88%] flex-col gap-2 rounded-2xl rounded-br-sm border border-line bg-card px-3 py-2"
+    >
+      <p className="text-xs text-muted">
+        Answer, after <span className="font-mono tabular-nums">{answer.waited}</span>
+      </p>
+      {answer.bestReading && <p className="text-sm text-muted">The caller left the choice to the delegation:</p>}
+      <Markdown text={answer.text} />
+    </li>
+  );
+}
+
+// `waitingFor` is how long the run has waited for its caller, while it still waits.
+function DelegationMessage({
+  turn,
+  model,
+  waitingFor,
+}: {
+  turn: TurnView;
+  model: string | null;
+  waitingFor?: string | null;
+}) {
   const writing = turn.reply === null && turn.partial !== null && turn.partial.answer !== "";
   const answer =
     turn.reply !== null
@@ -257,6 +289,27 @@ function DelegationMessage({ turn, model }: { turn: TurnView; model: string | nu
               <CallViewItem key={i} call={call} />
             ))}
           </ul>
+        )}
+        {turn.question !== null && (
+          <div
+            role="note"
+            aria-label="Question for the caller"
+            className="flex flex-col gap-2 rounded-xl border border-state-asking/50 bg-state-asking/10 px-3 py-2"
+          >
+            <p className="flex items-center gap-2 text-sm font-semibold text-state-asking">
+              <CircleHelp size={15} aria-hidden="true" />
+              Question for the caller
+            </p>
+            {turn.question.questions.map((q, i) => (
+              <Markdown key={i} text={q} />
+            ))}
+            {waitingFor !== undefined && (
+              <p className="text-sm text-muted">
+                Waiting for an answer
+                {waitingFor !== null && <span className="font-mono tabular-nums"> · {waitingFor}</span>}
+              </p>
+            )}
+          </div>
         )}
         {writing && <p className="text-xs text-muted">writing…</p>}
         {answer !== null && <Markdown text={answer} />}

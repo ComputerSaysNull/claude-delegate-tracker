@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #28 — 2026-10-04 — feat: show a delegation's questions to its caller, and the answers
+
+### Added
+
+- **A delegation waiting on its caller shows as "Asking"**, blue like running with a
+  question-mark icon, and is never called quiet. The server lets a delegation ask its
+  caller a question (format 1.3); while it waited, the run looked stalled and after two
+  minutes was called quiet. The question shows in the conversation with how long it has
+  waited, and the caller's answer follows as the caller's message.
+
 ## #27 — 2026-10-04 — feat: render replies and tasks as Markdown, never running raw HTML
 
 ### Added

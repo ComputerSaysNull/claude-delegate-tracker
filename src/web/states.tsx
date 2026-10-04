@@ -1,11 +1,12 @@
 // How each state looks, in one place: its icon, its colour and, while a run is in progress,
 // the card's tint. A state never differs by colour alone. Class names are written out in
 // full so Tailwind finds them.
-import { Check, Circle, Clock, Pause, Scissors, X, type LucideIcon } from "lucide-react";
+import { Check, Circle, CircleHelp, Clock, Pause, Scissors, X, type LucideIcon } from "lucide-react";
 import type { State } from "../server/streams.ts";
 
 export const STATE_ICON: Record<State, LucideIcon> = {
   live: Circle,
+  asking: CircleHelp,
   queued: Clock,
   quiet: Pause,
   ok: Check,
@@ -16,6 +17,7 @@ export const STATE_ICON: Record<State, LucideIcon> = {
 // The word a reader sees for each state; the stream's own codes ("live", "ok") stay inside.
 export const STATE_LABEL: Record<State, string> = {
   live: "Running",
+  asking: "Asking",
   queued: "Queued",
   quiet: "Quiet",
   ok: "Done",
@@ -25,6 +27,7 @@ export const STATE_LABEL: Record<State, string> = {
 
 export const STATE_TEXT: Record<State, string> = {
   live: "text-state-live",
+  asking: "text-state-asking",
   queued: "text-state-queued",
   quiet: "text-state-quiet",
   ok: "text-state-ok",
@@ -34,6 +37,7 @@ export const STATE_TEXT: Record<State, string> = {
 
 export const STATE_BADGE: Record<State, string> = {
   live: "bg-state-live/14 text-state-live",
+  asking: "bg-state-asking/14 text-state-asking",
   queued: "bg-state-queued/14 text-state-queued",
   quiet: "bg-state-quiet/14 text-state-quiet",
   ok: "bg-state-ok/14 text-state-ok",
@@ -41,9 +45,10 @@ export const STATE_BADGE: Record<State, string> = {
   "cut off": "bg-state-cut-off/14 text-state-cut-off",
 };
 
-// A run in progress is tinted; a finished one stays a plain card and its icon tells the outcome.
+// A run in progress (running, asking its caller, queued) is tinted; a finished one stays a plain card and its icon tells the outcome.
 export function cardClass(state: State): string {
   if (state === "live") return "bg-state-live/12 border-state-live/45";
+  if (state === "asking") return "bg-state-asking/12 border-state-asking/45";
   if (state === "queued") return "bg-state-queued/10 border-state-queued/35";
   return "bg-card border-line";
 }
