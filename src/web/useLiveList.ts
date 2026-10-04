@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { ListResponse } from "../server/poller.ts";
 import type { ModelFigures } from "../server/metrics.ts";
+import type { NodeFigures } from "../server/nodes.ts";
 
-export type Cluster = { model: ModelFigures };
+export type Cluster = { model: ModelFigures; nodes: NodeFigures[] };
 
 export function useLiveList(): {
   list: ListResponse | null;

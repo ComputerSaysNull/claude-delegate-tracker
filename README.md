@@ -49,7 +49,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `TRANSCRIPT_DIR` — the transcript folder, as a Windows path.
 - `METRICS_URL` — the model server's metrics base URL.
 - `METRICS_TOKEN_ENV` — optional: the name of an env var holding a bearer token.
-- `NODES` — each node's display name, SSH host and user.
+- `NODES` — each node's display name, SSH user and host, as comma-separated `name=user@host` entries (`:port` after the host when it is not 22).
 - `NODE_KEY` — the path of the dedicated SSH key.
 - `NODE_KNOWN_HOSTS` — the file pinning each node's host key.
 - `QUIET_AFTER_SECONDS` — how long a stream can be silent before it reads as quiet.
@@ -57,6 +57,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `STREAMS_POLL_SECONDS` — how often the transcript folder is read, counted from the end of the previous read.
 - `FOLLOW_POLL_SECONDS` — how often a delegation that a page has open is read.
 - `METRICS_POLL_SECONDS` — how often the model server's figures are read.
+- `NODES_POLL_SECONDS` — how often each node's figures are read.
 - The other poll intervals, and the optional identity check.
 
 Node figures are read over SSH with a dedicated key that can only run the stats command (ADR-0003).

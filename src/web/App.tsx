@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { DelegationList } from "./DelegationList.tsx";
 import { ModelPanel } from "./ModelPanel.tsx";
+import { NodePanel } from "./NodePanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
 import { useLiveList } from "./useLiveList.ts";
 
@@ -75,6 +76,7 @@ export default function App() {
             </p>
           </section>
           <ModelPanel model={cluster?.model ?? null} />
+          <NodePanel nodes={cluster?.nodes ?? null} />
           {error && (
             <p className="mt-4 rounded border border-red-600 bg-red-100 px-4 py-3 text-red-700 dark:border-red-500 dark:bg-red-950 dark:text-red-300">
               The tracker backend is unreachable
