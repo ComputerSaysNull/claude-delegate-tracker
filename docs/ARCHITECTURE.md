@@ -203,15 +203,17 @@ These are the rules the code is tested against, one test per rule. They were lea
 
 Every stream has exactly one state, picked by the first rule below that applies.
 
-1. **failed**: an `end` event exists and `end.ok` is false.
-2. **cut off**: an `end` event exists, `end.ok` is true, and `finish_reason` is `length` or `content_filter`. Show why: raise `max_tokens` or split the task, or "the endpoint stopped it", which is not a budget problem.
-3. **ok**: any other stream with an `end` event. A finished stream is never "quiet", however old.
-4. **asking**: a `question` with no `answer` after it. Its age is the time since the question. A run waiting on its caller is never "quiet", however long the answer takes; it shows blue like running, with a question-mark icon, and counts as running.
-5. **quiet**: no event for `QUIET_AFTER_SECONDS`; show its age. Measure from the last event's `at`, not the file's time: the folder is synced and file times move.
-6. **queued**: the last signal (`waiting`, `priced`, `turn`, `alive`, `end`) is `waiting`. Its age comes from `waited_seconds`, not from silence.
-7. **live**: everything else.
+1. **stopped**: `end.ended` is `stopped`: the caller stopped it. Neutral, with a stop-square icon.
+2. **timed out**: `end.ended` is `queue_timeout`, `deadline` or `stalled`: a limit was hit, so it is orange like cut off. Say which: waited too long in the queue, ran past its deadline, or stalled because the backend went quiet.
+3. **failed**: an `end` event exists and `end.ok` is false. Only an error is failed; a stream without `ended`, or with a value the tracker does not know, stays failed, and the words in `error` are never read to decide.
+4. **cut off**: an `end` event exists, `end.ok` is true, and `finish_reason` is `length` or `content_filter`. Show why: raise `max_tokens` or split the task, or "the endpoint stopped it", which is not a budget problem.
+5. **ok**: any other stream with an `end` event. A finished stream is never "quiet", however old.
+6. **asking**: a `question` with no `answer` after it. Its age is the time since the question. A run waiting on its caller is never "quiet", however long the answer takes; it shows blue like running, with a question-mark icon, and counts as running.
+7. **quiet**: no event for `QUIET_AFTER_SECONDS`; show its age. Measure from the last event's `at`, not the file's time: the folder is synced and file times move.
+8. **queued**: the last signal (`waiting`, `priced`, `turn`, `alive`, `end`) is `waiting`. Its age comes from `waited_seconds`, not from silence.
+9. **live**: everything else.
 
-Rule 5 comes before rule 6 on purpose. A queued delegation writes `waiting` about every 30 s and a running one writes `alive` at least every 60 s, so the quiet threshold must stay well above the server's keepalive interval, which the tracker cannot see. Show an age as `59s`, `1m` … `89m`, `1h`.
+Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` about every 30 s and a running one writes `alive` at least every 60 s, so the quiet threshold must stay well above the server's keepalive interval, which the tracker cannot see. Show an age as `59s`, `1m` … `89m`, `1h`.
 
 ### The list
 
@@ -220,7 +222,7 @@ Rule 5 comes before rule 6 on purpose. A queued delegation writes `waiting` abou
 - Search and filters (title words, state, kind, model) apply to the rows loaded so far, live and older alike, and say how many of them they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
-- Above the list, count what is running and queued now, and what failed today.
+- Above the list, count what is running and queued now, and what failed today; runs that timed out or were stopped today are counted apart, and only when there are any.
 - A card leads with the state's icon (named for a screen reader), the title and the start time; under them its kind, its turns ("turn N of M" while running, "N turns" after) and how long it took. A running card shows its turns as segments (done, the current one, those to come) and the newest heartbeat's `ends_in_seconds` as the time left; a queued card shows its wait and its limit.
 - The states filter is one menu of checkboxes, beside the search box.
 
@@ -253,7 +255,7 @@ Rule 5 comes before rule 6 on purpose. A queued delegation writes `waiting` abou
 
 ### A delegation as a conversation
 
-- The task is the caller's message, on the right, with the files it was given or refused. Each turn is the delegation's message, on the left: its tool calls as one compact row each, its text, and a line of its figures (tokens in and out, `turn.out_tok_s`, tool time), leaving out any it does not have. A finished run ends with a note saying it finished or failed.
+- The task is the caller's message, on the right, with the files it was given or refused. Each turn is the delegation's message, on the left: its tool calls as one compact row each, its text, and a line of its figures (tokens in and out, `turn.out_tok_s`, tool time), leaving out any it does not have. A finished run ends with a note saying it finished, failed, timed out or was stopped.
 - Each turn is headed by the model, its number and when it started (its `priced` event's `at`); a call shows its first argument on its own line beside its name; token counts are written short ("4.6k", "1.3M"). A refused file is a chip marked "refused", with the reason in full under the chips. The end note says in one line how the run ended, how long it took, its turns and its cache use, with the other figures in one line below. "Jump to latest" is offered only while the run is going.
 - A header stays on screen: the state, the title, the turns as a bar, and, while the run is going, the time used as a bar from the newest heartbeat's `elapsed_seconds` of `of_seconds` with the time left, and the heartbeat. A run stopped mid-turn never closes that turn, so its old clock and heartbeat are not shown.
 - A question to the caller shows in its turn as a highlighted message from the delegation, with "Waiting for an answer" and for how long (a pulsing dot) while the run waits, and "Answered after" how long once it has an answer; the caller's answer follows as the caller's message, saying when the caller left the choice to the delegation (`best_reading`). `question` and `answer` carry no turn number: they belong to the newest turn that has been priced.

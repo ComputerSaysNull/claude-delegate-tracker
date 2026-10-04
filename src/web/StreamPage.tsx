@@ -376,6 +376,9 @@ function CallViewItem({ call }: { call: CallView }) {
   );
 }
 
+// The end note names how the run ended: stopped and timed out are not failures.
+const ENDING: Partial<Record<ListRow["state"], string>> = { failed: "Failed", stopped: "Stopped", "timed out": "Timed out" };
+
 function SummaryItem({ summary, state }: { summary: SummaryView; state: ListRow["state"] }) {
   if (summary.finished) {
     return (
@@ -383,7 +386,7 @@ function SummaryItem({ summary, state }: { summary: SummaryView; state: ListRow[
         <p>
           <span className={`inline-flex items-center gap-1 ${STATE_TEXT[state]}`}>
             <StateIcon state={state} size={16} />
-            {summary.ok === false ? "Failed" : "Finished"}
+            {ENDING[state] ?? (summary.ok === false ? "Failed" : "Finished")}
           </span>
           {summary.elapsed !== null && ` in ${summary.elapsed}`}
           {summary.turns !== null && ` · ${summary.turns} turns`}

@@ -89,6 +89,6 @@ describe("the summary line", () => {
       row("f1", "2026-10-04T10:00:00.000Z", "failed"),
       row("f2", "2026-10-03T10:00:00.000Z", "failed"),
     ];
-    expect(todayCounts(rows, NOW)).toEqual({ running: 2, queued: 1, failed: 1 });
+    expect(todayCounts(rows, NOW)).toEqual({ running: 2, queued: 1, failed: 1, timedOut: 0, stopped: 0 });
   });
 });

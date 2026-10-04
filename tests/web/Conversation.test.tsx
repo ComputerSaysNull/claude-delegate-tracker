@@ -169,6 +169,18 @@ describe("the conversation", () => {
     scrollTo.mockRestore();
   });
 
+  it("ends a stopped run with a note saying it was stopped, not failed", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "stopped" }), summary: summary({ ok: false, error: "cancelled" }) })} />);
+    const [end] = message("end");
+    expect(end.textContent).toMatch(/^Stopped/);
+    expect(end.textContent).not.toMatch(/Failed/);
+  });
+
+  it("ends a timed-out run with a note saying so", () => {
+    render(<StreamViewBody view={view({ row: row({ state: "timed out" }), summary: summary({ ok: false }) })} />);
+    expect(message("end")[0].textContent).toMatch(/^Timed out/);
+  });
+
   it("has no copy buttons", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { reply: "done" })], summary: summary() })} />);
     expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
