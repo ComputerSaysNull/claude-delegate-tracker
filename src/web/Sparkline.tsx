@@ -36,7 +36,8 @@ export function Sparkline({
         {
           width: el.clientWidth || 200,
           height: 32,
-          axes: [],
+          // Hidden one by one: uPlot fills an empty list with its default x and y axes.
+          axes: [{ show: false }, { show: false }],
           legend: { show: false },
           cursor: { show: false },
           // uPlot draws on a canvas, which cannot read a CSS variable: take the token's value.
@@ -51,9 +52,21 @@ export function Sparkline({
     };
   }, [data]);
 
+  // Follow the container's width: the chart is drawn at the width it had when created, so a
+  // phone turned sideways or a resized window would otherwise leave it too wide or too narrow.
   // Tear the chart down when the component unmounts.
   useEffect(() => {
+    const el = ref.current;
+    const observer =
+      el === null || typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver((entries) => {
+            const width = Math.round(entries[0]?.contentRect.width ?? 0);
+            if (width > 0) chartRef.current?.setSize({ width, height: 32 });
+          });
+    if (el !== null) observer?.observe(el);
     return () => {
+      observer?.disconnect();
       chartRef.current?.destroy();
       chartRef.current = null;
     };
