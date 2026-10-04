@@ -250,6 +250,12 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - load = prompt + output summed over all turns: what the cluster processed.
 - `tool_calls` is an integer (or `null`) on `end` and a list on `turn`: check the type before using it.
 
+### A delegation as a conversation
+
+- The task is the caller's message, on the right, with the files it was given or refused. Each turn is the delegation's message, on the left: its tool calls as one compact row each, its text, and a line of its figures (tokens in and out, `turn.out_tok_s`, tool time), leaving out any it does not have. A finished run ends with a note saying it finished or failed.
+- A header stays on screen: the state, the title, the turns as a bar, and, while the run is going, the time used as a bar from the newest heartbeat's `elapsed_seconds` of `of_seconds` with the time left, and the heartbeat. A run stopped mid-turn never closes that turn, so its old clock and heartbeat are not shown.
+- The view follows the growing reply while the reader is at the bottom; scrolled up, it stays put and offers "Jump to latest". No copy buttons.
+
 ### Turns and calls
 
 - `priced` opens a turn (heading "turn N of M"); `turn` closes it; heartbeats and calls in between belong to that turn.

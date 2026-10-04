@@ -350,6 +350,44 @@ describe("tool time", () => {
   });
 });
 
+describe("a turn's figures and the run's clock", () => {
+  it("a closed turn carries its tokens in and out and its decode speed", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", input_tokens: 5100, output_tokens: 160, out_tok_s: 40.2 },
+    ]).turns[0];
+    expect([t.tokensIn, t.tokensOut, t.tokS]).toEqual([5100, 160, 40.2]);
+  });
+
+  it("absent figures stay absent, never 0", () => {
+    const t = viewOf([start(), { t: "priced", at: at(0), turn: 1 }, { t: "turn", at: at(0), turn: 1, text: "", out_tok_s: null }]).turns[0];
+    expect([t.tokensIn, t.tokensOut, t.tokS]).toEqual([null, null, null]);
+  });
+
+  it("an open turn carries the newest heartbeat's elapsed time and budget", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "alive", at: at(0), elapsed_seconds: 30, of_seconds: 600, ends_in_seconds: 570 },
+      { t: "alive", at: at(0), elapsed_seconds: 45, of_seconds: 600, ends_in_seconds: 555 },
+    ]).turns[0];
+    expect(t.clock).toEqual({ elapsed: 45, of: 600 });
+  });
+
+  it("has no clock without a budget, or once the turn has closed", () => {
+    const open = viewOf([start(), { t: "priced", at: at(0), turn: 1 }, { t: "alive", at: at(0), elapsed_seconds: 30, of_seconds: null }]);
+    expect(open.turns[0].clock).toBeNull();
+    const closed = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "alive", at: at(0), elapsed_seconds: 30, of_seconds: 600 },
+      { t: "turn", at: at(0), turn: 1, text: "" },
+    ]);
+    expect(closed.turns[0].clock).toBeNull();
+  });
+});
+
 describe("repeated output, evicted tool results and the shell count", () => {
   const turnWith = (over: Record<string, unknown>) =>
     viewOf([
