@@ -42,7 +42,7 @@ The backend turns raw events and metrics into ready-to-show state: list rows, tu
 
 ## Stack
 
-TypeScript everywhere (ADR-0001). Node runs the backend, using Hono with its Node adapter. The page uses Vite, React, Tailwind CSS and shadcn/ui components. Charts use uPlot. Tests use Vitest, schema checks use Ajv (JSON Schema 2020-12), and packages come from npm.
+TypeScript everywhere (ADR-0001). Node runs the backend, using Hono with its Node adapter. The page uses Vite, React, Tailwind CSS and shadcn/ui components. Charts use uPlot, icons lucide-react, and the fonts are IBM Plex Sans and Mono from Fontsource, bundled so the page asks no other host. Tests use Vitest, schema checks use Ajv (JSON Schema 2020-12), and packages come from npm.
 
 The repo machinery (the docs gate, hooks, publishing) is Python, copied from the server, standard library only; it and its tests are the only Python in the repo.
 
@@ -284,7 +284,9 @@ Rule 4 comes before rule 5 on purpose. A queued delegation writes `waiting` abou
 - When a stream finishes, leave it on screen: the last thing it wrote is usually what you were waiting for.
 - Elapsed time: a finished stream uses `end.elapsed_seconds`; a running one counts up from `start.at`. Never use file times.
 - Show times in local time (`at` is UTC), all through one formatter: a 24-hour clock ("19:00"), dates as "12 Nov", with the year ("12 Nov 2025") only when it is not this year.
-- Follow the system's light or dark setting: every colour has a dark-mode variant.
+- Follow the system's light or dark setting. Every colour is a named token in `index.css`, with a light and a dark value; text is at least 4.5:1 on its ground in both.
+- Every state has its own icon besides its colour, the same in badges, cards and the conversation. A badge is a pill naming the state in a word: Running, Queued, Quiet, Done, Failed, Cut off. A run in progress (running, queued) gets a tinted card; a finished one stays plain.
+- Words in IBM Plex Sans. A figure, time, duration or piece of code that stands on its own is in IBM Plex Mono, with tabular digits so a ticking number keeps its width; one inside a sentence stays in the sentence's font.
 
 ## Security
 

@@ -1,7 +1,8 @@
 // Build stream state from transcript events, and a list row for the page.
 import { titleFromTask } from "./titles.ts";
 
-export type State = "live" | "queued" | "quiet" | "ok" | "failed" | "cut off";
+export const STATES = ["live", "queued", "quiet", "ok", "failed", "cut off"] as const;
+export type State = (typeof STATES)[number];
 export const KNOWN_MAJOR = 1;
 
 export interface StreamState {

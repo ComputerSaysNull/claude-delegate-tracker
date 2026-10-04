@@ -227,7 +227,7 @@ describe("StreamViewBody", () => {
     expect(screen.queryByText("0")).toBeNull();
     expect(screen.queryByText("null")).toBeNull();
     const failures = screen.getByText(/failures/);
-    expect(failures.className).toContain("text-red-600");
+    expect(failures.className).toContain("text-hot");
   });
 
   it("shows an open turn's partial answer and folds its reasoning away", () => {

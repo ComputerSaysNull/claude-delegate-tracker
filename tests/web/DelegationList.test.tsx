@@ -57,6 +57,28 @@ describe("DelegationList", () => {
     expect(link.className).toMatch(/\btruncate\b/);
   });
 
+  it("gives each card its state's badge, with the state's icon", () => {
+    const { container } = render(<DelegationList list={list([row({ state: "failed" })])} />);
+    const badge = container.querySelector("li")!.querySelector("span.inline-flex")!;
+    expect(badge.textContent).toBe("Failed");
+    expect(badge.querySelector("svg")).not.toBeNull();
+  });
+
+  it("tints a running card and leaves a finished one plain", () => {
+    const { container } = render(<DelegationList list={list([row({ state: "live" }), row({ name: "s2", state: "ok" })])} />);
+    const [running, finished] = [...container.querySelectorAll("li")];
+    expect(running.className).toMatch(/\bbg-state-live\//);
+    expect(finished.className).toMatch(/\bbg-card\b/);
+  });
+
+  it("shows the start line in Plex Mono with tabular digits", () => {
+    const startedAt = "2026-01-15T13:45:00.000Z";
+    render(<DelegationList list={list([row({ startedAt })])} />);
+    const line = screen.getByText((_, el) => el?.tagName === "P" && (el.textContent ?? "").includes(localDateTime(startedAt)));
+    expect(line.className).toMatch(/\bfont-mono\b/);
+    expect(line.className).toMatch(/\btabular-nums\b/);
+  });
+
   it("shows the waiting line for a null list", () => {
     render(<DelegationList list={null} />);
     expect(screen.getByText("Waiting for the first list…")).toBeTruthy();

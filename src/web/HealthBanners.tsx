@@ -3,9 +3,9 @@
 import type { Banner } from "../server/health.ts";
 
 const ERROR_BOX =
-  "rounded border border-red-600 bg-red-100 px-4 py-3 text-red-700 dark:border-red-500 dark:bg-red-950 dark:text-red-300";
+  "rounded border border-hot bg-hot/10 px-4 py-3 text-hot";
 const WARNING_BOX =
-  "rounded border border-amber-500 bg-amber-100 px-3 py-2 text-sm text-amber-700 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-300";
+  "rounded border border-warn bg-warn/10 px-3 py-2 text-sm text-warn";
 
 export function HealthBanners({ banners }: { banners: Banner[] }) {
   if (banners.length === 0) return null;

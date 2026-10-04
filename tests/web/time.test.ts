@@ -60,34 +60,3 @@ describe("local time", () => {
     expect(offenders).toEqual([]);
   });
 });
-
-// Tailwind colour utilities that need a dark-mode partner in the same class string.
-const COLOUR = /(?<![\w:-])(bg|text|border)-(slate|gray|red|amber|green|blue|orange|white|black)(-\d{2,3})?\b/g;
-
-function missingDarkVariants(source: string): string[] {
-  const missing: string[] = [];
-  for (const m of source.matchAll(/"([^"\n]*)"|`([^`\n]*)`/g)) {
-    const classes = m[1] ?? m[2];
-    for (const c of classes.matchAll(COLOUR)) {
-      if (!new RegExp(`(^|\\s)dark:${c[1]}-`).test(classes)) missing.push(`${c[0]} in "${classes}"`);
-    }
-  }
-  return missing;
-}
-
-describe("dark and light themes", () => {
-  it("every colour on the page has a dark-mode variant", () => {
-    const missing: string[] = [];
-    for (const file of readdirSync(WEB)) {
-      if (!/\.(tsx|css)$/.test(file)) continue;
-      for (const m of missingDarkVariants(readFileSync(join(WEB, file), "utf8"))) missing.push(`${file}: ${m}`);
-    }
-    expect(missing).toEqual([]);
-  });
-
-  it("the check fires on a colour without its dark variant", () => {
-    expect(missingDarkVariants('className="text-red-600"')).toHaveLength(1);
-    expect(missingDarkVariants('className="text-red-600 dark:text-red-400"')).toHaveLength(0);
-    expect(missingDarkVariants('className="bg-white text-slate-900 dark:bg-slate-950"')).toHaveLength(1);
-  });
-});

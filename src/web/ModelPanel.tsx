@@ -5,8 +5,8 @@ import { localTime } from "./time.ts";
 import { Sparkline, windowLabel } from "./Sparkline.tsx";
 import { toUplotData } from "./sparkData.ts";
 
-const SLATE = "text-slate-500 dark:text-slate-400";
-const AMBER = "text-amber-600 dark:text-amber-400";
+const SLATE = "text-muted";
+const AMBER = "text-warn";
 
 function num(n: number | null): string {
   return n === null ? "—" : n.toLocaleString();
@@ -78,10 +78,10 @@ export function ModelPanel({
   windowSeconds?: number;
 }) {
   return (
-    <section className="mt-6 rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+    <section className="mt-6 rounded-lg border border-line p-4">
       <h2 className="text-lg font-semibold">Model server</h2>
       {model === null ? (
-        <p className="mt-2 text-slate-500 dark:text-slate-400">Waiting for figures…</p>
+        <p className="mt-2 text-muted">Waiting for figures…</p>
       ) : (
         <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} />
       )}
@@ -107,7 +107,7 @@ function ModelFiguresBody({
           <div key={row.label} className="flex flex-col gap-1">
             <p className={SLATE}>
               <span>{row.label}: </span>
-              <span>{row.value}</span>
+              <span className="font-mono tabular-nums">{row.value}</span>
               {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
             </p>
             {row.spark !== undefined && history !== undefined && (

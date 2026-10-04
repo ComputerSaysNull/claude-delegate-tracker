@@ -39,7 +39,8 @@ export function Sparkline({
           axes: [],
           legend: { show: false },
           cursor: { show: false },
-          series: [{}, { spanGaps: false, stroke: "#64748b" }],
+          // uPlot draws on a canvas, which cannot read a CSS variable: take the token's value.
+          series: [{}, { spanGaps: false, stroke: getComputedStyle(el).getPropertyValue("--muted").trim() || "currentColor" }],
         },
         data,
         el,

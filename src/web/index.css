@@ -1,9 +1,72 @@
 @import "tailwindcss";
 
+/* The page's colours, by name. Every colour the page draws comes from here: light first,
+   then dark when the system asks for it. tests/web/theme.test.ts checks text contrast. */
+:root {
+  --page: #f5f7fa;
+  --card: #ffffff;
+  --line: #dfe4ea;
+  --text: #111820;
+  --muted: #566273;
+  --accent: #1c65bf;
+  --warn: #955800;
+  --hot: #c42b2b;
+  --state-live: #1c65bf;
+  --state-queued: #955800;
+  --state-quiet: #566273;
+  --state-ok: #127648;
+  --state-failed: #c42b2b;
+  --state-cut-off: #a94e0b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0e1217;
+    --card: #141a21;
+    --line: #26303b;
+    --text: #e7ecf2;
+    --muted: #9ba7b5;
+    --accent: #5eb1ff;
+    --warn: #f0b445;
+    --hot: #ff7a7a;
+    --state-live: #5eb1ff;
+    --state-queued: #f0b445;
+    --state-quiet: #9ba7b5;
+    --state-ok: #46d19a;
+    --state-failed: #ff7a7a;
+    --state-cut-off: #ff9e57;
+  }
+}
+
+@theme inline {
+  --color-page: var(--page);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --color-hot: var(--hot);
+  --color-state-live: var(--state-live);
+  --color-state-queued: var(--state-queued);
+  --color-state-quiet: var(--state-quiet);
+  --color-state-ok: var(--state-ok);
+  --color-state-failed: var(--state-failed);
+  --color-state-cut-off: var(--state-cut-off);
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
 @layer base {
   body {
-    @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-page text-text font-sans;
     /* Paths, commands and replies hold long unbroken strings; on a phone they must wrap. */
     overflow-wrap: anywhere;
+  }
+  a {
+    @apply text-accent;
+  }
+  :focus-visible {
+    @apply outline-2 outline-accent;
   }
 }
