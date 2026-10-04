@@ -350,6 +350,43 @@ describe("tool time", () => {
   });
 });
 
+describe("repeated output, evicted tool results and the shell count", () => {
+  const turnWith = (over: Record<string, unknown>) =>
+    viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", ...over },
+    ]).turns[0];
+
+  it("shows the repeated share from 15%, as a percent", () => {
+    expect(turnWith({ duplicate_line_share: 0.15 }).repeated).toBe("15%");
+    expect(turnWith({ duplicate_line_share: 0.234 }).repeated).toBe("23%");
+  });
+
+  it("hides a repeated share under 15%, and an absent one", () => {
+    expect(turnWith({ duplicate_line_share: 0.149 }).repeated).toBeNull();
+    expect(turnWith({ duplicate_line_share: null }).repeated).toBeNull();
+    expect(turnWith({}).repeated).toBeNull();
+  });
+
+  it("shows evicted tool results only when the field is a number, a measured 0 included", () => {
+    expect(turnWith({ tool_results_evicted: 3 }).evicted).toBe(3);
+    expect(turnWith({ tool_results_evicted: 0 }).evicted).toBe(0);
+    expect(turnWith({ tool_results_evicted: true }).evicted).toBeNull();
+    expect(turnWith({ tool_results_evicted: null }).evicted).toBeNull();
+    expect(turnWith({}).evicted).toBeNull();
+  });
+
+  const summaryWith = (over: Record<string, unknown>) =>
+    viewOf([start(), { t: "end", at: at(0), ok: true, turns: 1, elapsed_seconds: 10, ...over }]).summary!;
+
+  it("shows the shell count only above 0", () => {
+    expect(summaryWith({ bash_calls: 4 }).shellCalls).toBe(4);
+    expect(summaryWith({ bash_calls: 0 }).shellCalls).toBeNull();
+    expect(summaryWith({ bash_calls: null }).shellCalls).toBeNull();
+  });
+});
+
 describe("attempts", () => {
   it("is shown only above one", () => {
     const v = viewOf([
