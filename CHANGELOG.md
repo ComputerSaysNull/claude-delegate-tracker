@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #14 — 2026-10-04 — feat: start the tracker at logon without a manual command
+
+### Added
+
+- **`scripts/autostart.ps1`**: registers a Task Scheduler entry that starts the tracker at
+  every logon, with no window, using the repo's `.env`. Until now it ran only after
+  someone remembered `npm start`. `-Stop` stops the tracker it started, because ending
+  the scheduled task alone leaves the server running underneath it; `-Remove` also removes
+  the entry. A tracker started by hand is never touched.
+
 ## #13 — 2026-10-03 — feat: page back through older delegations beyond the newest 20
 
 ### Added
