@@ -4,8 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { MetricsPoller } from "./metrics.ts";
 import { Poller } from "./poller.ts";
-import { loadSettings, SettingsError, type Settings } from "./settings.ts";
+import { DEFAULTS, loadSettings, SettingsError, type Settings } from "./settings.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
 const envFile = path.join(root, ".env");
@@ -37,6 +38,17 @@ const poller = new Poller({
 });
 poller.start(settings.streamsPollSeconds, settings.followPollSeconds);
 
+// The token stays in its own environment variable; settings hold only that variable's name.
+const tokenRaw = settings.metricsTokenEnv === null ? "" : (process.env[settings.metricsTokenEnv] ?? "").trim();
+const metrics = new MetricsPoller({
+  url: settings.metricsUrl,
+  token: tokenRaw === "" ? null : tokenRaw,
+  fetch,
+  now: () => new Date(),
+  timeoutMs: DEFAULTS.metricsTimeoutMs,
+});
+metrics.start(settings.metricsPollSeconds);
+
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
   settings,
@@ -47,6 +59,8 @@ const app = createApp({
   subscribe: (listener) => poller.onChange(listener),
   view: (name) => poller.view(name),
   follow: (name, listener) => poller.follow(name, listener),
+  cluster: () => ({ model: metrics.figures() }),
+  subscribeCluster: (listener) => metrics.onChange((model) => listener({ model })),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

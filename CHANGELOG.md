@@ -9,6 +9,21 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #7 — 2026-10-03 — feat: show the model server's load in a panel on the page
+
+### Added
+
+- **The model server panel** on the list page: requests running and waiting, KV-cache use,
+  decode speed with the window it was measured over, the prefix-cache hit rate since the
+  engine started, and preemptions when there are any, with the time the figures were read.
+  Until now, how busy the cluster was could only be read off the server's raw metrics.
+  A figure that is missing shows `—`, a measured 0 shows 0; a counter that went down (the
+  engine restarted) and a first reading give no rate. An unreachable server says since
+  when there are no figures, and a `404` reads as "not available", not as idle.
+- **`GET /api/cluster`** and a `cluster` event on `/api/updates`. Only the seven allowlisted
+  metric names are read, label values never leave the backend, and a token, if any, stays
+  in its own environment variable (`METRICS_TOKEN_ENV`). Read every `METRICS_POLL_SECONDS`.
+
 ## #6 — 2026-10-03 — feat: show the reply growing while the model writes it
 
 ### Added

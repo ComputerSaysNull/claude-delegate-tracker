@@ -1,6 +1,7 @@
 // Shows the tracker's backend health and the live delegation list.
 import { useEffect, useState } from "react";
 import { DelegationList } from "./DelegationList.tsx";
+import { ModelPanel } from "./ModelPanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
 import { useLiveList } from "./useLiveList.ts";
 
@@ -14,7 +15,7 @@ type Status = "readable" | "not readable" | "not set";
 export default function App() {
   const [health, setHealth] = useState<Health | null>(null);
   const [error, setError] = useState(false);
-  const { list, connected } = useLiveList();
+  const { list, cluster, connected } = useLiveList();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +74,7 @@ export default function App() {
               {health ? new Date(health.checkedAt).toLocaleTimeString() : "—"}
             </p>
           </section>
+          <ModelPanel model={cluster?.model ?? null} />
           {error && (
             <p className="mt-4 rounded border border-red-600 bg-red-100 px-4 py-3 text-red-700 dark:border-red-500 dark:bg-red-950 dark:text-red-300">
               The tracker backend is unreachable

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server/app.ts";
 import type { AppDeps } from "../../src/server/app.ts";
+import type { ModelFigures } from "../../src/server/metrics.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
 import type { ListRow } from "../../src/server/streams.ts";
@@ -12,9 +13,15 @@ import type { StreamView, ViewPatch } from "../../src/server/view.ts";
 function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
-    quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1, ...overrides,
+    quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
+    metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1, ...overrides,
   };
 }
+
+const MODEL: ModelFigures = {
+  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 80,
+  decodeWindowSeconds: 10, prefixHitPercent: 92, preemptions: null, readAt: "2026-10-03T12:00:00.000Z",
+};
 
 const LIST: ListResponse = {
   rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0,
@@ -30,9 +37,52 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     subscribe: () => () => {},
     view: () => null,
     follow: () => null,
+    cluster: () => ({ model: MODEL }),
+    subscribeCluster: () => () => {},
     ...overrides,
   });
 }
+
+async function readUntil(res: Response, needle: string): Promise<string> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes(needle)) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel();
+  return text;
+}
+
+describe("cluster figures", () => {
+  it("serves the figures at /api/cluster", async () => {
+    const res = await makeApp().request("/api/cluster", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ model: MODEL });
+  });
+
+  it("sends a cluster event on connect", async () => {
+    const res = await makeApp().request("/api/updates", goodHost);
+    const text = await readUntil(res, "event: cluster");
+    expect(text).toContain("event: cluster");
+    expect(text).toContain(JSON.stringify({ model: MODEL }));
+  });
+
+  it("sends another cluster event when the figures change, and unsubscribes on disconnect", async () => {
+    let listener: ((c: { model: ModelFigures }) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const app = makeApp({ subscribeCluster: (l) => { listener = l; return unsubscribe; } });
+    const res = await app.request("/api/updates", goodHost);
+    const changed = { model: { ...MODEL, running: 5 } };
+    listener!(changed);
+    const text = await readUntil(res, '"running":5');
+    expect(text).toContain(JSON.stringify(changed));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+});
 
 function makeRow(name: string): ListRow {
   return {

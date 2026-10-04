@@ -17,7 +17,24 @@ describe('loadSettings', () => {
     expect(s.streamsPollSeconds).toBe(5);
   });
 
-  it.each(['QUIET_AFTER_SECONDS', 'STREAMS_POLL_SECONDS'])('%s rejects 0 and non-numbers', (name) => {
+  it('METRICS_URL and METRICS_TOKEN_ENV are null unless set, and trimmed', () => {
+    const unset = loadSettings({ METRICS_URL: '  ', METRICS_TOKEN_ENV: '' });
+    expect(unset.metricsUrl).toBeNull();
+    expect(unset.metricsTokenEnv).toBeNull();
+    const set = loadSettings({ METRICS_URL: ' http://metrics.example ', METRICS_TOKEN_ENV: ' TOKEN_VAR ' });
+    expect(set.metricsUrl).toBe('http://metrics.example');
+    expect(set.metricsTokenEnv).toBe('TOKEN_VAR');
+  });
+
+  it('METRICS_POLL_SECONDS and FOLLOW_POLL_SECONDS default, and are used when valid', () => {
+    expect(loadSettings({}).metricsPollSeconds).toBe(DEFAULTS.metricsPollSeconds);
+    expect(loadSettings({}).followPollSeconds).toBe(DEFAULTS.followPollSeconds);
+    const s = loadSettings({ METRICS_POLL_SECONDS: '30', FOLLOW_POLL_SECONDS: '3' });
+    expect(s.metricsPollSeconds).toBe(30);
+    expect(s.followPollSeconds).toBe(3);
+  });
+
+  it.each(['QUIET_AFTER_SECONDS', 'STREAMS_POLL_SECONDS', 'FOLLOW_POLL_SECONDS', 'METRICS_POLL_SECONDS'])('%s rejects 0 and non-numbers', (name) => {
     for (const v of ['0', 'abc', '1.5']) {
       expect(() => loadSettings({ [name]: v })).toThrow(new RegExp(name));
     }

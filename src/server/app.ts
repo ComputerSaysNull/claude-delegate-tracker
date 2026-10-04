@@ -4,6 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ModelFigures } from "./metrics.ts";
 import type { ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
@@ -18,6 +19,12 @@ export interface AppDeps {
   // Both return null for a name the backend did not list itself.
   view: (name: string) => StreamView | null;
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
+  cluster: () => Cluster;
+  subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
+}
+
+export interface Cluster {
+  model: ModelFigures;
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -39,7 +46,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, isReadableDir, now, streams, subscribe, view, follow } = deps;
+  const { settings, staticRoot, isReadableDir, now, streams, subscribe, view, follow, cluster, subscribeCluster } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -71,6 +78,8 @@ export function createApp(deps: AppDeps): Hono {
   // The list rows, already derived by the poller; the page only lays them out.
   app.get("/api/streams", (c) => c.json(streams()));
 
+  app.get("/api/cluster", (c) => c.json(cluster()));
+
   // One stream's whole view; the name is only ever looked up, never joined onto a path.
   app.get("/api/streams/:name", (c) => {
     const found = view(c.req.param("name"));
@@ -96,6 +105,10 @@ export function createApp(deps: AppDeps): Hono {
       const unsubscribe = subscribe((list) => {
         stream.writeSSE({ event: "list", data: JSON.stringify(list) });
       });
+      stream.writeSSE({ event: "cluster", data: JSON.stringify(cluster()) });
+      const unsubscribeCluster = subscribeCluster((figures) => {
+        stream.writeSSE({ event: "cluster", data: JSON.stringify(figures) });
+      });
       // Patches may arrive before the stream opens; send them in order.
       const flush = (): void => {
         for (const patch of patches.splice(0)) stream.writeSSE({ event: "stream", data: JSON.stringify(patch) });
@@ -107,6 +120,7 @@ export function createApp(deps: AppDeps): Hono {
       const disconnected = new Promise<void>((resolve) => {
         stream.onAbort(() => {
           unsubscribe();
+          unsubscribeCluster();
           unfollow?.();
           if (timer !== null) clearInterval(timer);
           resolve();
