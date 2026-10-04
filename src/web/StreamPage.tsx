@@ -3,17 +3,8 @@
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
-import { STATE_COLOR } from "./DelegationList.tsx";
+import { StateBadge, STATE_TEXT } from "./states.tsx";
 import { localDateTime } from "./time.ts";
-
-const WHY_COLOR: Record<ListRow["state"], string> = {
-  live: "text-blue-600 dark:text-blue-400",
-  queued: "text-amber-600 dark:text-amber-400",
-  quiet: "text-slate-500 dark:text-slate-400",
-  ok: "text-green-600 dark:text-green-400",
-  failed: "text-red-600 dark:text-red-400",
-  "cut off": "text-orange-600 dark:text-orange-400",
-};
 
 function metaLine(row: ListRow): string {
   const pieces = [
@@ -34,13 +25,13 @@ export function StreamPage({ name }: { name: string }) {
         ← All delegations
       </a>
       {missing ? (
-        <p className="text-slate-500 dark:text-slate-400">No such delegation.</p>
+        <p className="text-muted">No such delegation.</p>
       ) : view === null ? (
-        <p className="text-slate-500 dark:text-slate-400">Loading…</p>
+        <p className="text-muted">Loading…</p>
       ) : (
         <>
           {!connected && (
-            <p className="rounded border border-amber-500 bg-amber-100 px-3 py-2 text-sm text-amber-700 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-300">
+            <p className="rounded border border-warn bg-warn/10 px-3 py-2 text-sm text-warn">
               Live updates paused; reconnecting…
             </p>
           )}
@@ -57,27 +48,25 @@ export function StreamViewBody({ view }: { view: StreamView }) {
   return (
     <section className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${STATE_COLOR[row.state]}`}>
-          {row.state}
-        </span>
+        <StateBadge state={row.state} />
         <span className="min-w-0 truncate font-medium" title={row.title}>
           {row.title}
         </span>
       </div>
-      {meta !== "" && <p className="text-sm text-slate-500 dark:text-slate-400">{meta}</p>}
-      <p className="text-sm text-slate-500 dark:text-slate-400">
+      {meta !== "" && <p className="text-sm font-mono tabular-nums text-muted">{meta}</p>}
+      <p className="text-sm font-mono tabular-nums text-muted">
         started {localDateTime(row.startedAt)}
       </p>
       {row.why !== null && row.why !== "" && (
-        <p className={`text-sm ${WHY_COLOR[row.state]}`}>{row.why}</p>
+        <p className={`text-sm ${STATE_TEXT[row.state]}`}>{row.why}</p>
       )}
       {row.unknownFormat !== null && row.unknownFormat !== "" && (
-        <p className="text-sm text-amber-600 dark:text-amber-400">
+        <p className="text-sm text-warn">
           format {row.unknownFormat}: shown as best it can be
         </p>
       )}
       {view.task !== null && (
-        <pre className="whitespace-pre-wrap rounded border border-slate-300 p-3 text-sm dark:border-slate-700">
+        <pre className="whitespace-pre-wrap rounded border border-line p-3 font-mono tabular-nums text-sm">
           {view.task}
         </pre>
       )}
@@ -86,16 +75,16 @@ export function StreamViewBody({ view }: { view: StreamView }) {
           {view.files.map((file) => (
             <li key={file.path} className="flex flex-wrap gap-2">
               <Clipped text={file.path} className="font-medium" />
-              {file.size !== null && <span className="text-slate-500 dark:text-slate-400">{file.size}</span>}
+              {file.size !== null && <span className="font-mono tabular-nums text-muted">{file.size}</span>}
               {file.skipped !== null && (
-                <span className="text-amber-600 dark:text-amber-400">{file.skipped}</span>
+                <span className="text-warn">{file.skipped}</span>
               )}
             </li>
           ))}
         </ul>
       )}
       {view.waiting !== null && (
-        <p className="text-sm text-amber-600 dark:text-amber-400">{view.waiting}</p>
+        <p className="text-sm font-mono tabular-nums text-warn">{view.waiting}</p>
       )}
       {view.turns.map((turn) => (
         <TurnSection key={turn.n} turn={turn} />
@@ -107,11 +96,11 @@ export function StreamViewBody({ view }: { view: StreamView }) {
 
 function TurnSection({ turn }: { turn: TurnView }) {
   return (
-    <section className="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
-      <h3 className="font-semibold">{turn.heading}</h3>
-      {turn.budget !== null && <p className="text-xs text-slate-500 dark:text-slate-400">{turn.budget}</p>}
+    <section className="rounded-lg border border-line p-4">
+      <h3 className="font-semibold font-mono tabular-nums">{turn.heading}</h3>
+      {turn.budget !== null && <p className="text-xs font-mono tabular-nums text-muted">{turn.budget}</p>}
       {turn.heartbeat !== null && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">{turn.heartbeat}</p>
+        <p className="text-xs font-mono tabular-nums text-muted">{turn.heartbeat}</p>
       )}
       <div className="mt-2 flex flex-col gap-3">
         {turn.calls.map((call, i) => (
@@ -119,13 +108,13 @@ function TurnSection({ turn }: { turn: TurnView }) {
         ))}
       </div>
       {turn.toolTime !== null && (
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">tool time {turn.toolTime}</p>
+        <p className="mt-2 text-sm font-mono tabular-nums text-muted">tool time {turn.toolTime}</p>
       )}
       {turn.attempts !== null && (
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">attempts {turn.attempts}</p>
+        <p className="mt-1 text-sm font-mono tabular-nums text-muted">attempts {turn.attempts}</p>
       )}
       {turn.partial !== null && <TurnPartial partial={turn.partial} />}
-      {turn.reply !== null && <pre className="mt-2 whitespace-pre-wrap text-sm">{turn.reply}</pre>}
+      {turn.reply !== null && <pre className="mt-2 whitespace-pre-wrap font-mono tabular-nums text-sm">{turn.reply}</pre>}
     </section>
   );
 }
@@ -135,14 +124,14 @@ function TurnPartial({ partial }: { partial: NonNullable<TurnView["partial"]> })
     <div className="mt-2 flex flex-col gap-1">
       {partial.answer !== "" && (
         <>
-          <p className="text-xs text-slate-500 dark:text-slate-400">writing…</p>
-          <pre className="whitespace-pre-wrap">{partial.answer}</pre>
+          <p className="text-xs text-muted">writing…</p>
+          <pre className="whitespace-pre-wrap font-mono tabular-nums">{partial.answer}</pre>
         </>
       )}
       {partial.reasoning !== "" && (
         <details>
-          <summary className="text-sm text-slate-500 dark:text-slate-400">reasoning</summary>
-          <pre className="whitespace-pre-wrap">{partial.reasoning}</pre>
+          <summary className="text-sm text-muted">reasoning</summary>
+          <pre className="whitespace-pre-wrap font-mono tabular-nums">{partial.reasoning}</pre>
         </details>
       )}
     </div>
@@ -161,22 +150,22 @@ function Clipped({ text, className }: { text: string; className: string }) {
 
 function CallViewItem({ call }: { call: CallView }) {
   return (
-    <div className="rounded border border-slate-200 p-2 dark:border-slate-700">
+    <div className="rounded border border-line p-2">
       <div className="flex items-center gap-2">
         <span className="font-medium">{call.name}</span>
-        {call.ok === true && <span className="text-green-600 dark:text-green-400">✓</span>}
-        {call.ok === false && <span className="text-red-600 dark:text-red-400">✗</span>}
+        {call.ok === true && <span className="text-state-ok">✓</span>}
+        {call.ok === false && <span className="text-hot">✗</span>}
         {call.status !== null && (
-          <span className="text-sm text-slate-500 dark:text-slate-400">{call.status}</span>
+          <span className="text-sm font-mono tabular-nums text-muted">{call.status}</span>
         )}
       </div>
       {call.args.map(([key, value], i) => (
-        <Clipped key={i} text={`${key}: ${value}`} className="text-sm text-slate-500 dark:text-slate-400" />
+        <Clipped key={i} text={`${key}: ${value}`} className="text-sm font-mono tabular-nums text-muted" />
       ))}
       {call.message !== null && (
-        <p className="mt-1 whitespace-pre-wrap text-sm text-red-600 dark:text-red-400">{call.message}</p>
+        <p className="mt-1 whitespace-pre-wrap text-sm text-hot">{call.message}</p>
       )}
-      <div className="mt-1 flex flex-wrap gap-2 text-sm text-slate-500 dark:text-slate-400">
+      <div className="mt-1 flex flex-wrap gap-2 text-sm font-mono tabular-nums text-muted">
         {call.result !== null && <span>{call.result}</span>}
         {call.exitCode !== null && <span>exit {call.exitCode}</span>}
         {call.time !== null && <span>{call.time}</span>}
@@ -187,9 +176,9 @@ function CallViewItem({ call }: { call: CallView }) {
 
 function SummarySection({ summary }: { summary: SummaryView }) {
   return (
-    <section className="rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+    <section className="rounded-lg border border-line p-4">
       <h3 className="font-semibold">Summary</h3>
-      <div className="mt-2 flex flex-col gap-1 text-sm">
+      <div className="mt-2 flex flex-col gap-1 text-sm font-mono tabular-nums">
         {summary.elapsed !== null && <p>elapsed {summary.elapsed}</p>}
         {summary.turns !== null && <p>turns {summary.turns}</p>}
         {summary.cached !== null && <p>cached {summary.cached.toLocaleString()}</p>}
@@ -200,8 +189,8 @@ function SummarySection({ summary }: { summary: SummaryView }) {
           <p
             className={
               summary.failures > 0
-                ? "text-red-600 dark:text-red-400"
-                : "text-slate-500 dark:text-slate-400"
+                ? "text-hot"
+                : "text-muted"
             }
           >
             failures {summary.failures.toLocaleString()}
@@ -210,7 +199,7 @@ function SummarySection({ summary }: { summary: SummaryView }) {
         {summary.toolTime !== null && <p>tool time {summary.toolTime}</p>}
         {summary.finishReason !== null && <p>finish reason {summary.finishReason}</p>}
         {summary.error !== null && (
-          <p className="whitespace-pre-wrap text-red-600 dark:text-red-400">{summary.error}</p>
+          <p className="whitespace-pre-wrap font-mono tabular-nums text-hot">{summary.error}</p>
         )}
       </div>
     </section>

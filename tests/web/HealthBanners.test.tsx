@@ -16,24 +16,18 @@ describe("HealthBanners", () => {
     const banner: Banner = { level: "error", text: "TRANSCRIPT_DIR is not set" };
     render(<HealthBanners banners={[banner]} />);
     const el = screen.getByText(banner.text);
-    expect(el.className).toContain("border-red-600");
-    expect(el.className).toContain("bg-red-100");
-    expect(el.className).toContain("text-red-700");
-    expect(el.className).toContain("dark:border-red-500");
-    expect(el.className).toContain("dark:bg-red-950");
-    expect(el.className).toContain("dark:text-red-300");
+    expect(el.className).toContain("border-hot");
+    expect(el.className).toContain("bg-hot/10");
+    expect(el.className).toContain("text-hot");
   });
 
   it("gives a warning banner an amber box", () => {
     const banner: Banner = { level: "warning", text: "The model server can't be reached." };
     render(<HealthBanners banners={[banner]} />);
     const el = screen.getByText(banner.text);
-    expect(el.className).toContain("border-amber-500");
-    expect(el.className).toContain("bg-amber-100");
-    expect(el.className).toContain("text-amber-700");
-    expect(el.className).toContain("dark:border-amber-400");
-    expect(el.className).toContain("dark:bg-amber-950");
-    expect(el.className).toContain("dark:text-amber-300");
+    expect(el.className).toContain("border-warn");
+    expect(el.className).toContain("bg-warn/10");
+    expect(el.className).toContain("text-warn");
   });
 
   it("renders the banner texts in the given order", () => {

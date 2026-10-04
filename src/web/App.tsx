@@ -28,11 +28,11 @@ export default function App() {
 
   const statusClass =
     status === "readable"
-      ? "text-green-600 dark:text-green-400"
+      ? "text-state-ok"
       : status === "not readable"
-        ? "text-red-600 dark:text-red-400"
+        ? "text-hot"
         : status === "not set"
-          ? "text-amber-600 dark:text-amber-400"
+          ? "text-warn"
           : "";
 
   const pathname = window.location.pathname;
@@ -46,20 +46,20 @@ export default function App() {
         <StreamPage key={streamName} name={streamName} />
       ) : (
         <>
-          <section className="mt-6 rounded-lg border border-slate-300 p-4 dark:border-slate-700">
+          <section className="mt-6 rounded-lg border border-line p-4">
             <h2 className="text-lg font-semibold">Health</h2>
             <p className="mt-2">
               Transcript folder: <span className={statusClass}>{status ?? "—"}</span>
             </p>
             <p className="mt-1">
               Checked at{" "}
-              {localTime(health?.checkedAt ?? null)}
+              <span className="font-mono tabular-nums">{localTime(health?.checkedAt ?? null)}</span>
             </p>
           </section>
           <ModelPanel model={cluster?.model ?? null} history={history?.model} windowSeconds={history?.windowSeconds} />
           <NodePanel nodes={cluster?.nodes ?? null} histories={histories} windowSeconds={history?.windowSeconds} />
           {!connected && list !== null && (
-            <p className="mt-4 rounded border border-amber-500 bg-amber-100 px-3 py-2 text-sm text-amber-700 dark:border-amber-400 dark:bg-amber-950 dark:text-amber-300">
+            <p className="mt-4 rounded border border-warn bg-warn/10 px-3 py-2 text-sm text-warn">
               Live updates paused; reconnecting…
             </p>
           )}
