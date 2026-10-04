@@ -372,3 +372,129 @@ describe("follow and view", () => {
     }
   });
 });
+
+describe("health inputs", () => {
+  const A = "20261003T115950.000-a.jsonl";
+
+  it("counts events that fail the schema check, and still uses them", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, A, [startEvent("2026-10-03T11:59:50.000Z"), { t: "turn", at: "2026-10-03T11:59:55.000Z", turn: "not a number" }, endEvent("2026-10-03T11:59:58.000Z")]);
+      const poller = new Poller({
+        dir, quietAfterSeconds: 60, now: () => NOW,
+        schemaCheck: (evt) => typeof evt.turn !== "string",
+      });
+      poller.pass();
+      expect(poller.list().schemaFailures).toBe(1);
+      expect(poller.list().rows[0].state).toBe("ok"); // the end after it still counted
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("counts no schema failures without a schema check", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, A, [startEvent("2026-10-03T11:59:50.000Z"), { t: "turn", at: "2026-10-03T11:59:55.000Z", turn: "x" }]);
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.list().schemaFailures).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("measures clock skew only on lines that appeared since the previous read", () => {
+    const dir = makeDir();
+    try {
+      // An old file's lines on the first read say nothing about the clocks.
+      writeStream(dir, A, [startEvent("2026-10-01T00:00:00.000Z")]);
+      let now = NOW;
+      const poller = new Poller({ dir, quietAfterSeconds: 60, now: () => now });
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBeNull();
+      // A fresh line stamped 9 s before "now": the WSL clock is behind.
+      appendFileSync(join(dir, A), JSON.stringify({ t: "alive", at: "2026-10-03T11:59:51.000Z" }) + "\n");
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBe(9);
+      // With nothing new, the last reading is kept.
+      now = new Date(NOW.getTime() + 60_000);
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBe(9);
+      // A fresh line stamped 7 s after "now": the WSL clock is ahead.
+      appendFileSync(join(dir, A), JSON.stringify({ t: "alive", at: "2026-10-03T12:01:07.000Z" }) + "\n");
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBe(-7);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not measure skew on a replaced file's lines, which are read again from the start", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, A, [startEvent("2026-10-03T11:59:50.000Z"), { t: "alive", at: "2026-10-03T11:59:52.000Z" }]);
+      const poller = makePoller(dir);
+      poller.pass();
+      appendFileSync(join(dir, A), JSON.stringify({ t: "alive", at: "2026-10-03T11:59:58.000Z" }) + "\n");
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBe(2);
+      // The sync client replaces the file with a shorter, older copy.
+      writeStream(dir, A, [startEvent("2026-10-01T00:00:00.000Z")]);
+      poller.pass();
+      expect(poller.status().clockSkewSeconds).toBe(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("backs off 1, 2, 4 … 30 s while the folder can't be read, and resets once it can", () => {
+    const dir = makeDir();
+    try {
+      makeStream(dir, A, "2026-10-03T11:59:50.000Z");
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.status().retryInSeconds).toBeNull();
+      const moved = `${dir}-away`;
+      renameSync(dir, moved);
+      const waits: (number | null)[] = [];
+      for (let i = 0; i < 7; i++) {
+        poller.pass();
+        waits.push(poller.status().retryInSeconds);
+      }
+      expect(waits).toEqual([1, 2, 4, 8, 16, 30, 30]);
+      renameSync(moved, dir);
+      poller.pass();
+      expect(poller.status().retryInSeconds).toBeNull();
+      // A later outage starts again from 1 s.
+      renameSync(dir, moved);
+      poller.pass();
+      expect(poller.status().retryInSeconds).toBe(1);
+      renameSync(moved, dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(`${dir}-away`, { recursive: true, force: true });
+    }
+  });
+
+  it("tells status listeners when the status changes, and only then", () => {
+    const dir = makeDir();
+    try {
+      makeStream(dir, A, "2026-10-03T11:59:50.000Z");
+      const poller = makePoller(dir);
+      const seen: unknown[] = [];
+      poller.onStatus((s) => seen.push(s));
+      poller.pass();
+      poller.pass();
+      expect(seen).toEqual([]);
+      const moved = `${dir}-away`;
+      renameSync(dir, moved);
+      poller.pass();
+      expect(seen).toEqual([{ clockSkewSeconds: null, retryInSeconds: 1 }]);
+      renameSync(moved, dir);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(`${dir}-away`, { recursive: true, force: true });
+    }
+  });
+});

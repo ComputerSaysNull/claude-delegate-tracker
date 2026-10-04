@@ -61,11 +61,6 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
           Showing the newest {list.rows.length} of {list.total.toLocaleString()}
         </p>
       )}
-      {!list.folderReadable && (
-        <p className="mt-1 rounded border border-red-600 bg-red-100 px-3 py-2 text-sm text-red-700 dark:border-red-500 dark:bg-red-950 dark:text-red-300">
-          The transcript folder can't be read; showing the last known list.
-        </p>
-      )}
       {list.rows.length === 0 ? (
         <p className="text-slate-500 dark:text-slate-400">No delegations yet.</p>
       ) : (

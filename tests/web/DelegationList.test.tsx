@@ -33,6 +33,7 @@ function list(rows: ListRow[], overrides: Partial<ListResponse> = {}): ListRespo
     unstamped: 0,
     folderReadable: true,
     badLines: 0,
+    schemaFailures: 0,
     ...overrides,
   };
 }
@@ -51,9 +52,9 @@ describe("DelegationList", () => {
     expect(screen.getByText(`Showing the newest 2 of ${total.toLocaleString()}`)).toBeTruthy();
   });
 
-  it("shows the red note when the folder is unreadable", () => {
+  it("no longer shows the folder-unreadable note (that fact lives in the health banners)", () => {
     render(<DelegationList list={list([], { folderReadable: false })} />);
-    expect(screen.getByText("The transcript folder can't be read; showing the last known list.")).toBeTruthy();
+    expect(screen.queryByText("The transcript folder can't be read; showing the last known list.")).toBeNull();
   });
 
   it("shows the empty message for no rows", () => {

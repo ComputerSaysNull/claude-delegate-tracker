@@ -4,13 +4,14 @@
 import { join } from "node:path";
 import { listNewest, StreamReader } from "./folder.ts";
 import type { Listing } from "./folder.ts";
-import { newStreamState, applyLine, listRow } from "./streams.ts";
+import { newStreamState, applyLine, listRow, parseAt } from "./streams.ts";
 import type { StreamState, ListRow } from "./streams.ts";
 import { newViewState, applyViewEvent, buildView, diffView } from "./view.ts";
 import type { ViewState, StreamView, ViewPatch } from "./view.ts";
 
 export const PICK_BY_NAME = 25; // names listed before ordering by start.at
 export const LIST_LIMIT = 20;
+export const RETRY_MAX_SECONDS = 30; // folder retries back off 1, 2, 4 … this
 
 export interface ListResponse {
   rows: ListRow[];
@@ -19,12 +20,20 @@ export interface ListResponse {
   unstamped: number;
   folderReadable: boolean;
   badLines: number;
+  schemaFailures: number;
+}
+
+// What the health report needs from the poller beyond the list.
+export interface PollerStatus {
+  clockSkewSeconds: number | null; // now − at on the freshest new line; kept while nothing is new
+  retryInSeconds: number | null;   // the wait before the next try while the folder can't be read
 }
 
 export interface PollerDeps {
   dir: string | null;
   quietAfterSeconds: number;
   now: () => Date;
+  schemaCheck?: (evt: Record<string, unknown>) => boolean; // a failing event is counted, still used
 }
 
 type PatchListener = (patch: ViewPatch) => void;
@@ -34,12 +43,13 @@ interface Entry {
   state: StreamState;
   view: ViewState;
   done: boolean;
+  schemaFailures: number;
   sent: StreamView | null; // the view as last served or sent; its seq numbers what was sent
   followers: Set<PatchListener>;
 }
 
 function emptyList(): ListResponse {
-  return { rows: [], capped: false, total: 0, unstamped: 0, folderReadable: false, badLines: 0 };
+  return { rows: [], capped: false, total: 0, unstamped: 0, folderReadable: false, badLines: 0, schemaFailures: 0 };
 }
 
 function compareRows(a: ListRow, b: ListRow): number {
@@ -59,6 +69,9 @@ export class Poller {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private followTimer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
+  private failures = 0;
+  private status_: PollerStatus = { clockSkewSeconds: null, retryInSeconds: null };
+  private readonly statusListeners = new Set<(status: PollerStatus) => void>();
 
   constructor(deps: PollerDeps) {
     this.deps = deps;
@@ -76,10 +89,14 @@ export class Poller {
       listing = listNewest(dir, PICK_BY_NAME);
     } catch {
       // Keep the last known state; the folder is simply not readable right now.
+      this.failures += 1;
+      this.setStatus({ ...this.status_, retryInSeconds: Math.min(RETRY_MAX_SECONDS, 2 ** (this.failures - 1)) });
       this.update({ ...this.current, folderReadable: false });
       return;
     }
     this.known = listing.all;
+    this.failures = 0;
+    this.setStatus({ ...this.status_, retryInSeconds: null });
 
     const listed = new Set(listing.names);
     for (const name of listing.names) {
@@ -93,10 +110,10 @@ export class Poller {
     for (const name of [...this.entries.keys()]) this.readEntry(name);
 
     const at = now();
-    const built: { row: ListRow; badLines: number }[] = [];
+    const built: { row: ListRow; badLines: number; schemaFailures: number }[] = [];
     for (const [name, entry] of this.entries) {
       if (!listed.has(name)) continue;
-      built.push({ row: listRow(name, entry.state, at, quietAfterSeconds), badLines: entry.state.badLines });
+      built.push({ row: listRow(name, entry.state, at, quietAfterSeconds), badLines: entry.state.badLines, schemaFailures: entry.schemaFailures });
     }
     built.sort((a, b) => compareRows(a.row, b.row));
     const kept = built.slice(0, LIST_LIMIT);
@@ -108,6 +125,7 @@ export class Poller {
       unstamped: listing.unstamped,
       folderReadable: true,
       badLines: kept.reduce((sum, b) => sum + b.badLines, 0),
+      schemaFailures: kept.reduce((sum, b) => sum + b.schemaFailures, 0),
     });
     for (const name of this.entries.keys()) this.sendIfChanged(name);
   }
@@ -123,6 +141,21 @@ export class Poller {
 
   list(): ListResponse {
     return this.current;
+  }
+
+  status(): PollerStatus {
+    return this.status_;
+  }
+
+  onStatus(listener: (status: PollerStatus) => void): () => void {
+    this.statusListeners.add(listener);
+    return () => this.statusListeners.delete(listener);
+  }
+
+  private setStatus(next: PollerStatus): void {
+    if (JSON.stringify(next) === JSON.stringify(this.status_)) return;
+    this.status_ = next;
+    for (const listener of this.statusListeners) listener(next);
   }
 
   onChange(listener: (list: ListResponse) => void): () => void {
@@ -155,7 +188,8 @@ export class Poller {
       } catch (e) {
         console.error(e);
       }
-      if (this.running) this.timer = setTimeout(tick, intervalSeconds * 1000);
+      const wait = this.status_.retryInSeconds ?? intervalSeconds;
+      if (this.running) this.timer = setTimeout(tick, wait * 1000);
     };
     const followTick = (): void => {
       try {
@@ -187,6 +221,7 @@ export class Poller {
       state: newStreamState(),
       view: newViewState(),
       done: false,
+      schemaFailures: 0,
       sent: null,
       followers: new Set(),
     };
@@ -211,14 +246,26 @@ export class Poller {
     if (entry === undefined) return false;
     if (entry.done) return true;
     try {
+      // Lines on a first read were written any time; only later ones measure the clocks.
+      let fresh = entry.reader.offset > 0;
       const result = entry.reader.read();
       if (result.reset) {
+        fresh = false;
+        entry.schemaFailures = 0;
         entry.state = newStreamState();
         entry.view = newViewState();
       }
+      let newestAt: number | null = null;
       for (const line of result.lines) {
         const evt = applyLine(entry.state, line);
-        if (evt !== null) applyViewEvent(entry.view, evt);
+        if (evt === null) continue;
+        applyViewEvent(entry.view, evt);
+        if (this.deps.schemaCheck !== undefined && !this.deps.schemaCheck(evt)) entry.schemaFailures += 1;
+        const atMs = parseAt(evt.at);
+        if (fresh && atMs !== null && (newestAt === null || atMs > newestAt)) newestAt = atMs;
+      }
+      if (newestAt !== null) {
+        this.setStatus({ ...this.status_, clockSkewSeconds: Math.round((this.deps.now().getTime() - newestAt) / 1000) });
       }
       if (entry.state.end !== null) entry.done = true;
       return true;
