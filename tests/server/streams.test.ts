@@ -118,6 +118,27 @@ describe("the list", () => {
   });
 });
 
+describe("the title", () => {
+  const titleOf = (over: Record<string, unknown>) => listRow("x.jsonl", build([start(over)]), NOW, QUIET).title;
+
+  it("is the caller's title when the start event carries one (format 1.2)", () => {
+    expect(titleOf({ format: "1.2", title: "Draft tests for the date parser" })).toBe("Draft tests for the date parser");
+  });
+
+  it("is trimmed", () => {
+    expect(titleOf({ format: "1.2", title: "  Review the auth diff  " })).toBe("Review the auth diff");
+  });
+
+  it("falls back to the task's first line without one", () => {
+    expect(titleOf({ task: "Do the thing\nand more" })).toBe("Do the thing");
+  });
+
+  it("falls back to the task when the caller's title is blank or not text", () => {
+    expect(titleOf({ format: "1.2", title: "   " })).toBe("Do the thing");
+    expect(titleOf({ format: "1.2", title: 42 })).toBe("Do the thing");
+  });
+});
+
 describe("formatAge", () => {
   it("boundaries", () => {
     expect(formatAge(59)).toBe("59s");

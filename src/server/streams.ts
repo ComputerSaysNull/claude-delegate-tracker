@@ -1,5 +1,5 @@
 // Build stream state from transcript events, and a list row for the page.
-import { titleFromTask } from "./titles.ts";
+import { titleOf } from "./titles.ts";
 
 export const STATES = ["live", "queued", "quiet", "ok", "failed", "cut off"] as const;
 export type State = (typeof STATES)[number];
@@ -118,7 +118,7 @@ export function listRow(name: string, s: StreamState, now: Date, quietAfterSecon
     kind: kindOf(s),
     model: typeof s.start?.model_key === "string" ? s.start.model_key : null,
     effort: typeof s.start?.effort === "string" ? s.start.effort : null,
-    title: titleFromTask(s.start?.task),
+    title: titleOf(s.start),
     startedAt: startMs === null ? null : new Date(startMs).toISOString(),
     elapsed: elapsedOf(s, nowMs),
     turns: turnsOf(s),
