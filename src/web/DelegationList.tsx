@@ -97,17 +97,28 @@ export function DelegationList({
   list,
   selected,
   onOpen,
+  filter: shownFilter,
+  onFilterChange,
 }: {
   list: ListResponse | null;
   selected?: string | null;
   onOpen?: (name: string) => void;
+  // Given both, the filter lives outside (in the address); otherwise the list keeps its own.
+  filter?: RowFilter;
+  onFilterChange?: (next: RowFilter) => void;
 }) {
   const [older, setOlder] = useState<ListRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [filter, setFilter] = useState<RowFilter>(NO_FILTER);
+  const [ownFilter, setOwnFilter] = useState<RowFilter>(NO_FILTER);
+  const filter = shownFilter ?? ownFilter;
+  const setFilter = (next: RowFilter | ((prev: RowFilter) => RowFilter)) => {
+    const value = typeof next === "function" ? next(filter) : next;
+    if (onFilterChange !== undefined) onFilterChange(value);
+    else setOwnFilter(value);
+  };
 
   if (list === null) {
     return <p className="text-muted">Waiting for the first list…</p>;
