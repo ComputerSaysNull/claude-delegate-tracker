@@ -9,6 +9,21 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #26 — 2026-10-04 — feat: show a delegation as a conversation, with a header that stays on screen
+
+### Changed
+
+- **A delegation reads as a conversation**: the task as the caller's message, each turn as
+  the delegation's message with folded thinking, one compact row per tool call and a line
+  of its figures, and a note when the run ends. The page was one long scroll of sections,
+  and on a phone the state scrolled away; a header with the state, the turns and the time
+  used as bars, and the heartbeat now stays on screen. The view follows the growing reply
+  until the reader scrolls up, then offers "Jump to latest".
+- **The detail as on the design canvas**: the header's turns as segments, each turn headed
+  by its model, number and start time, a call's main argument beside its name, short token
+  counts, file chips, and an end note in one line ("Finished in 3m10s · 2 of 4 turns · 67%
+  cached").
+
 ## #25 — 2026-10-04 — feat: group the list by date, with a summary line and progress on running cards
 
 ### Added

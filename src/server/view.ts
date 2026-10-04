@@ -2,7 +2,7 @@
 // stream sends: every rule in docs/ARCHITECTURE.md "Turns and calls", "Heartbeat and
 // waiting", "Budget wording", "Tokens", "Failures" and "Absent is not zero" lives here.
 import type { ListRow, State, StreamState } from "./streams.ts";
-import { formatAge, formatDuration } from "./streams.ts";
+import { formatAge, formatDuration, parseAt } from "./streams.ts";
 
 export interface FileView {
   path: string;                 // `given` when present, else `path`
@@ -35,6 +35,11 @@ export interface TurnView {
   attempts: number | null;      // only when above 1
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
+  tokensIn: number | null;      // closed turn: input_tokens
+  tokensOut: number | null;     // closed turn: output_tokens
+  tokS: number | null;          // closed turn: out_tok_s, the decode speed
+  clock: { elapsed: number; of: number } | null; // open turn: the newest alive's elapsed_seconds of of_seconds
+  at: string | null;            // when the turn started: its `priced` event's `at`
 }
 
 // While running, built from the closed turns; null when none of its fields are present.
@@ -309,6 +314,9 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
   const attempts = slot.turn?.attempts;
   const share = slot.turn?.duplicate_line_share;
   const evicted = slot.turn?.tool_results_evicted;
+  const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
+  const elapsed = num(slot.alive?.elapsed_seconds);
+  const budget = num(slot.alive?.of_seconds);
   return {
     n,
     heading: of === null ? `turn ${n}` : `turn ${n} of ${of}`,
@@ -323,6 +331,12 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
+    tokensIn: num(slot.turn?.input_tokens),
+    tokensOut: num(slot.turn?.output_tokens),
+    tokS: num(slot.turn?.out_tok_s),
+    clock: !closed && elapsed !== null && budget !== null && budget > 0 ? { elapsed, of: budget } : null,
+    // Read through parseAt: the server writes six decimal places, which Date cannot parse.
+    at: (() => { const ms = parseAt(slot.priced?.at); return ms === null ? null : new Date(ms).toISOString(); })(),
   };
 }
 
