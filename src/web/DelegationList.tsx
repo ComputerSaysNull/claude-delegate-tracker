@@ -34,16 +34,40 @@ function startLine(row: ListRow): string {
   return text;
 }
 
-function RowCard({ row }: { row: ListRow }) {
+function RowCard({
+  row,
+  selected,
+  onOpen,
+}: {
+  row: ListRow;
+  selected?: string | null;
+  onOpen?: (name: string) => void;
+}) {
   const meta = metaLine(row);
   return (
-    <li className={`rounded-lg border p-4 ${cardClass(row.state)}`}>
+    <li
+      className={`rounded-lg border p-4 ${cardClass(row.state)} ${selected === row.name ? "ring-2 ring-accent" : ""}`}
+      aria-current={selected === row.name ? "true" : undefined}
+    >
       <div className="flex items-center gap-2">
         <StateBadge state={row.state} />
         <a
           href={"/s/" + encodeURIComponent(row.name)}
           className="min-w-0 truncate font-medium hover:underline"
           title={row.title}
+          onClick={(e) => {
+            if (
+              onOpen &&
+              e.button === 0 &&
+              !e.ctrlKey &&
+              !e.metaKey &&
+              !e.shiftKey &&
+              !e.altKey
+            ) {
+              e.preventDefault();
+              onOpen(row.name);
+            }
+          }}
         >
           {row.title}
         </a>
@@ -69,7 +93,15 @@ function toggleState(prev: RowFilter, state: ListRow["state"]): RowFilter {
   return { ...prev, states: has ? prev.states.filter((s) => s !== state) : [...prev.states, state] };
 }
 
-export function DelegationList({ list }: { list: ListResponse | null }) {
+export function DelegationList({
+  list,
+  selected,
+  onOpen,
+}: {
+  list: ListResponse | null;
+  selected?: string | null;
+  onOpen?: (name: string) => void;
+}) {
   const [older, setOlder] = useState<ListRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
   const [started, setStarted] = useState(false);
@@ -198,11 +230,11 @@ export function DelegationList({ list }: { list: ListResponse | null }) {
           {(!filtering || shownCount > 0) && (
             <ul className="mt-2 flex flex-col gap-3">
               {filteredLive.map((row) => (
-                <RowCard key={row.name} row={row} />
+                <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
               ))}
               {list.capped &&
                 filteredOlder.map((row) => (
-                  <RowCard key={row.name} row={row} />
+                  <RowCard key={row.name} row={row} selected={selected} onOpen={onOpen} />
                 ))}
             </ul>
           )}

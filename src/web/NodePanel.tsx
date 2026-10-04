@@ -101,7 +101,7 @@ export function NodePanel({
   windowSeconds?: number;
 }) {
   return (
-    <section className="mt-6 rounded-lg border border-line p-4">
+    <section className="rounded-lg border border-line p-4">
       <h2 className="text-lg font-semibold">Nodes</h2>
       {nodes === null ? (
         <p className="mt-2 text-muted">Waiting for figures…</p>

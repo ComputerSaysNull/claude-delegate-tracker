@@ -17,13 +17,13 @@ function metaLine(row: ListRow): string {
   return pieces.join(" · ");
 }
 
-export function StreamPage({ name }: { name: string }) {
+export function StreamPage({ name, onClose }: { name: string; onClose: () => void }) {
   const { view, connected, missing } = useStreamView(name);
   return (
     <div className="flex flex-col gap-4">
-      <a href="/" className="hover:underline">
+      <button type="button" onClick={onClose} className="hover:underline text-accent lg:hidden">
         ← All delegations
-      </a>
+      </button>
       {missing ? (
         <p className="text-muted">No such delegation.</p>
       ) : view === null ? (
