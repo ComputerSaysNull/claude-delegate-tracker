@@ -66,11 +66,11 @@ describe("DelegationList", () => {
     expect(icon.tagName.toLowerCase()).toBe("svg");
   });
 
-  it("tints a running card and leaves a finished one plain", () => {
+  it("tints a running card more strongly than a finished one", () => {
     const { container } = render(<DelegationList list={list([row({ state: "live" }), row({ name: "s2", state: "ok" })])} />);
     const [running, finished] = [...container.querySelectorAll("li")];
-    expect(running.className).toMatch(/\bbg-state-live\//);
-    expect(finished.className).toMatch(/\bbg-card\b/);
+    expect(running.className).toMatch(/bg-state-live\/12/);
+    expect(finished.className).toMatch(/bg-state-ok\/8/);
   });
 
   it("shows the waiting line for a null list", () => {
