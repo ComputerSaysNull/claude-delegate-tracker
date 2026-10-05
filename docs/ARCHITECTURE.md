@@ -239,6 +239,10 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works.
 - The address holds the open delegation (`/s/<name>`) and the filters (`q`, `state`, `kind`, `model`), so Back, reload and a bookmark land on the same view. Opening or closing a delegation is a step Back undoes; a filter change only rewrites the current address. A state the page does not know is left out, and a name that cannot be decoded opens nothing.
 
+### A background tab
+
+- The tab's title counts what is running (asking included) and what failed while the tab was hidden: "(2 running, 1 failed) Delegation tracker". Its icon gets a blue dot while something runs and a red one after an unseen failure, the red winning. Showing the tab clears the failures; failures already there when the page opened (the first list it receives) never count.
+
 ### On a phone
 
 - One pane at a time: the list, or the open delegation with a way back to the list.

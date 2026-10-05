@@ -14,6 +14,7 @@ import { NodePanel } from "./NodePanel.tsx";
 import { StreamPage } from "./StreamPage.tsx";
 import { useClusterHistory } from "./useClusterHistory.ts";
 import { useLiveList } from "./useLiveList.ts";
+import { useTabStatus } from "./tabStatus.ts";
 import { localTime } from "./time.ts";
 
 type Status = "readable" | "not readable" | "not set";
@@ -21,6 +22,7 @@ type Status = "readable" | "not readable" | "not set";
 export default function App() {
   const { list, cluster, health, connected } = useLiveList();
   const history = useClusterHistory(cluster);
+  useTabStatus(list?.rows ?? null);
 
   // The cluster band charts either the last hour or the last 15 minutes, counted back from
   // each series' newest point (not the clock, so a render stays pure), so the labels and the
