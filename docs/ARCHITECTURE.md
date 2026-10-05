@@ -239,6 +239,10 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works.
 - The address holds the open delegation (`/s/<name>`) and the filters (`q`, `state`, `kind`, `model`), so Back, reload and a bookmark land on the same view. Opening or closing a delegation is a step Back undoes; a filter change only rewrites the current address. A state the page does not know is left out, and a name that cannot be decoded opens nothing.
 
+### Notifications
+
+- Once the viewer allows them, a desktop notification says how a delegation ended ("Finished", "Failed", "Stopped", "Timed out", "Cut off", with the reason), once, and clicking it opens that delegation. Only a run seen still going on the page can notify. The browser offers notifications only in a secure context, so the page offers them on `localhost`, with a "Notify me" pill in the header, and shows no offer over the overlay VPN's plain HTTP, where a phone cannot get them.
+
 ### Keyboard
 
 - j and k move the focus down and up the delegations, stopping at the ends; Enter opens the focused one; Esc closes the open delegation, or the list of keys first when it shows; / jumps to the search box; ? shows the keys. A key typed into a field, or pressed with Ctrl, Alt or Cmd, is left to the browser.

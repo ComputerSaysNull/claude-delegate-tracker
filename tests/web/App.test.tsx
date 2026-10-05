@@ -195,6 +195,40 @@ describe("App", () => {
     expect(document.querySelector('link[rel="icon"]')).not.toBeNull();
   });
 
+  it("offers desktop notifications in the header where the browser can show them", () => {
+    vi.stubGlobal("Notification", { permission: "default", requestPermission: vi.fn() });
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    render(<App />);
+    expect(screen.getByRole("banner").textContent).toMatch(/Notify me/);
+    vi.unstubAllGlobals();
+  });
+
+  it("notifies when a delegation on the page ends", () => {
+    const titles: string[] = [];
+    vi.stubGlobal(
+      "Notification",
+      class {
+        static permission = "granted";
+        onclick = null;
+        constructor(title: string) {
+          titles.push(title);
+        }
+      },
+    );
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    const before = LIST.rows;
+    try {
+      LIST.rows = [{ ...before[0], state: "live" }];
+      const { rerender } = render(<App />);
+      LIST.rows = [{ ...before[0], state: "ok" }];
+      rerender(<App />);
+      expect(titles).toEqual(["Finished: First delegation"]);
+    } finally {
+      LIST.rows = before;
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("uses the screen's width rather than a narrow column", () => {
     const { container } = render(<App />);
     expect(container.innerHTML).not.toMatch(/\bmax-w-xl\b/);
