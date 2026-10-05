@@ -56,6 +56,21 @@ describe('loadSettings', () => {
     expect(() => loadSettings({ HISTORY_WINDOW_SECONDS: '0' })).toThrow(/HISTORY_WINDOW_SECONDS/);
   });
 
+  it('the load and heat thresholds default and are used when valid', () => {
+    expect(loadSettings({}).limits).toEqual({
+      loadWarn: DEFAULTS.loadWarnPercent, loadHot: DEFAULTS.loadHotPercent,
+      tempWarn: DEFAULTS.tempWarnC, tempHot: DEFAULTS.tempHotC,
+    });
+    const s = loadSettings({ LOAD_WARN_PERCENT: '40', LOAD_HOT_PERCENT: '90', TEMP_WARN_C: '60', TEMP_HOT_C: '95' });
+    expect(s.limits).toEqual({ loadWarn: 40, loadHot: 90, tempWarn: 60, tempHot: 95 });
+  });
+
+  it('a warning threshold must sit below its hot one', () => {
+    expect(() => loadSettings({ LOAD_WARN_PERCENT: '80', LOAD_HOT_PERCENT: '80' })).toThrow(/LOAD_WARN_PERCENT/);
+    expect(() => loadSettings({ TEMP_WARN_C: '90', TEMP_HOT_C: '85' })).toThrow(/TEMP_WARN_C/);
+    expect(() => loadSettings({ LOAD_HOT_PERCENT: '101' })).toThrow(/LOAD_HOT_PERCENT/);
+  });
+
   it('NODES_POLL_SECONDS defaults and is used when valid', () => {
     expect(loadSettings({}).nodesPollSeconds).toBe(DEFAULTS.nodesPollSeconds);
     expect(loadSettings({ NODES_POLL_SECONDS: '15' }).nodesPollSeconds).toBe(15);

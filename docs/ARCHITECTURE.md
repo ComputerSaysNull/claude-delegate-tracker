@@ -93,7 +93,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 
 ## Settings
 
-`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
+`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, the load and heat thresholds (`LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
 
 Defaults live only in the settings module, never in docs or tests.
 
@@ -190,6 +190,13 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 - A missing figure is a gap, never 0, and a source that is down adds a point of gaps, so a chart shows the outage instead of joining across it.
 - The page fetches the history once, then adds each `cluster` event's figures itself.
 - A chart is a bare line with no axes. It follows its container's width, and keeps its size while hidden.
+- The charts show the last hour, or the last 15 minutes when switched; the range never reaches past what the backend keeps.
+
+### The cluster at a glance
+
+- The model server's four figures (decode speed, requests running and waiting, KV-cache use, prefix-cache hits) sit side by side, each large under its label, with a small chart under each that has a history; the range switch sits in that card's header. The nodes sit side by side, without charts.
+- Each node's CPU and GPU use is a donut with the number in the middle, its ring green under the load warning threshold, amber from it and red from the hot one. CPU and GPU temperatures are numbers, amber and red by the heat thresholds. The thresholds are settings, sent with the figures; a missing figure is an empty ring or `—`, never 0.
+- On a phone the cluster folds into one line (decode speed, requests running, KV-cache use, the hottest temperature) that opens the figures in full.
 
 ## Titles
 

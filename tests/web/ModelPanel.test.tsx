@@ -43,7 +43,9 @@ describe("ModelPanel", () => {
 
   it("names the window on the decode line", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} />);
-    expect(screen.getByText(`${(80.5).toLocaleString()} tokens/s over ${(10).toLocaleString()}s`)).toBeTruthy();
+    expect(screen.getByText(`${(80.5).toLocaleString()}`)).toBeTruthy();
+    expect(screen.getByText("tok/s")).toBeTruthy();
+    expect(screen.getByText(`over ${(10).toLocaleString()}s`)).toBeTruthy();
   });
 
   it("omits the preemptions row when it is null and shows it when set", () => {

@@ -95,11 +95,11 @@ const app = createApp({
   view: (name) => poller.view(name),
   follow: (name, listener) => poller.follow(name, listener),
   history: (before) => poller.history(before),
-  cluster: () => ({ model: metrics.figures(), nodes: nodes.figures() }),
+  cluster: () => ({ model: metrics.figures(), nodes: nodes.figures(), limits: settings.limits }),
   clusterHistory: () => figureHistory.snapshot(),
   subscribeCluster: (listener) => {
-    const offModel = metrics.onChange((model) => listener({ model, nodes: nodes.figures() }));
-    const offNodes = nodes.onChange((figures) => listener({ model: metrics.figures(), nodes: figures }));
+    const offModel = metrics.onChange((model) => listener({ model, nodes: nodes.figures(), limits: settings.limits }));
+    const offNodes = nodes.onChange((figures) => listener({ model: metrics.figures(), nodes: figures, limits: settings.limits }));
     return () => {
       offModel();
       offNodes();

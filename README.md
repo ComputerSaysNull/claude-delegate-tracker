@@ -61,6 +61,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `METRICS_POLL_SECONDS` — how often the model server's figures are read.
 - `NODES_POLL_SECONDS` — how often each node's figures are read.
 - `HISTORY_WINDOW_SECONDS` — how far back the charts of the figures reach.
+- `LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C` — where CPU and GPU use, and temperatures, turn amber and red; each warning value must sit below its hot one.
 - The other poll intervals, and the optional identity check.
 
 Node figures are read over SSH with a dedicated key that can only run the stats command (ADR-0003).

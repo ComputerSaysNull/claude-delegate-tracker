@@ -1,4 +1,5 @@
 // The model server's figures, as the backend sends them on the cluster event.
+import type { ReactNode } from "react";
 import type { ModelFigures } from "../server/metrics.ts";
 import type { Series } from "../server/history.ts";
 import { localTime } from "./time.ts";
@@ -14,12 +15,6 @@ function num(n: number | null): string {
 
 function percent(n: number | null): string {
   return n === null ? "—" : `${n.toLocaleString()}%`;
-}
-
-function decodeLine(model: ModelFigures): string {
-  if (model.decodeTokensPerSecond === null) return "—";
-  const span = model.decodeWindowSeconds === null ? "—" : model.decodeWindowSeconds.toLocaleString();
-  return `${model.decodeTokensPerSecond.toLocaleString()} tokens/s over ${span}s`;
 }
 
 interface StatusLine {
@@ -49,37 +44,25 @@ function statusLine(model: ModelFigures): StatusLine {
   }
 }
 
-interface Row {
-  label: string;
-  value: string;
-  note?: string;
-  spark?: string; // history key for a sparkline under this row
-}
-
-function figuresRows(model: ModelFigures): Row[] {
-  const rows: Row[] = [
-    { label: "Requests running", value: num(model.running), spark: "running" },
-    { label: "Requests waiting", value: num(model.waiting) },
-    { label: "KV-cache use", value: percent(model.kvCachePercent), spark: "kvCachePercent" },
-    { label: "Decode speed", value: decodeLine(model), spark: "decodeTokensPerSecond" },
-    { label: "Prefix-cache hits", value: percent(model.prefixHitPercent), note: "since the engine started" },
-  ];
-  if (model.preemptions !== null) rows.push({ label: "Preemptions", value: num(model.preemptions) });
-  return rows;
-}
-
 export function ModelPanel({
   model,
   history,
   windowSeconds,
+  headerExtra,
 }: {
   model: ModelFigures | null;
   history?: Series;
   windowSeconds?: number;
+  headerExtra?: ReactNode;
 }) {
+  const status = model === null ? null : statusLine(model);
   return (
-    <section className="rounded-lg border border-line p-4">
-      <h2 className="text-lg font-semibold">Model server</h2>
+    <section className="rounded-xl border border-line bg-card p-4">
+      <div className="flex items-baseline gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Model server</h2>
+        {status !== null && <span className={`text-xs ${status.color}`}>{status.text}</span>}
+        {headerExtra !== undefined && <div className="ml-auto">{headerExtra}</div>}
+      </div>
       {model === null ? (
         <p className="mt-2 text-muted">Waiting for figures…</p>
       ) : (
@@ -98,25 +81,61 @@ function ModelFiguresBody({
   history?: Series;
   windowSeconds?: number;
 }) {
-  const status = statusLine(model);
   const span = windowSeconds ?? 3600;
+  const valueClass = "font-mono tabular-nums text-2xl font-medium";
   return (
     <>
-      <div className="mt-2 flex flex-col gap-1 text-sm">
-        {figuresRows(model).map((row) => (
-          <div key={row.label} className="flex flex-col gap-1">
-            <p className={SLATE}>
-              <span>{row.label}: </span>
-              <span className="font-mono tabular-nums">{row.value}</span>
-              {row.note !== undefined && <span className="text-xs"> {row.note}</span>}
-            </p>
-            {row.spark !== undefined && history !== undefined && (
-              <Sparkline data={toUplotData(history, row.spark)} label={`${row.label} over the ${windowLabel(span)}`} />
-            )}
+      <ul aria-label="Model server figures" className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">Decode speed</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{num(model.decodeTokensPerSecond)}</span>
+            <span className="text-[13px] text-muted">tok/s</span>
           </div>
-        ))}
-      </div>
-      <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
+          {model.decodeWindowSeconds !== null && (
+            <span className="text-xs text-muted">
+              <span className="font-mono tabular-nums">over {model.decodeWindowSeconds.toLocaleString()}s</span>
+            </span>
+          )}
+          {history !== undefined && (
+            <Sparkline data={toUplotData(history, "decodeTokensPerSecond")} label={`Decode speed over the ${windowLabel(span)}`} />
+          )}
+        </li>
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">Requests</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{num(model.running)}</span>
+            <span className="text-[13px] text-muted">running</span>
+            <span className="text-[13px] text-muted">
+              <span className="font-mono tabular-nums">{num(model.waiting)}</span> waiting
+            </span>
+          </div>
+          {history !== undefined && (
+            <Sparkline data={toUplotData(history, "running")} label={`Requests over the ${windowLabel(span)}`} />
+          )}
+        </li>
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">KV-cache use</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{percent(model.kvCachePercent)}</span>
+          </div>
+          {history !== undefined && (
+            <Sparkline data={toUplotData(history, "kvCachePercent")} label={`KV-cache use over the ${windowLabel(span)}`} />
+          )}
+        </li>
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">Prefix-cache hits</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{percent(model.prefixHitPercent)}</span>
+          </div>
+          <span className="text-xs text-muted">since the engine started</span>
+        </li>
+      </ul>
+      {model.preemptions !== null && (
+        <p className="mt-2 text-xs text-muted">
+          Preemptions <span className="font-mono tabular-nums">{model.preemptions.toLocaleString()}</span>
+        </p>
+      )}
     </>
   );
 }

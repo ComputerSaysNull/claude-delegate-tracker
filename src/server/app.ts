@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Health } from "./health.ts";
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
+import type { Limits } from "./settings.ts";
 import type { ClusterHistory } from "./history.ts";
 import type { HistoryPage, ListResponse } from "./poller.ts";
 import type { Settings } from "./settings.ts";
@@ -31,6 +32,7 @@ export interface AppDeps {
 export interface Cluster {
   model: ModelFigures;
   nodes: NodeFigures[];
+  limits: Limits;               // where the page colours a figure amber or red
 }
 
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);

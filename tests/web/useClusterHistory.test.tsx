@@ -7,6 +7,7 @@ import type { ClusterHistory } from "../../src/server/history.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
 import type { Cluster } from "../../src/web/useLiveList.ts";
 
+const LIMITS = { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 };
 const T0 = Date.parse("2026-10-04T10:00:00.000Z");
 
 function model(atMs: number, running: number | null): ModelFigures {
@@ -31,7 +32,7 @@ describe("useClusterHistory", () => {
       initialProps: { c: null as Cluster | null },
     });
     await waitFor(() => expect(result.current).not.toBeNull());
-    rerender({ c: { model: model(T0 + 10_000, 2), nodes: [] } });
+    rerender({ c: { model: model(T0 + 10_000, 2), nodes: [], limits: LIMITS } });
     expect(result.current?.model.at).toEqual([T0, T0 + 10_000]);
     expect(result.current?.model.values.running).toEqual([1, 2]);
   });
@@ -42,7 +43,7 @@ describe("useClusterHistory", () => {
     const { result, rerender } = renderHook(({ c }: { c: Cluster | null }) => useClusterHistory(c), {
       initialProps: { c: null as Cluster | null },
     });
-    rerender({ c: { model: model(T0 + 5_000, 7), nodes: [] } });
+    rerender({ c: { model: model(T0 + 5_000, 7), nodes: [], limits: LIMITS } });
     expect(result.current).toBeNull();
     answer(new Response(JSON.stringify(SERVER), { status: 200 }));
     await waitFor(() => expect(result.current).not.toBeNull());
@@ -55,7 +56,7 @@ describe("useClusterHistory", () => {
       initialProps: { c: null as Cluster | null },
     });
     await waitFor(() => expect(result.current).not.toBeNull());
-    rerender({ c: { model: model(T0 + 90_000, null), nodes: [] } }); // 90 s later, window 60 s
+    rerender({ c: { model: model(T0 + 90_000, null), nodes: [], limits: LIMITS } }); // 90 s later, window 60 s
     expect(result.current?.model.at).toEqual([T0 + 90_000]);
     expect(result.current?.model.values.running).toEqual([null]);
   });

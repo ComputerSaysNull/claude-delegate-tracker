@@ -15,6 +15,15 @@ export interface Settings {
   nodeKnownHosts: string | null; // NODE_KNOWN_HOSTS; the file pinning each node's host key
   nodesPollSeconds: number;     // NODES_POLL_SECONDS; counted from the end of the previous poll
   historyWindowSeconds: number; // HISTORY_WINDOW_SECONDS; how far back the figures over time reach
+  limits: Limits;               // LOAD_WARN_PERCENT, LOAD_HOT_PERCENT, TEMP_WARN_C, TEMP_HOT_C
+}
+
+// Where a figure turns amber (warn) and red (hot): CPU and GPU use in percent, temperatures in °C.
+export interface Limits {
+  loadWarn: number;
+  loadHot: number;
+  tempWarn: number;
+  tempHot: number;
 }
 
 export const DEFAULTS = {
@@ -26,6 +35,10 @@ export const DEFAULTS = {
   metricsTimeoutMs: 5000,
   nodesPollSeconds: 5,
   historyWindowSeconds: 3600,
+  loadWarnPercent: 50,
+  loadHotPercent: 80,
+  tempWarnC: 70,
+  tempHotC: 85,
   nodeTimeoutMs: 10000,
   sshPort: 22,
 } as const;
@@ -65,8 +78,19 @@ function wholeNumber(env: Record<string, string | undefined>, name: string,
   return value;
 }
 
+// A pair of thresholds, the warning one below the hot one.
+function pair(env: Record<string, string | undefined>, warnName: string, warn: number,
+              hotName: string, hot: number, max: number): [number, number] {
+  const w = wholeNumber(env, warnName, warn, 1, max);
+  const h = wholeNumber(env, hotName, hot, 1, max);
+  if (w >= h) throw new SettingsError(`${warnName} (${w}) must be below ${hotName} (${h}).`);
+  return [w, h];
+}
+
 export function loadSettings(env: Record<string, string | undefined>): Settings {
   const transcriptRaw = env.TRANSCRIPT_DIR?.trim() ?? "";
+  const [loadWarn, loadHot] = pair(env, "LOAD_WARN_PERCENT", DEFAULTS.loadWarnPercent, "LOAD_HOT_PERCENT", DEFAULTS.loadHotPercent, 100);
+  const [tempWarn, tempHot] = pair(env, "TEMP_WARN_C", DEFAULTS.tempWarnC, "TEMP_HOT_C", DEFAULTS.tempHotC, 150);
   return {
     port: wholeNumber(env, "TRACKER_PORT", DEFAULTS.port, 1, 65535),
     transcriptDir: transcriptRaw === "" ? null : transcriptRaw,
@@ -85,5 +109,6 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     nodeKnownHosts: optional(env, "NODE_KNOWN_HOSTS"),
     nodesPollSeconds: wholeNumber(env, "NODES_POLL_SECONDS", DEFAULTS.nodesPollSeconds, 1, 3600),
     historyWindowSeconds: wholeNumber(env, "HISTORY_WINDOW_SECONDS", DEFAULTS.historyWindowSeconds, 60, 86400),
+    limits: { loadWarn, loadHot, tempWarn, tempHot },
   };
 }
