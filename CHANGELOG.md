@@ -9,6 +9,24 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #36 — 2026-10-06 — feat: show the conversation as a chat between two sides
+
+### Changed
+
+- **The conversation reads as a chat between two sides.** Lines ran the full pane width and
+  only the caller's side was a bubble, so it was not clear at a glance who spoke. The
+  conversation fills its pane; the caller's messages sit on the right and the
+  delegation's turns on the left, in bubbles of one width. Clickable things show the hand.
+- **A tool call is one compact row that opens for detail.** Rows showed `path: …` and every
+  further argument on lines of their own. A row now shows the name, the first argument's
+  value and its figures joined by " · "; it opens to show every argument in full. A
+  question's `ask_caller` call is no longer drawn twice, and a turn whose only call was its
+  question gets no empty bubble. On a phone the tool name no longer breaks inside the word.
+- **A turn's budget, attempts, repeated output and evicted results sit behind a Turn details
+  toggle.** They were on every turn, mostly as noise such as "tool results evicted 0".
+- **A file chip shows its path on up to two lines**, with the full path on hover and focus;
+  long paths were cut to one line.
+
 ## #35 — 2026-10-06 — feat: move a delegation's details into a bar beside the conversation
 
 ### Changed

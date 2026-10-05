@@ -5,7 +5,7 @@
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
 import { Fragment, useEffect, useState } from "react";
-import { Asterisk, Check, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -98,7 +98,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       </details>
 
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row">
-        <ol aria-label="Conversation" className="flex min-w-0 flex-1 flex-col gap-4">
+        <ol aria-label="Conversation" className="flex min-w-0 flex-1 flex-col gap-4 w-full">
           {(view.task !== null || view.files.length > 0) && (
             <li
               data-from="caller"
@@ -122,7 +122,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                     >
                       <File size={12} aria-hidden="true" />
                       <span className="min-w-0 max-w-[22rem]">
-                        <Clipped text={file.path} className="min-w-0" />
+                        <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{file.path}</span>
                       </span>
                       {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
                       {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
@@ -208,6 +208,7 @@ function DelegationMessage({
   model: string | null;
   waitingFor?: string | null;
 }) {
+  const [open, setOpen] = useState(false);
   const writing = turn.reply === null && turn.partial !== null && turn.partial.answer !== "";
   const answer =
     turn.reply !== null
@@ -224,6 +225,13 @@ function DelegationMessage({
     turn.tokS !== null ? `${turn.tokS.toLocaleString()} tok/s` : null,
     turn.toolTime !== null ? `tool ${turn.toolTime}` : null,
   ].filter((p): p is string => p !== null);
+  // A turn's budget, attempts, repeated output and evicted results fold behind the toggle.
+  const hasDetails = turn.budget !== null || turn.attempts !== null || turn.repeated !== null || turn.evicted !== null;
+  // A call to ask_caller is not drawn once its question is shown in this message.
+  const calls = turn.question !== null ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
+  const thinking = turn.partial !== null && turn.partial.reasoning !== "";
+  // A turn whose only call was its question has nothing for a bubble to hold: draw none.
+  const hasBubble = thinking || calls.length > 0 || writing || answer !== null;
   return (
     <li data-from="delegation" className="flex gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
@@ -231,22 +239,27 @@ function DelegationMessage({
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p className="text-xs text-muted">{head.join(" · ")}</p>
-        {turn.budget !== null && <p className="text-[11px] text-muted">{turn.budget}</p>}
-        {turn.partial !== null && turn.partial.reasoning !== "" && (
-          <details>
-            <summary className="cursor-pointer text-sm text-muted">
-              <ChevronRight size={14} />
-              Thinking
-            </summary>
-            <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial.reasoning}</pre>
-          </details>
-        )}
-        {turn.calls.length > 0 && (
-          <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
-            {turn.calls.map((call, i) => (
-              <CallViewItem key={i} call={call} />
-            ))}
-          </ul>
+        {hasBubble && (
+        <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
+          {thinking && turn.partial !== null && (
+            <details>
+              <summary className="cursor-pointer text-sm text-muted">
+                <ChevronRight size={14} />
+                Thinking
+              </summary>
+              <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial.reasoning}</pre>
+            </details>
+          )}
+          {calls.length > 0 && (
+            <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
+              {calls.map((call, i) => (
+                <CallViewItem key={i} call={call} />
+              ))}
+            </ul>
+          )}
+          {writing && <p className="text-xs text-muted">writing…</p>}
+          {answer !== null && <Markdown text={answer} />}
+        </div>
         )}
         {turn.question !== null && (
           <div
@@ -275,58 +288,76 @@ function DelegationMessage({
             )}
           </div>
         )}
-        {writing && <p className="text-xs text-muted">writing…</p>}
-        {answer !== null && <Markdown text={answer} />}
-        {figures.length > 0 && (
-          <p className="text-xs font-mono tabular-nums text-muted">{figures.join(" · ")}</p>
+        {(figures.length > 0 || hasDetails) && (
+          <div className="flex items-center gap-1">
+            {figures.length > 0 && (
+              <p className="text-xs font-mono tabular-nums text-muted">{figures.join(" · ")}</p>
+            )}
+            {hasDetails && (
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label="Turn details"
+                onClick={() => setOpen(!open)}
+                className="inline-flex shrink-0 items-center text-muted"
+              >
+                {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+              </button>
+            )}
+          </div>
         )}
-        {turn.attempts !== null && (
-          <p className="text-xs font-mono tabular-nums text-muted">attempts {turn.attempts}</p>
-        )}
-        {turn.repeated !== null && (
-          <p className="text-xs font-mono tabular-nums text-muted">repeated output {turn.repeated}</p>
-        )}
-        {turn.evicted !== null && (
-          <p className="text-xs font-mono tabular-nums text-muted">tool results evicted {turn.evicted}</p>
+        {open && (
+          <div className="flex flex-col gap-1 text-xs font-mono tabular-nums text-muted">
+            {turn.budget !== null && <p>{turn.budget}</p>}
+            {turn.attempts !== null && <p>attempts {turn.attempts}</p>}
+            {turn.repeated !== null && <p>repeated output {turn.repeated}</p>}
+            {turn.evicted !== null && <p>tool results evicted {turn.evicted}</p>}
+          </div>
         )}
       </div>
     </li>
   );
 }
 
-// A value that may not fit on one line: cut with "…", and all of it one tap away, since a
-// phone has no hover to show a tooltip.
-function Clipped({ text, className }: { text: string; className: string }) {
-  return (
-    <details className={`group w-full min-w-0 ${className}`}>
-      <summary className="cursor-pointer list-none truncate group-open:whitespace-pre-wrap">{text}</summary>
-    </details>
-  );
-}
-
 function CallViewItem({ call }: { call: CallView }) {
-  const [first, ...rest] = call.args;
+  const [open, setOpen] = useState(false);
+  const [first] = call.args;
+  const figures = [
+    call.status,
+    call.result,
+    call.time,
+    call.exitCode !== null ? `exit ${call.exitCode}` : null,
+  ].filter((p): p is string => p !== null);
   return (
     <li className={`border-t border-line px-3 py-2 bg-card first:border-t-0 ${call.ok === false ? "bg-hot/5" : ""}`}>
-      <div className="flex items-center gap-2">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={call.name}
+        onClick={() => setOpen(!open)}
+        className="flex w-full flex-wrap items-center gap-2 text-left"
+      >
         {call.ok === true && <Check aria-label="succeeded" role="img" size={14} className="text-state-ok" />}
         {call.ok === false && <X aria-label="failed" role="img" size={14} className="text-hot" />}
-        <span className="font-mono text-sm font-semibold">{call.name}</span>
+        <span className="whitespace-nowrap font-mono text-sm font-semibold">{call.name}</span>
         {first !== undefined && (
-          <Clipped text={`${first[0]}: ${first[1]}`} className="min-w-0 flex-1 font-mono text-sm text-muted" />
+          <span className="min-w-0 grow basis-full truncate font-mono text-sm text-muted sm:basis-auto">
+            {first[1]}
+          </span>
         )}
-        <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-xs text-muted">
-          {call.status !== null && <span>{call.status}</span>}
-          {call.result !== null && <span>{call.result}</span>}
-          {call.exitCode !== null && (
-            <span className={call.ok === false ? "text-hot" : undefined}>exit {call.exitCode}</span>
-          )}
-          {call.time !== null && <span>{call.time}</span>}
-        </span>
-      </div>
-      {rest.map(([key, value], i) => (
-        <Clipped key={i} text={`${key}: ${value}`} className="text-sm font-mono tabular-nums text-muted" />
-      ))}
+        {figures.length > 0 && (
+          <span className="ml-auto flex shrink-0 items-center gap-2 font-mono text-xs text-muted">
+            {figures.join(" · ")}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-1 font-mono text-sm text-muted">
+          {call.args.map(([key, value], i) => (
+            <p key={i} className="break-all">{key}: {value}</p>
+          ))}
+        </div>
+      )}
       {call.message !== null && (
         <p className="whitespace-pre-wrap text-sm text-hot">{call.message}</p>
       )}

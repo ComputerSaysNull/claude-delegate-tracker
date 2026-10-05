@@ -189,7 +189,7 @@ function resultOf(call: Record<string, unknown>): string | null {
   const parts: string[] = [];
   if (lines !== null) parts.push(`${lines} lines`);
   if (bytes !== null) parts.push(sizeOf(bytes));
-  return parts.join(", ");
+  return parts.join(" · ");
 }
 
 function formatMs(ms: number): string {

@@ -185,10 +185,10 @@ describe("calls", () => {
     expect(calls[0].outcome).toBe("ran");
     expect(calls[0].ok).toBe(true);
     expect(calls[0].args).toEqual([["path", "/w/proj/backoff.py"], ["start_line", "1"]]);
-    expect(calls[0].result).toBe("40 lines, 1.2 KB");
+    expect(calls[0].result).toBe("40 lines · 1.2 KB");
     expect(calls[0].time).toBe("<1s");
     expect(calls[1].name).toBe("run_bash");
-    expect(calls[1].result).toBe("4 lines, 310 B");
+    expect(calls[1].result).toBe("4 lines · 310 B");
     expect(calls[1].exitCode).toBe(1);
     expect(calls[1].time).toBe("14s");
   });
@@ -293,7 +293,7 @@ describe("calls", () => {
       ], text: "" },
     ]);
     const calls = v.turns[0].calls;
-    expect(calls[0].result).toBe("40 lines, 1.2 KB");
+    expect(calls[0].result).toBe("40 lines · 1.2 KB");
     expect(calls[1].result).toBe("40 lines");
     expect(calls[2].result).toBe("1.2 KB");
     expect(calls[3].result).toBeNull();
