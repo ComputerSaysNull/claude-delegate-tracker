@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #32 — 2026-10-04 — feat: move through the list from the keyboard
+
+### Added
+
+- **j and k move through the delegations, Enter opens one, Esc closes it, / searches and ?
+  lists the keys.** Moving through the list at the desk needed the mouse. The keys move the
+  browser's own focus over the delegation links, so Enter opens one as a click would, and
+  nothing takes a key typed into the search box.
+
 ## #31 — 2026-10-04 — feat: show how things stand in a background tab's title and icon
 
 ### Added

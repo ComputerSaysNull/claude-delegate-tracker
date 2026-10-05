@@ -15,6 +15,7 @@ import { StreamPage } from "./StreamPage.tsx";
 import { useClusterHistory } from "./useClusterHistory.ts";
 import { useLiveList } from "./useLiveList.ts";
 import { useTabStatus } from "./tabStatus.ts";
+import { KeyboardHelp, useKeyboard } from "./keyboard.tsx";
 import { localTime } from "./time.ts";
 
 type Status = "readable" | "not readable" | "not set";
@@ -98,6 +99,10 @@ export default function App() {
     else window.history.replaceState(null, "", url);
   };
 
+  const { helpOpen, closeHelp } = useKeyboard(() => {
+    if (address.selected !== null) go({ ...address, selected: null }, true);
+  });
+
   // The phone line: one piece per figure, skipping any whose value is missing.
   const phonePieces: ReactNode[] = [];
   if (cluster !== null) {
@@ -130,6 +135,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen flex-col text-base lg:h-screen lg:overflow-hidden">
+      {helpOpen && <KeyboardHelp onClose={closeHelp} />}
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
         <CircleDot size={20} className="text-accent" aria-hidden="true" />
         <h1 className="text-[17px] font-semibold">Delegation tracker</h1>
