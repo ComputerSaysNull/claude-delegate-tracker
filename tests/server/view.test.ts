@@ -600,6 +600,46 @@ describe("a turn's repeated thinking", () => {
   });
 });
 
+describe("how long a turn thought", () => {
+  const turnWith = (over: Record<string, unknown>) =>
+    viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", ...over },
+    ]).turns[0];
+
+  it("shows the seconds whole under a minute", () => {
+    expect(turnWith({ reasoning_seconds: 18.4 }).reasonedFor).toBe("18s");
+  });
+
+  it("says under a second for less than one second", () => {
+    expect(turnWith({ reasoning_seconds: 0.4 }).reasonedFor).toBe("<1s");
+  });
+
+  it("shows a minute-and-seconds form from a minute", () => {
+    expect(turnWith({ reasoning_seconds: 65 }).reasonedFor).toBe("1m05s");
+  });
+
+  it("is null for a null or zero field", () => {
+    expect(turnWith({ reasoning_seconds: null }).reasonedFor).toBeNull();
+    expect(turnWith({ reasoning_seconds: 0 }).reasonedFor).toBeNull();
+  });
+
+  it("is null when the field is absent", () => {
+    expect(turnWith({}).reasonedFor).toBeNull();
+  });
+
+  it("is null for an open turn", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "thinking", answer: "" },
+    ]).turns[0];
+    expect(t.closed).toBe(false);
+    expect(t.reasonedFor).toBeNull();
+  });
+});
+
 describe("reply", () => {
   it("is the closing turn's text", () => {
     const v = viewOf([

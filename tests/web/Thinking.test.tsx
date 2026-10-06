@@ -20,7 +20,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null,
-    thinking: null, retries: [], toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
+    thinking: null, reasonedFor: null, retries: [], toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, question: null, answer: null, ...overrides,
   };
 }
@@ -184,5 +184,42 @@ describe("a turn's thinking", () => {
     expect(classes).toContain("flex");
     expect(classes).toContain("list-none");
     expect(classes).toContain("[&::-webkit-details-marker]:hidden");
+  });
+
+  it("labels a finished turn's thinking fold with how long it thought", async () => {
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { thinking: { chars: 17, complete: true }, reasonedFor: "18s" })] })}
+      />,
+    );
+    const summary = screen.getByText("Thought for 18s");
+    expect(summary.tagName).toBe("SUMMARY");
+    const fold = summary.closest("details")!;
+    expect(fold).not.toBeNull();
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
+    expect(await screen.findByText(TEXT)).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fold.textContent).not.toContain("Thinking · 17 characters");
+  });
+
+  it("shows a finished turn's thought time as plain text when there is no thinking text", () => {
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { reasonedFor: "18s" })] })}
+      />,
+    );
+    const line = screen.getByText("Thought for 18s");
+    expect(line.closest("details")).toBeNull();
+  });
+
+  it("keeps the thinking label when the turn did not say how long it thought", () => {
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { thinking: { chars: 17, complete: false } })] })}
+      />,
+    );
+    expect(screen.getByText("Thinking · 17 characters")).toBeTruthy();
+    expect(screen.queryByText(/^Thought for/)).toBeNull();
   });
 });

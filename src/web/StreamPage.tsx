@@ -260,10 +260,16 @@ function DelegationMessage({
     : turn.partial !== null && turn.partial.reasoning !== ""
       ? turn.partial.reasoning.length
       : null;
-  const thinkingLabel = thinkingChars !== null ? `Thinking · ${thinkingChars.toLocaleString("en-US")} characters` : null;
+  const thinkingLabel = thinkingChars !== null
+    ? turn.reasonedFor !== null
+      ? `Thought for ${turn.reasonedFor}`
+      : `Thinking · ${thinkingChars.toLocaleString("en-US")} characters`
+    : null;
+  // A turn that reasoned but whose thinking is not shown says how long it thought.
+  const thoughtForOnly = turn.reasonedFor !== null && thinkingChars === null;
   // A turn whose only call was its question has nothing for a bubble to hold: draw none.
   const thinking = thinkingLabel !== null;
-  const hasBubble = thinking || calls.length > 0 || writing || answer !== null;
+  const hasBubble = thinking || thoughtForOnly || calls.length > 0 || writing || answer !== null;
   return (
     <li data-from="delegation" className="flex gap-3">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
@@ -310,7 +316,9 @@ function DelegationMessage({
         )}
         {hasBubble && (
         <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
-          {thinkingLabel !== null && (
+          {thoughtForOnly ? (
+            <p className="text-sm text-muted">Thought for {turn.reasonedFor}</p>
+          ) : thinkingLabel !== null ? (
             turn.thinking !== null ? (
               <ThinkingFold name={name} turn={turn} label={thinkingLabel} />
             ) : (
@@ -322,7 +330,7 @@ function DelegationMessage({
                 <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial?.reasoning ?? ""}</pre>
               </details>
             )
-          )}
+          ) : null}
           {calls.length > 0 && (
             <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
               {calls.map((call, i) => (
