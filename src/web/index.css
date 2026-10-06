@@ -79,4 +79,8 @@
   :focus-visible {
     @apply outline-2 outline-accent;
   }
+  /* Tailwind's reset gives a button the arrow; anything clickable shows the hand. */
+  button:not(:disabled), summary, [role="button"], select, label {
+    cursor: pointer;
+  }
 }

@@ -193,3 +193,16 @@ describe("state icons", () => {
     expect(new Set(STATES.map((s) => STATE_ICON[s])).size).toBe(STATES.length);
   });
 });
+
+// Tailwind's reset gives a button the arrow cursor, so a tool row or a fold did not look
+// clickable. One base rule gives everything clickable the hand.
+describe("pointer", () => {
+  it("gives buttons, folds and other clickable controls the hand cursor", () => {
+    const rule = /([^{}]+)\{[^{}]*cursor:\s*pointer[^{}]*\}/.exec(CSS.replace(/\/\*[\s\S]*?\*\//g, ""));
+    expect(rule, "a cursor: pointer rule in index.css").not.toBeNull();
+    const selectors = rule![1].split(",").map((s) => s.trim());
+    for (const wanted of ["button:not(:disabled)", "summary", "[role=\"button\"]", "select", "label"]) {
+      expect(selectors).toContain(wanted);
+    }
+  });
+});

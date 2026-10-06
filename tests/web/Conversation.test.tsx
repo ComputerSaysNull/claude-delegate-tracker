@@ -98,9 +98,12 @@ describe("the conversation", () => {
 
   it("cuts a call's arguments to one line, all of them one tap away", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", "a/very/long/path.py"]] })] })] })} />);
-    const arg = screen.getByText("path: a/very/long/path.py");
+    const arg = screen.getByText("a/very/long/path.py");
     expect(arg.className).toMatch(/\btruncate\b/);
-    expect(arg.closest("details")).not.toBeNull();
+    const toggle = screen.getByRole("button", { name: /read_file/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(screen.getByText("path: a/very/long/path.py")).toBeTruthy();
   });
 
   it("closes a turn with a small line of its figures", () => {

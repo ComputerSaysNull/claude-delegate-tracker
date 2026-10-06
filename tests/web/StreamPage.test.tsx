@@ -244,6 +244,9 @@ describe("StreamViewBody", () => {
 
   it("shows a turn's repeated output share and its evicted tool results", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { closed: true, repeated: "23%", evicted: 0 })] })} />);
+    expect(screen.queryByText("repeated output 23%")).toBeNull();
+    expect(screen.queryByText("tool results evicted 0")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Turn details" }));
     expect(screen.getByText("repeated output 23%")).toBeTruthy();
     expect(screen.getByText("tool results evicted 0")).toBeTruthy();
   });
@@ -302,22 +305,22 @@ describe("long values on a phone", () => {
 
   it("an argument is cut to one line, and one tap shows all of it", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", LONG]] })] })] })} />);
-    const summary = screen.getByText(`path: ${LONG}`);
-    const details = summary.closest("details");
-    expect(details).not.toBeNull();
-    expect(details!.open).toBe(false);
+    const summary = screen.getByText(LONG);
+    const toggle = summary.closest("button");
+    expect(toggle).not.toBeNull();
     expect(summary.className).toMatch(/\btruncate\b/);
-    fireEvent.click(summary);
-    expect(details!.open).toBe(true);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle!);
+    expect(toggle!.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(`path: ${LONG}`)).toBeTruthy();
   });
 
-  it("a file path is cut to one line, and one tap shows all of it", () => {
+  it("a file path is clamped to two lines, with the full path on hover and focus", () => {
     render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null }] })} />);
     const summary = screen.getByText(LONG);
-    const details = summary.closest("details");
-    expect(details).not.toBeNull();
-    expect(details!.open).toBe(false);
-    fireEvent.click(summary);
-    expect(details!.open).toBe(true);
+    expect(summary.className).toMatch(/\bline-clamp-2\b/);
+    expect(summary.className).toMatch(/\bbreak-all\b/);
+    expect(summary.getAttribute("title")).toBe(LONG);
+    expect(summary.getAttribute("tabindex")).toBe("0");
   });
 });
