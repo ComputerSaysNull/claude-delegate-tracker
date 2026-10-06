@@ -55,7 +55,7 @@ function row(): ListRow {
 function turn(overrides: Partial<TurnView>): TurnView {
   return {
     n: 1, heading: "turn 1", budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, retries: [],
-    toolTime: null, attempts: null, repeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
+    toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, question: null, answer: null, ...overrides,
   };
 }

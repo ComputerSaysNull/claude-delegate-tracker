@@ -41,6 +41,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     toolTime: null,
     attempts: null,
     repeated: null,
+    thinkingRepeated: null,
     evicted: null,
     tokensIn: null,
     tokensOut: null,
@@ -244,12 +245,12 @@ describe("StreamViewBody", () => {
     expect(failures.className).toContain("text-hot");
   });
 
-  it("shows a turn's repeated output share and its evicted tool results", () => {
+  it("shows a turn's repeated output share as a marker and its evicted tool results in the fold", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { closed: true, repeated: "23%", evicted: 0 })] })} />);
-    expect(screen.queryByText("repeated output 23%")).toBeNull();
+    const marker = screen.getByRole("status");
+    expect(marker.textContent).toBe("reply repeats 23%");
     expect(screen.queryByText("tool results evicted 0")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Turn details" }));
-    expect(screen.getByText("repeated output 23%")).toBeTruthy();
     expect(screen.getByText("tool results evicted 0")).toBeTruthy();
   });
 

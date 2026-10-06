@@ -55,6 +55,16 @@ export function DetailsFigures({ view }: { view: StreamView }) {
   const closedTurns = view.turns.filter((t) => t.closed);
   const retries = closedTurns.reduce((n, t) => n + (t.attempts !== null ? t.attempts - 1 : 0), 0);
   const summary = view.summary;
+  // The highest repeat share over all turns, reply or thinking; names its part and its turn.
+  let repeat: { value: string; part: string; n: number } | null = null;
+  for (const t of view.turns) {
+    const parts: [string, string | null][] = [["reply", t.repeated], ["thinking", t.thinkingRepeated]];
+    for (const [part, value] of parts) {
+      if (value === null) continue;
+      const share = parseInt(value, 10);
+      if (repeat === null || share > parseInt(repeat.value, 10)) repeat = { value, part, n: t.n };
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -85,6 +95,7 @@ export function DetailsFigures({ view }: { view: StreamView }) {
         <Row label="Tool calls" value={String(toolCalls)} />
         {failedCalls > 0 && <Row label="Failed" value={String(failedCalls)} />}
         {closedTurns.length > 0 && <Row label="Retries" value={String(retries)} />}
+        {repeat !== null && <Row label="Repeats" value={`${repeat.value} ${repeat.part}, turn ${repeat.n}`} valueClass="text-warn" />}
         {summary !== null && (
           <>
             <Row label="Cached" value={summary.cached !== null ? summary.cached.toLocaleString() : null} />

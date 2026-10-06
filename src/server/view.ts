@@ -36,6 +36,7 @@ export interface TurnView {
   attempts: number | null;      // only when above 1
   retries: { reason: string; status: number | null; wait: string | null }[]; // closed turn: the turn event's retries, in words; [] otherwise
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
+  thinkingRepeated: string | null; // share of the thinking's lines of 20+ characters that repeat an earlier one, as a percent, only from 30% and from 5 such lines; counted here until the stream measures it (plans#57)
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
   question: { questions: string[] } | null;  // the `question` asked during this turn
   answer: { text: string; waited: string; bestReading: boolean } | null; // the caller's reply to it
@@ -317,6 +318,22 @@ function partialOf(slot: TurnSlot, closed: boolean): { reasoning: string; answer
   return { reasoning: slot.partialReasoning, answer: slot.partialAnswer };
 }
 
+// The share of a block's lines that repeat an earlier line: lines are trimmed and only those of
+// 20 characters or more count (braces, fences and list markers repeat in any long thinking
+// without meaning a loop), a repeat is a line equal to an earlier one, and a block under 5
+// such lines is too small to say. null then, else repeats ÷ lines.
+function repeatShare(text: string): number | null {
+  const lines = text.split("\n").map((line) => line.trim()).filter((line) => line.length >= 20);
+  if (lines.length < 5) return null;
+  const seen = new Set<string>();
+  let repeats = 0;
+  for (const line of lines) {
+    if (seen.has(line)) repeats += 1;
+    else seen.add(line);
+  }
+  return repeats / lines.length;
+}
+
 function buildTurn(n: number, slot: TurnSlot): TurnView {
   const closed = slot.turn !== null;
   const of = ofTurnsOf(slot);
@@ -341,6 +358,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
     retries: retriesOf(slot.turn),
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
+    thinkingRepeated: (() => { const s = repeatShare(slot.partialReasoning); return s !== null && s >= 0.3 ? `${Math.round(s * 100)}%` : null; })(),
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
     question: questionOf(slot.question),

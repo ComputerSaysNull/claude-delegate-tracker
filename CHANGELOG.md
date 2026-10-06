@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #43 — 2026-10-06 — feat: mark a turn that repeats itself, so a looping model stands out
+
+### Added
+
+- **A turn that repeats itself carries an amber "thinking repeats N%" or "reply repeats N%"
+  marker in its heading**, and the details bar names the run's highest share and its turn.
+  The reply's share was hidden behind Turn details, and nothing measured the thinking: 205
+  turns repeat 15% or more of their thinking lines, but only 33 record a high share. The
+  tracker now counts the thinking's repeats itself, until the server measures them. It
+  counts lines of 20 characters or more, from 30%, because braces, fences and list markers
+  repeat in any long thinking. Of the newest 328 turns, 1 is flagged.
+
 ## #42 — 2026-10-06 — fix: follow a running delegation in the desktop's detail pane
 
 ### Fixed
