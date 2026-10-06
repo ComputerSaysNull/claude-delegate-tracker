@@ -31,6 +31,7 @@ export interface TurnView {
   closed: boolean;              // a `turn` event for this number has landed
   heartbeat: string | null;     // open turn only, from the newest `alive` after its `priced`
   partial: { reasoning: string; answer: string } | null; // open turn only: its `partial` text so far
+  thinking: { chars: number; complete: boolean } | null; // closed turn only; the text itself is served by /api/streams/:name/thinking/:turn
   toolTime: string | null;      // closed turn: Σ calls' ms, else ms − backend_ms when there are calls; null without calls
   attempts: number | null;      // only when above 1
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
@@ -334,6 +335,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     closed,
     heartbeat: closed ? null : heartbeatOf(slot),
     partial: partialOf(slot, closed),
+    thinking: closed && slot.partialReasoning !== "" ? { chars: slot.partialReasoning.length, complete: slot.partialAnswer !== "" } : null,
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
@@ -489,6 +491,15 @@ export function buildView(name: string, v: ViewState, s: StreamState, row: ListR
     turns,
     summary: buildSummary(s, closedTurns),
   };
+}
+
+// A finished turn's thinking text, from the slot the view kept for turn n; null when the
+// turn never happened, is still open, or its partials carried no reasoning. The text is what
+// /api/streams/:name/thinking/:turn serves, fetched only when the page opens the fold.
+export function turnThinking(v: ViewState, n: number): string | null {
+  const slot = v.turns.get(n);
+  if (slot === undefined || slot.turn === null || slot.partialReasoning === "") return null;
+  return slot.partialReasoning;
 }
 
 // A changed turn is sent as an append only when the new partial extends the old one.

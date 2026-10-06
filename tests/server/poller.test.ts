@@ -562,3 +562,68 @@ describe("history", () => {
     }
   });
 });
+
+describe("a finished turn's thinking", () => {
+  const NAME = "20261001T120000.000-a.jsonl";
+
+  function partial(turn: number, reasoning: string, answer = ""): Record<string, unknown> {
+    return { t: "partial", at: "2026-10-01T12:00:02.000Z", turn, reasoning, answer };
+  }
+
+  function turn(turn: number): Record<string, unknown> {
+    return { t: "turn", at: "2026-10-01T12:00:03.000Z", turn, of_turns: 1, tool_calls: [], text: "" };
+  }
+
+  function closedTurnStream(): Record<string, unknown>[] {
+    return [startEvent("2026-10-01T12:00:00.000Z"), partial(1, "Look at "), partial(1, "the file."), turn(1)];
+  }
+
+  it("returns the accumulated reasoning of a closed turn", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, closedTurnStream());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.thinking(NAME, 1)).toBe("Look at the file.");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null for a turn that never happened", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, closedTurnStream());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.thinking(NAME, 2)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null for a name the poller did not list", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, closedTurnStream());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.thinking("../x.jsonl", 1)).toBeNull();
+      expect(poller.thinking("unknown.jsonl", 1)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null while the turn is still open", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, [startEvent("2026-10-01T12:00:00.000Z"), partial(1, "Look at "), partial(1, "the file.")]);
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.thinking(NAME, 1)).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

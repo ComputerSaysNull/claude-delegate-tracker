@@ -6,7 +6,7 @@ import { listNewest, StreamReader } from "./folder.ts";
 import type { Listing } from "./folder.ts";
 import { newStreamState, applyLine, listRow, parseAt } from "./streams.ts";
 import type { StreamState, ListRow } from "./streams.ts";
-import { newViewState, applyViewEvent, buildView, diffView } from "./view.ts";
+import { newViewState, applyViewEvent, buildView, diffView, turnThinking } from "./view.ts";
 import type { ViewState, StreamView, ViewPatch } from "./view.ts";
 
 export const PICK_BY_NAME = 25; // names listed before ordering by start.at
@@ -208,6 +208,15 @@ export class Poller {
     if (entry === null) return null;
     entry.followers.add(listener);
     return () => entry.followers.delete(listener);
+  }
+
+  // One finished turn's thinking text, from the same cached ViewState the stream's view is
+  // built from; null for a name the folder listing did not hold, a turn it never saw, or a
+  // turn still open. The name is looked up like view() does, never joined onto a path.
+  thinking(name: string, turn: number): string | null {
+    const entry = this.entryFor(name);
+    if (entry === null) return null;
+    return turnThinking(entry.view, turn);
   }
 
   start(intervalSeconds: number, followSeconds: number): void {

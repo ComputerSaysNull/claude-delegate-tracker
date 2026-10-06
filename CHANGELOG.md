@@ -9,6 +9,26 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #37 — 2026-10-06 — feat: keep every turn's thinking in a fold that loads on open
+
+### Added
+
+- **Every turn keeps its thinking in a fold, labelled with its length.** The thinking showed
+  only while a turn was open, then was gone. A finished turn's thinking is its partials'
+  reasoning joined. A partial carries only the text since the previous one, so when no
+  partial reached the reply the fold notes the last moments may be missing.
+- **`GET /api/streams/<name>/thinking/<turn>`**, the text of one finished turn's thinking.
+  Sent in full with the view, the thinking made the largest view grow from 55 KB to 427 KB,
+  slow to open on a phone. The view now carries only each turn's length, and the page fetches
+  the text when the reader opens the fold. The name is looked up among the names the backend
+  listed itself; the turn must be a plain whole number.
+
+### Fixed
+
+- **A thinking fold's chevron and label each took a line, under the browser's own marker.**
+  Tailwind draws an icon as a block, so the summary stacked them. The summary is now one row
+  with no second marker, and the chevron turns when the fold opens.
+
 ## #36 — 2026-10-06 — feat: show the conversation as a chat between two sides
 
 ### Changed

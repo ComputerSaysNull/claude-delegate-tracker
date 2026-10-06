@@ -94,6 +94,7 @@ const app = createApp({
   subscribe: (listener) => poller.onChange(listener),
   view: (name) => poller.view(name),
   follow: (name, listener) => poller.follow(name, listener),
+  thinking: (name, turn) => poller.thinking(name, turn),
   history: (before) => poller.history(before),
   cluster: () => ({ model: metrics.figures(), nodes: nodes.figures(), limits: settings.limits }),
   clusterHistory: () => figureHistory.snapshot(),
