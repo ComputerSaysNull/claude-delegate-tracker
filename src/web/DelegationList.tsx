@@ -1,5 +1,5 @@
 import { useState, Fragment, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
 import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "./filter.ts";
@@ -176,6 +176,7 @@ export function DelegationList({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [ownFilter, setOwnFilter] = useState<RowFilter>(NO_FILTER);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(new Set()); // groups folded by key; all start open
   const filter = shownFilter ?? ownFilter;
   const setFilter = (next: RowFilter | ((prev: RowFilter) => RowFilter)) => {
@@ -183,6 +184,25 @@ export function DelegationList({
     if (onFilterChange !== undefined) onFilterChange(value);
     else setOwnFilter(value);
   };
+
+  // The Filters button counts the state, kind and model filters that are on; the search text is not counted.
+  const activeCount =
+    filter.states.length + (filter.kind !== null ? 1 : 0) + (filter.model !== null ? 1 : 0);
+
+  // One chip per active state, kind or model filter; pressing it removes just that filter.
+  const chips: { label: string; remove: () => void }[] = [];
+  for (const state of filter.states) {
+    chips.push({
+      label: STATE_LABEL[state],
+      remove: () => setFilter((prev) => ({ ...prev, states: prev.states.filter((s) => s !== state) })),
+    });
+  }
+  if (filter.kind !== null) {
+    chips.push({ label: `kind ${filter.kind}`, remove: () => setFilter((prev) => ({ ...prev, kind: null })) });
+  }
+  if (filter.model !== null) {
+    chips.push({ label: `model ${filter.model}`, remove: () => setFilter((prev) => ({ ...prev, model: null })) });
+  }
 
   if (list === null) {
     return <p className="text-muted">Waiting for the first list…</p>;
@@ -268,7 +288,7 @@ export function DelegationList({
         <p className="text-muted">No delegations yet.</p>
       ) : (
         <>
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <div className="relative flex-[1_1_180px]">
               <Search size={15} aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -280,14 +300,26 @@ export function DelegationList({
                 className="h-9 w-full rounded-lg border border-line bg-card pl-8 pr-3 text-sm"
               />
             </div>
-            <details className="relative">
-              <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-line bg-card px-3 text-sm">
-                {filter.states.length === 0
-                  ? "All states"
-                  : `${filter.states.length} state${filter.states.length === 1 ? "" : "s"}`}
-                <ChevronDown size={14} aria-hidden="true" />
-              </summary>
-              <div className="absolute z-10 mt-1 flex w-44 flex-col gap-1 rounded-lg border border-line bg-card p-2 shadow">
+            <button
+              type="button"
+              aria-expanded={filtersOpen}
+              aria-controls="filter-panel"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line bg-card px-3 text-sm"
+            >
+              <SlidersHorizontal size={15} aria-hidden="true" />
+              {activeCount > 0 ? `Filters (${activeCount})` : "Filters"}
+            </button>
+          </div>
+          {filtersOpen && (
+            <div
+              id="filter-panel"
+              role="group"
+              aria-label="Filters"
+              className="rounded-xl border border-line bg-card p-3 flex flex-col gap-3"
+            >
+              <fieldset className="flex flex-wrap gap-2">
+                <legend className="text-sm font-medium">State</legend>
                 {STATES.map((state) => (
                   <label key={state} className="flex items-center gap-2 text-sm">
                     <input
@@ -298,35 +330,50 @@ export function DelegationList({
                     {STATE_LABEL[state]}
                   </label>
                 ))}
-              </div>
-            </details>
-            <select
-              aria-label="Kind"
-              value={filter.kind ?? ""}
-              onChange={(e) => setFilter((prev) => ({ ...prev, kind: e.target.value === "" ? null : e.target.value }))}
-              className={SELECT_CLASS}
-            >
-              <option value="">All kinds</option>
-              {kindChoices.map((kind) => (
-                <option key={kind} value={kind}>
-                  {kind}
-                </option>
+              </fieldset>
+              <select
+                aria-label="Kind"
+                value={filter.kind ?? ""}
+                onChange={(e) => setFilter((prev) => ({ ...prev, kind: e.target.value === "" ? null : e.target.value }))}
+                className={SELECT_CLASS}
+              >
+                <option value="">All kinds</option>
+                {kindChoices.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Model"
+                value={filter.model ?? ""}
+                onChange={(e) => setFilter((prev) => ({ ...prev, model: e.target.value === "" ? null : e.target.value }))}
+                className={SELECT_CLASS}
+              >
+                <option value="">All models</option>
+                {modelChoices.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {chips.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {chips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  aria-label={`Remove filter: ${chip.label}`}
+                  onClick={chip.remove}
+                  className="inline-flex items-center gap-1 rounded-full border border-line bg-card px-2 py-0.5 text-xs"
+                >
+                  {chip.label} ×
+                </button>
               ))}
-            </select>
-            <select
-              aria-label="Model"
-              value={filter.model ?? ""}
-              onChange={(e) => setFilter((prev) => ({ ...prev, model: e.target.value === "" ? null : e.target.value }))}
-              className={SELECT_CLASS}
-            >
-              <option value="">All models</option>
-              {modelChoices.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-          </div>
+            </div>
+          )}
           {filtering && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {shownCount === 0 ? (

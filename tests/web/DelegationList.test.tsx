@@ -228,10 +228,10 @@ describe("DelegationList", () => {
         ])}
       />,
     );
-    fireEvent.click(screen.getByText("All states"));
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const okBox = screen.getByRole("checkbox", { name: STATE_LABEL.ok });
     fireEvent.click(okBox);
-    expect(screen.getByText("1 state")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters (1)" })).toBeTruthy();
     expect(screen.getByText("Ok task")).toBeTruthy();
     expect(screen.queryByText("Live task")).toBeNull();
     fireEvent.click(screen.getByRole("checkbox", { name: STATE_LABEL.ok }));
@@ -248,6 +248,7 @@ describe("DelegationList", () => {
         ])}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const kind = screen.getByRole("combobox", { name: "Kind" });
     fireEvent.change(kind, { target: { value: "one-shot" } });
     expect(screen.getByText("One shot task")).toBeTruthy();
@@ -263,6 +264,7 @@ describe("DelegationList", () => {
         ])}
       />,
     );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     const model = screen.getByRole("combobox", { name: "Model" });
     fireEvent.change(model, { target: { value: "claude-opus-4" } });
     expect(screen.getByText("Opus task")).toBeTruthy();

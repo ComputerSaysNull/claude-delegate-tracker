@@ -48,11 +48,11 @@ describe("the list as designed", () => {
   it("filters by state from one menu instead of a button per state", () => {
     render(<DelegationList list={list([row("a"), row("b", { state: "failed" })])} />);
     expect(screen.queryByRole("button", { name: "failed" })).toBeNull();
-    fireEvent.click(screen.getByText("All states"));
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Failed" }));
     expect(screen.queryByRole("link", { name: "Delegation a" })).toBeNull();
     expect(screen.getByRole("link", { name: "Delegation b" })).toBeTruthy();
-    expect(screen.getByText("1 state")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters (1)" })).toBeTruthy();
   });
 
   it("leads a card with the state's icon, named for a screen reader, and no badge text in sight", () => {
