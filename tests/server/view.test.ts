@@ -486,6 +486,52 @@ describe("attempts", () => {
   });
 });
 
+describe("a turn's retries", () => {
+  it("maps a BackendUnavailable item to its wording, a null status and a short wait", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "", retries: [{ kind: "BackendUnavailable", status: null, seconds: 30, wait: 0.493 }] },
+    ]);
+    expect(v.turns[0].retries).toEqual([{ reason: "the model server was unavailable", status: null, wait: "0.5s" }]);
+  });
+
+  it("reads a RateLimited kind, its status and a whole-second wait", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "", retries: [{ kind: "RateLimited", status: 429, seconds: 12, wait: 12 }] },
+    ]);
+    expect(v.turns[0].retries).toEqual([{ reason: "rate limited", status: 429, wait: "12s" }]);
+  });
+
+  it("leaves out an item whose kind is not a string", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "", retries: [{ kind: 7, status: null, wait: 1 }] },
+    ]);
+    expect(v.turns[0].retries).toEqual([]);
+  });
+
+  it("is empty when the turn has no retries", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "" },
+    ]);
+    expect(v.turns[0].retries).toEqual([]);
+  });
+
+  it("is empty for an open turn", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+    ]);
+    expect(v.turns[0].retries).toEqual([]);
+  });
+});
+
 describe("reply", () => {
   it("is the closing turn's text", () => {
     const v = viewOf([

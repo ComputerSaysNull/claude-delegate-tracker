@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #38 — 2026-10-06 — feat: mark a retried turn and say why it was retried
+
+### Added
+
+- **A turn that took more than one attempt is marked "retried N×" in its heading.** It said
+  only "attempts 2" in small print, and nothing about why. The marker opens to each
+  recorded retry in words ("the model server was unavailable · tried again after 0.5s",
+  with the HTTP status when there is one). Of the 88 retried turns in the transcript
+  folder, 82 record no reason, so the list also counts the attempts the stream does not
+  explain.
+
 ## #37 — 2026-10-06 — feat: keep every turn's thinking in a fold that loads on open
 
 ### Added

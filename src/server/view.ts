@@ -34,6 +34,7 @@ export interface TurnView {
   thinking: { chars: number; complete: boolean } | null; // closed turn only; the text itself is served by /api/streams/:name/thinking/:turn
   toolTime: string | null;      // closed turn: Σ calls' ms, else ms − backend_ms when there are calls; null without calls
   attempts: number | null;      // only when above 1
+  retries: { reason: string; status: number | null; wait: string | null }[]; // closed turn: the turn event's retries, in words; [] otherwise
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
   question: { questions: string[] } | null;  // the `question` asked during this turn
@@ -338,6 +339,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     thinking: closed && slot.partialReasoning !== "" ? { chars: slot.partialReasoning.length, complete: slot.partialAnswer !== "" } : null,
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
+    retries: retriesOf(slot.turn),
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
@@ -350,6 +352,27 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     // Read through parseAt: the server writes six decimal places, which Date cannot parse.
     at: (() => { const ms = parseAt(slot.priced?.at); return ms === null ? null : new Date(ms).toISOString(); })(),
   };
+}
+
+// A retry kind like "RateLimited" reads as a phrase once split before each capital letter.
+function retryReason(kind: string): string {
+  if (kind === "BackendUnavailable") return "the model server was unavailable";
+  return kind.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
+}
+
+function retriesOf(turn: Record<string, unknown> | null): TurnView["retries"] {
+  // Only a closed turn has its `turn` event, so an open turn lists none.
+  if (turn === null) return [];
+  const list = turn.retries;
+  if (!Array.isArray(list)) return [];
+  const out: TurnView["retries"] = [];
+  for (const item of list) {
+    const rec = recordOf(item);
+    if (typeof rec.kind !== "string") continue;
+    const wait = typeof rec.wait === "number" ? (rec.wait < 10 ? `${rec.wait.toFixed(1)}s` : formatDuration(rec.wait)) : null;
+    out.push({ reason: retryReason(rec.kind), status: typeof rec.status === "number" ? rec.status : null, wait });
+  }
+  return out;
 }
 
 function questionOf(evt: Record<string, unknown> | null): TurnView["question"] {
