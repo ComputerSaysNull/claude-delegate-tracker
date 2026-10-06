@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #44 — 2026-10-06 — chore: vendor the contract from server v0.8.0
+
+### Changed
+
+- **The contract moves from v0.7.0 to v0.8.0, transcript format 1.4 to 1.6.** The server now
+  writes `start.workspace`, the workspace root a delegation ran under, and
+  `turn.reasoning_seconds`, how long a turn reasoned before it answered or called a tool.
+  The tracker may read only what its vendored contract has. Only additions, so a minor; the
+  tracker shows neither yet.
+
 ## #43 — 2026-10-06 — feat: mark a turn that repeats itself, so a looping model stands out
 
 ### Added
