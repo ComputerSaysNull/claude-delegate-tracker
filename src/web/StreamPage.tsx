@@ -212,6 +212,7 @@ function DelegationMessage({
   waitingFor?: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const [retriesOpen, setRetriesOpen] = useState(false);
   const writing = turn.reply === null && turn.partial !== null && turn.partial.answer !== "";
   const answer =
     turn.reply !== null
@@ -228,8 +229,9 @@ function DelegationMessage({
     turn.tokS !== null ? `${turn.tokS.toLocaleString()} tok/s` : null,
     turn.toolTime !== null ? `tool ${turn.toolTime}` : null,
   ].filter((p): p is string => p !== null);
-  // A turn's budget, attempts, repeated output and evicted results fold behind the toggle.
-  const hasDetails = turn.budget !== null || turn.attempts !== null || turn.repeated !== null || turn.evicted !== null;
+  // A turn's budget, repeated output and evicted results fold behind the toggle.
+  const hasDetails = turn.budget !== null || turn.repeated !== null || turn.evicted !== null;
+  const retryGap = turn.attempts !== null ? turn.attempts - 1 - turn.retries.length : 0;
   // A call to ask_caller is not drawn once its question is shown in this message.
   const calls = turn.question !== null ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
   const thinkingChars = turn.thinking !== null
@@ -247,7 +249,33 @@ function DelegationMessage({
         <Asterisk size={15} />
       </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <p className="text-xs text-muted">{head.join(" · ")}</p>
+        <p className="text-xs text-muted">
+          {head.join(" · ")}
+          {turn.attempts !== null && (
+            <button
+              type="button"
+              aria-expanded={retriesOpen}
+              onClick={() => setRetriesOpen(!retriesOpen)}
+              className="ml-2 inline-flex items-center text-warn"
+            >
+              retried {turn.attempts - 1}×
+            </button>
+          )}
+        </p>
+        {turn.attempts !== null && retriesOpen && (
+          <ul role="list" aria-label="Retries" className="flex flex-col gap-1 text-xs text-muted">
+            {turn.retries.map((r, i) => (
+              <li key={i}>
+                {r.reason}
+                {r.status !== null ? ` · HTTP ${r.status}` : ""}
+                {r.wait !== null ? ` · tried again after ${r.wait}` : ""}
+              </li>
+            ))}
+            {retryGap > 0 && (
+              <li>{retryGap === 1 ? "1 more attempt, no reason recorded" : `${retryGap} more attempts, no reason recorded`}</li>
+            )}
+          </ul>
+        )}
         {hasBubble && (
         <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
           {thinkingLabel !== null && (
@@ -322,7 +350,6 @@ function DelegationMessage({
         {open && (
           <div className="flex flex-col gap-1 text-xs font-mono tabular-nums text-muted">
             {turn.budget !== null && <p>{turn.budget}</p>}
-            {turn.attempts !== null && <p>attempts {turn.attempts}</p>}
             {turn.repeated !== null && <p>repeated output {turn.repeated}</p>}
             {turn.evicted !== null && <p>tool results evicted {turn.evicted}</p>}
           </div>
