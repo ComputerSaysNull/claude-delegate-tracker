@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { applyPatch } from "../../src/web/useStreamView.ts";
 import { StreamViewBody } from "../../src/web/StreamPage.tsx";
 import type { StreamView, ViewPatch, TurnView, CallView } from "../../src/server/view.ts";
@@ -238,7 +238,7 @@ describe("StreamViewBody", () => {
     expect(screen.getByText("Refused: not allowed")).toBeTruthy();
     expect(screen.queryByText("0")).toBeNull();
     expect(screen.queryByText("null")).toBeNull();
-    const failures = screen.getByText(/failures/);
+    const failures = within(screen.getByRole("complementary", { name: "Details" })).getByText(/^Failures$/);
     expect(failures.className).toContain("text-hot");
   });
 
@@ -259,11 +259,12 @@ describe("StreamViewBody", () => {
       finished: true, ok: true, elapsed: "5s", turns: null, cached: null, reuse: null, returned: null,
       load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: 4,
     };
+    const aside = () => screen.getByRole("complementary", { name: "Details" });
     const { unmount } = render(<StreamViewBody view={view({ summary })} />);
-    expect(screen.getByText("shell calls 4")).toBeTruthy();
+    expect(within(aside()).getByText(/shell calls/i)).toBeTruthy();
     unmount();
     render(<StreamViewBody view={view({ summary: { ...summary, shellCalls: null } })} />);
-    expect(screen.queryByText(/shell calls/)).toBeNull();
+    expect(within(aside()).queryByText(/shell calls/i)).toBeNull();
   });
 
   it("shows an open turn's partial answer and folds its reasoning away", () => {

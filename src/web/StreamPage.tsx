@@ -1,9 +1,11 @@
 // One stream's page, read as a conversation: the task as the caller's message, each turn
 // as the delegation's own message, a sticky header that stays on screen, an end note when
-// the run is done, and the reply followed unless the reader has scrolled up. StreamViewBody
-// is split out so the presentational part can be rendered in tests without the hook.
+// the run is done, and the reply followed unless the reader has scrolled up. The run's
+// details sit in a bar beside the conversation, folded by the header's Details button.
+// StreamViewBody is split out so the presentational part can be rendered in tests without
+// the hook.
 import { Fragment, useEffect, useState } from "react";
-import { Asterisk, Check, ChevronRight, CircleHelp, File, X } from "lucide-react";
+import { Asterisk, Check, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -11,6 +13,7 @@ import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
 import { localTime } from "./time.ts";
 import { compactCount } from "./format.ts";
 import { Markdown } from "./Markdown.tsx";
+import { DetailsFigures, useDetailsFolded } from "./DetailsBar.tsx";
 
 export function StreamPage({ name, onClose }: { name: string; onClose: () => void }) {
   const { view, connected, missing } = useStreamView(name);
@@ -39,6 +42,7 @@ export function StreamPage({ name, onClose }: { name: string; onClose: () => voi
 
 export function StreamViewBody({ view }: { view: StreamView }) {
   const row = view.row;
+  const [folded, toggleDetails] = useDetailsFolded();
   const [following, setFollowing] = useState(true);
 
   useEffect(() => {
@@ -57,156 +61,110 @@ export function StreamViewBody({ view }: { view: StreamView }) {
     }
   }, [view, following]);
 
-  const turnsMatch = row.turns !== null ? row.turns.match(/^(\d+) of (\d+)$/) : null;
   // Only while the run is going: one stopped mid-turn never closes that turn, which keeps the
   // clock and heartbeat it had. The open turn, the only one with a clock, is always the last.
   const going = row.state === "live" || row.state === "asking" || row.state === "queued" || row.state === "quiet";
-  const lastTurn = going ? view.turns.at(-1) : undefined;
-  const lastClock = lastTurn?.clock ?? null;
-  const heartbeat = lastTurn !== undefined && !lastTurn.closed ? lastTurn.heartbeat : null;
 
   return (
     <section className="flex flex-col gap-4">
-      <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page py-3">
+      <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page pt-4 pb-3">
         <div className="flex items-center gap-2">
           <StateBadge state={row.state} />
           <h2 className="min-w-0 truncate text-xl font-semibold" title={row.title}>
             {row.title}
           </h2>
+          <button
+            type="button"
+            aria-expanded={!folded}
+            aria-controls="details-bar"
+            aria-label="Details"
+            title={folded ? "Show the details" : "Fold the details away"}
+            onClick={toggleDetails}
+            className="ml-auto hidden shrink-0 items-center lg:inline-flex gap-1.5 rounded-md border border-line px-2 py-1 text-sm text-muted"
+          >
+            {folded ? (
+              <PanelRightOpen size={16} aria-hidden="true" />
+            ) : (
+              <PanelRightClose size={16} aria-hidden="true" />
+            )}
+            <span className="lg:hidden">Details</span>
+          </button>
         </div>
-        <p className="text-sm text-muted">
-          {row.kind}
-          {row.model !== null && row.model !== "" && <> · {row.model}</>}
-          {row.effort !== null && row.effort !== "" && <> · {row.effort} effort</>}
-          <> · started <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
-          {row.elapsed !== null && row.elapsed !== "" && (
-            <> · elapsed <span className="font-mono tabular-nums">{row.elapsed}</span></>
-          )}
-        </p>
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
-          {turnsMatch !== null && (
-            <div className="w-56 flex flex-col gap-1.5">
-              <div className="flex justify-between text-xs text-muted">
-                <span>Turn</span>
-                <span className="font-mono tabular-nums">{row.turns}</span>
-              </div>
-              <div
-                role="progressbar"
-                aria-label="Turns"
-                aria-valuenow={Number(turnsMatch[1])}
-                aria-valuemin={0}
-                aria-valuemax={Number(turnsMatch[2])}
-                className="flex gap-[3px]"
-              >
-                {Array.from({ length: Number(turnsMatch[2]) }).map((_, i) => (
-                  <span
-                    key={i}
-                    className={`h-[5px] flex-1 rounded-[3px] ${
-                      i < Number(turnsMatch[1]) - 1
-                        ? "bg-state-live"
-                        : i === Number(turnsMatch[1]) - 1
-                          ? "bg-state-live/45"
-                          : "bg-line"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {lastClock !== null && (
-            <div className="w-64 flex flex-col gap-1.5">
-              <div className="flex justify-between text-xs text-muted">
-                <span>Time left</span>
-                {row.left !== null && <span className="font-mono tabular-nums">{row.left} left</span>}
-              </div>
-              <div
-                role="progressbar"
-                aria-label="Time"
-                aria-valuenow={lastClock.elapsed}
-                aria-valuemin={0}
-                aria-valuemax={lastClock.of}
-                className="h-[5px] rounded-[3px] bg-line"
-              >
-                <div
-                  className="h-full bg-muted"
-                  style={{ width: `${(lastClock.elapsed / lastClock.of) * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {heartbeat !== null && (
-            <p className="text-[13px] font-mono tabular-nums text-muted">{heartbeat}</p>
-          )}
-        </div>
-        {row.why !== null && row.why !== "" && (
-          <p className={`text-sm ${STATE_TEXT[row.state]}`}>{row.why}</p>
-        )}
-        {row.unknownFormat !== null && row.unknownFormat !== "" && (
-          <p className="text-sm text-warn">
-            format {row.unknownFormat}: shown as best it can be
-          </p>
-        )}
       </header>
 
-      <ol aria-label="Conversation" className="flex flex-col gap-4">
-        {(view.task !== null || view.files.length > 0) && (
-          <li
-            data-from="caller"
-            className="ml-auto max-w-[88%] rounded-2xl border border-line bg-card px-4 py-3"
-          >
-            <p className="text-xs text-muted">
-              Task
-              {row.startedAt !== null && (
-                <> · <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
-              )}
-            </p>
-            {view.task !== null && <Markdown text={view.task} />}
-            {view.files.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {view.files.map((file) => (
-                  <span
-                    key={file.path}
-                    className={`inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
-                      file.skipped !== null ? "border-warn/60 text-warn" : ""
-                    }`}
-                  >
-                    <File size={12} aria-hidden="true" />
-                    <span className="min-w-0 max-w-[22rem]">
-                      <Clipped text={file.path} className="min-w-0" />
+      <details className="lg:hidden rounded-xl border border-line bg-card px-4 py-3">
+        <summary className="cursor-pointer text-sm font-semibold">Details</summary>
+        <DetailsFigures view={view} />
+      </details>
+
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row">
+        <ol aria-label="Conversation" className="flex min-w-0 flex-1 flex-col gap-4">
+          {(view.task !== null || view.files.length > 0) && (
+            <li
+              data-from="caller"
+              className="ml-auto max-w-[88%] rounded-2xl border border-line bg-card px-4 py-3"
+            >
+              <p className="text-xs text-muted">
+                Task
+                {row.startedAt !== null && (
+                  <> · <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
+                )}
+              </p>
+              {view.task !== null && <Markdown text={view.task} />}
+              {view.files.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {view.files.map((file) => (
+                    <span
+                      key={file.path}
+                      className={`inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
+                        file.skipped !== null ? "border-warn/60 text-warn" : ""
+                      }`}
+                    >
+                      <File size={12} aria-hidden="true" />
+                      <span className="min-w-0 max-w-[22rem]">
+                        <Clipped text={file.path} className="min-w-0" />
+                      </span>
+                      {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
+                      {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
                     </span>
-                    {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
-                    {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
-                  </span>
+                  ))}
+                </div>
+              )}
+              {/* Why a file was refused, in full, under the chips. */}
+              {view.files
+                .filter((file) => file.skipped !== null)
+                .map((file) => (
+                  <p key={file.path} className="text-xs text-warn">
+                    <span className="font-mono">{file.path}</span>: {file.skipped}
+                  </p>
                 ))}
-              </div>
-            )}
-            {/* Why a file was refused, in full, under the chips. */}
-            {view.files
-              .filter((file) => file.skipped !== null)
-              .map((file) => (
-                <p key={file.path} className="text-xs text-warn">
-                  <span className="font-mono">{file.path}</span>: {file.skipped}
-                </p>
-              ))}
-          </li>
+            </li>
+          )}
+          {view.turns.map((turn) => (
+            <Fragment key={turn.n}>
+              <DelegationMessage
+                turn={turn}
+                model={row.model}
+                waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
+              />
+              {turn.answer !== null && <CallerAnswer answer={turn.answer} />}
+            </Fragment>
+          ))}
+          {view.summary !== null && view.summary.finished && (
+            <SummaryItem summary={view.summary} state={row.state} />
+          )}
+        </ol>
+        {/* A card that sticks where it already sits: below the 57px header and the 16px gap, so the first scroll does not move it before it sticks. */}
+        {!folded && (
+          <aside
+            id="details-bar"
+            aria-label="Details"
+            className="hidden w-[300px] shrink-0 self-start lg:sticky lg:top-[73px] lg:block max-h-[calc(100vh-5.5rem)] overflow-y-auto rounded-xl border border-line bg-card p-4"
+          >
+            <DetailsFigures view={view} />
+          </aside>
         )}
-        {view.waiting !== null && (
-          <li data-from="note" className="text-sm font-mono tabular-nums text-warn">
-            {view.waiting}
-          </li>
-        )}
-        {view.turns.map((turn) => (
-          <Fragment key={turn.n}>
-            <DelegationMessage
-              turn={turn}
-              model={row.model}
-              waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
-            />
-            {turn.answer !== null && <CallerAnswer answer={turn.answer} />}
-          </Fragment>
-        ))}
-        {view.summary !== null && <SummaryItem summary={view.summary} state={row.state} />}
-      </ol>
+      </div>
 
       {going && !following && (
         <button
@@ -380,65 +338,17 @@ function CallViewItem({ call }: { call: CallView }) {
 const ENDING: Partial<Record<ListRow["state"], string>> = { failed: "Failed", stopped: "Stopped", "timed out": "Timed out" };
 
 function SummaryItem({ summary, state }: { summary: SummaryView; state: ListRow["state"] }) {
-  if (summary.finished) {
-    return (
-      <li data-from="end" className="rounded-xl border border-line px-4 py-3">
-        <p>
-          <span className={`inline-flex items-center gap-1 ${STATE_TEXT[state]}`}>
-            <StateIcon state={state} size={16} />
-            {ENDING[state] ?? (summary.ok === false ? "Failed" : "Finished")}
-          </span>
-          {summary.elapsed !== null && ` in ${summary.elapsed}`}
-          {summary.turns !== null && ` · ${summary.turns} turns`}
-          {summary.reuse !== null && ` · ${summary.reuse} cached`}
-        </p>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
-          {summary.cached !== null && <span>cached {summary.cached.toLocaleString()}</span>}
-          {summary.returned !== null && <span>returned {summary.returned.toLocaleString()}</span>}
-          {summary.load !== null && <span>load {summary.load.toLocaleString()}</span>}
-          {summary.failures !== null && (
-            <span className={summary.failures > 0 ? "text-hot" : "text-muted"}>
-              failures {summary.failures.toLocaleString()}
-            </span>
-          )}
-          {summary.toolTime !== null && <span>tool time {summary.toolTime}</span>}
-          {summary.shellCalls !== null && <span>shell calls {summary.shellCalls.toLocaleString()}</span>}
-          {summary.finishReason !== null && <span>finish reason {summary.finishReason}</span>}
-        </div>
-        {summary.error !== null && (
-          <p className="whitespace-pre-wrap font-mono tabular-nums text-hot">{summary.error}</p>
-        )}
-      </li>
-    );
-  }
   return (
-    <li className="rounded-xl border border-line px-4 py-3">
-      <h3 className="font-semibold">Summary</h3>
-      <SummaryFigures summary={summary} />
+    <li data-from="end" className="rounded-xl border border-line px-4 py-3">
+      <p>
+        <span className={`inline-flex items-center gap-1 ${STATE_TEXT[state]}`}>
+          <StateIcon state={state} size={16} />
+          {ENDING[state] ?? (summary.ok === false ? "Failed" : "Finished")}
+        </span>
+        {summary.elapsed !== null && ` in ${summary.elapsed}`}
+        {summary.turns !== null && ` · ${summary.turns} turns`}
+        {summary.reuse !== null && ` · ${summary.reuse} cached`}
+      </p>
     </li>
-  );
-}
-
-function SummaryFigures({ summary }: { summary: SummaryView }) {
-  return (
-    <div className="mt-2 flex flex-col gap-1 text-sm font-mono tabular-nums">
-      {summary.elapsed !== null && <p>elapsed {summary.elapsed}</p>}
-      {summary.turns !== null && <p>turns {summary.turns}</p>}
-      {summary.cached !== null && <p>cached {summary.cached.toLocaleString()}</p>}
-      {summary.reuse !== null && <p>reuse {summary.reuse}</p>}
-      {summary.returned !== null && <p>returned {summary.returned.toLocaleString()}</p>}
-      {summary.load !== null && <p>load {summary.load.toLocaleString()}</p>}
-      {summary.failures !== null && (
-        <p className={summary.failures > 0 ? "text-hot" : "text-muted"}>
-          failures {summary.failures.toLocaleString()}
-        </p>
-      )}
-      {summary.toolTime !== null && <p>tool time {summary.toolTime}</p>}
-      {summary.shellCalls !== null && <p>shell calls {summary.shellCalls.toLocaleString()}</p>}
-      {summary.finishReason !== null && <p>finish reason {summary.finishReason}</p>}
-      {summary.error !== null && (
-        <p className="whitespace-pre-wrap font-mono tabular-nums text-hot">{summary.error}</p>
-      )}
-    </div>
   );
 }

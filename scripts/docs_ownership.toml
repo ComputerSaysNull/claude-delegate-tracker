@@ -89,6 +89,7 @@ owns = [
   "src/server/poller.ts",
   "src/server/app.ts",
   "src/server/main.ts",
+  "src/web/DetailsBar.tsx",
   "src/web/**",
 ]
 covers_not = """

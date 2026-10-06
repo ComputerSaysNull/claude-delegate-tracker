@@ -201,7 +201,7 @@ export default function App() {
           />
         </nav>
         <main
-          className={`${selected === null ? "hidden lg:flex" : "flex"} min-w-0 flex-col px-4 py-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
+          className={`${selected === null ? "hidden lg:flex" : "flex"} min-w-0 flex-col px-4 pb-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
         >
           {selected === null ? (
             <p className="text-muted">Choose a delegation on the left to follow it.</p>

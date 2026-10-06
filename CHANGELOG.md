@@ -9,6 +9,24 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #35 — 2026-10-06 — feat: move a delegation's details into a bar beside the conversation
+
+### Changed
+
+- **A delegation's details sit in a bar beside the conversation, which a Details button
+  folds away.** The header carried the meta line, the turn and time bars and the heartbeat,
+  and pushed the conversation down; the run's figures waited in a card at the bottom. The
+  header now keeps the state and the title. The bar adds how many tool calls the run made
+  and how many failed, its cache hits and its retries, live. It is a card that stays put
+  from the first scroll. The choice to fold it is remembered in the browser; a narrow
+  desktop starts folded, and on a phone the details fold open under the title.
+
+### Fixed
+
+- **A strip of the conversation showed above the sticky header while scrolling.** The pane
+  had padding above the header, and the header stuck below it. The padding moved into the
+  header.
+
 ## #34 — 2026-10-05 — feat: tint every card by its state and soften the light theme
 
 ### Changed

@@ -91,6 +91,13 @@ describe("App", () => {
     expect(listPane().className).toMatch(/\blg:max-w-/);
   });
 
+  // The detail pane scrolls under a sticky header; padding above that header would leave a
+  // strip where the scrolled conversation shows through.
+  it("puts no top padding on the detail pane, so nothing shows above the sticky header", () => {
+    render(<App />);
+    expect(detailPane().className).not.toMatch(/(^|\s)(lg:)?(p|py|pt)-\d/);
+  });
+
   it("on a phone shows the list until one opens, then only the delegation", () => {
     render(<App />);
     expect(listPane().className).not.toMatch(/(^|\s)hidden\b/);

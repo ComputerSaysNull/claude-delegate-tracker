@@ -129,7 +129,7 @@ describe("the conversation", () => {
     render(<StreamViewBody view={view({ row: row({ state: "failed" }), summary: summary({ ok: false, error: "backend unreachable" }) })} />);
     const [end] = message("end");
     expect(end.textContent).toMatch(/Failed/);
-    expect(end.textContent).toContain("backend unreachable");
+    expect(screen.getByRole("complementary", { name: "Details" }).textContent).toContain("backend unreachable");
   });
 
   it("heads each turn with the model, its number and when it started", () => {
@@ -141,7 +141,7 @@ describe("the conversation", () => {
 
   it("puts a call's main argument on the same line as its name", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ name: "read_file", args: [["path", "src/dates.py"]] })] })] })} />);
-    const name = screen.getByText("read_file");
+    const name = within(screen.getByRole("list", { name: "Tool calls" })).getByText("read_file");
     expect(name.parentElement!.textContent).toContain("src/dates.py");
   });
 
@@ -241,33 +241,33 @@ describe("the header", () => {
 
   it("draws the turns as segments, as the list does", () => {
     render(<StreamViewBody view={view({ row: row({ turns: "2 of 8" }) })} />);
-    const bar = within(screen.getByRole("banner")).getByRole("progressbar", { name: "Turns" });
+    const bar = within(screen.getByRole("complementary", { name: "Details" })).getByRole("progressbar", { name: "Turns" });
     expect(bar.children).toHaveLength(8);
   });
 
   it("shows the turns as a bar", () => {
     render(<StreamViewBody view={view({ row: row({ turns: "2 of 8" }) })} />);
-    const bar = within(screen.getByRole("banner")).getByRole("progressbar", { name: "Turns" });
+    const bar = within(screen.getByRole("complementary", { name: "Details" })).getByRole("progressbar", { name: "Turns" });
     expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax")]).toEqual(["2", "8"]);
   });
 
   it("shows the time used as a bar, with the time left", () => {
     render(<StreamViewBody view={view({ row: row({ left: "7m10s" }), turns: [turn(1, { closed: false, clock: { elapsed: 170, of: 600 } })] })} />);
-    const banner = screen.getByRole("banner");
-    const bar = within(banner).getByRole("progressbar", { name: "Time" });
+    const aside = screen.getByRole("complementary", { name: "Details" });
+    const bar = within(aside).getByRole("progressbar", { name: "Time" });
     expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax")]).toEqual(["170", "600"]);
-    expect(banner.textContent).toContain("7m10s left");
+    expect(aside.textContent).toContain("7m10s left");
   });
 
   it("takes the time bar from the open turn, the last one", () => {
     render(<StreamViewBody view={view({ turns: [turn(1), turn(2, { closed: false, clock: { elapsed: 300, of: 600 } })] })} />);
-    const bar = within(screen.getByRole("banner")).getByRole("progressbar", { name: "Time" });
+    const bar = within(screen.getByRole("complementary", { name: "Details" })).getByRole("progressbar", { name: "Time" });
     expect(bar.getAttribute("aria-valuenow")).toBe("300");
   });
 
   it("shows the open turn's heartbeat", () => {
     render(<StreamViewBody view={view({ turns: [turn(1), turn(2, { closed: false, heartbeat: "12 chunks · ends in 9m" })] })} />);
-    expect(screen.getByRole("banner").textContent).toContain("12 chunks · ends in 9m");
+    expect(screen.getByRole("complementary", { name: "Details" }).textContent).toContain("12 chunks · ends in 9m");
   });
 
   it("drops the time bar and the heartbeat once the run has ended, even mid-turn", () => {
@@ -278,14 +278,14 @@ describe("the header", () => {
       summary: summary({ ok: false, error: "cancelled" }),
     });
     render(<StreamViewBody view={stopped} />);
-    const banner = screen.getByRole("banner");
-    expect(within(banner).queryByRole("progressbar", { name: "Time" })).toBeNull();
-    expect(banner.textContent).not.toContain("ends in 5m");
+    const aside = screen.getByRole("complementary", { name: "Details" });
+    expect(within(aside).queryByRole("progressbar", { name: "Time" })).toBeNull();
+    expect(aside.textContent).not.toContain("ends in 5m");
   });
 
   it("shows no bars for a run that has none", () => {
     render(<StreamViewBody view={view({ row: row({ state: "ok" }) })} />);
-    expect(within(screen.getByRole("banner")).queryByRole("progressbar")).toBeNull();
+    expect(within(screen.getByRole("complementary", { name: "Details" })).queryByRole("progressbar")).toBeNull();
   });
 });
 
