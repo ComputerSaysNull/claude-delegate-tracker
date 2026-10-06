@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #40 — 2026-10-06 — feat: gather the list's filters into one panel
+
+### Changed
+
+- **The list's filters sit in one panel behind a Filters button.** A states menu and two
+  loose dropdowns crowded the search box, two rows deep on a phone. The search box stays in
+  view; the button counts the filters that are on and opens one panel with the states,
+  the kind and the model. Each active filter shows as a chip under the search box, and
+  pressing the chip removes it.
+
 ## #39 — 2026-10-06 — fix: draw the cluster charts across their whole width and round the node figures
 
 ### Fixed
