@@ -4,7 +4,7 @@
 // details sit in a bar beside the conversation, folded by the header's Details button.
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useState, type SyntheticEvent } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
@@ -144,6 +144,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
             <Fragment key={turn.n}>
               <DelegationMessage
                 turn={turn}
+                name={view.name}
                 model={row.model}
                 waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
               />
@@ -201,10 +202,12 @@ function CallerAnswer({ answer }: { answer: NonNullable<TurnView["answer"]> }) {
 // `waitingFor` is how long the run has waited for its caller, while it still waits.
 function DelegationMessage({
   turn,
+  name,
   model,
   waitingFor,
 }: {
   turn: TurnView;
+  name: string;
   model: string | null;
   waitingFor?: string | null;
 }) {
@@ -229,8 +232,14 @@ function DelegationMessage({
   const hasDetails = turn.budget !== null || turn.attempts !== null || turn.repeated !== null || turn.evicted !== null;
   // A call to ask_caller is not drawn once its question is shown in this message.
   const calls = turn.question !== null ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
-  const thinking = turn.partial !== null && turn.partial.reasoning !== "";
+  const thinkingChars = turn.thinking !== null
+    ? turn.thinking.chars
+    : turn.partial !== null && turn.partial.reasoning !== ""
+      ? turn.partial.reasoning.length
+      : null;
+  const thinkingLabel = thinkingChars !== null ? `Thinking · ${thinkingChars.toLocaleString("en-US")} characters` : null;
   // A turn whose only call was its question has nothing for a bubble to hold: draw none.
+  const thinking = thinkingLabel !== null;
   const hasBubble = thinking || calls.length > 0 || writing || answer !== null;
   return (
     <li data-from="delegation" className="flex gap-3">
@@ -241,14 +250,18 @@ function DelegationMessage({
         <p className="text-xs text-muted">{head.join(" · ")}</p>
         {hasBubble && (
         <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
-          {thinking && turn.partial !== null && (
-            <details>
-              <summary className="cursor-pointer text-sm text-muted">
-                <ChevronRight size={14} />
-                Thinking
-              </summary>
-              <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial.reasoning}</pre>
-            </details>
+          {thinkingLabel !== null && (
+            turn.thinking !== null ? (
+              <ThinkingFold name={name} turn={turn} label={thinkingLabel} />
+            ) : (
+              <details className="group">
+                <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden">
+                  <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
+                  {thinkingLabel}
+                </summary>
+                <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial?.reasoning ?? ""}</pre>
+              </details>
+            )
           )}
           {calls.length > 0 && (
             <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
@@ -316,6 +329,44 @@ function DelegationMessage({
         )}
       </div>
     </li>
+  );
+}
+
+// A finished turn's thinking, fetched once when the reader first opens the fold, so the view
+// the page holds stays small. The open turn's reasoning is shown directly in its own fold.
+type ThinkingState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "loaded"; text: string }
+  | { kind: "failed" };
+
+function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; label: string }) {
+  const [state, setState] = useState<ThinkingState>({ kind: "idle" });
+  const onToggle = (e: SyntheticEvent<HTMLDetailsElement>) => {
+    // Loads on the first opening, and again on an opening after a failure.
+    if (!e.currentTarget.open || state.kind === "loading" || state.kind === "loaded") return;
+    setState({ kind: "loading" });
+    fetch(`/api/streams/${encodeURIComponent(name)}/thinking/${turn.n}`)
+      .then((r) => {
+        if (!r.ok) throw new Error("not ok");
+        return r.json() as Promise<{ text: string }>;
+      })
+      .then((data) => setState({ kind: "loaded", text: data.text }))
+      .catch(() => setState({ kind: "failed" }));
+  };
+  return (
+    <details className="group" onToggle={onToggle}>
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden">
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
+        {label}
+      </summary>
+      {state.kind === "loading" && <p className="text-sm text-muted">Loading…</p>}
+      {state.kind === "loaded" && <pre className="whitespace-pre-wrap text-sm text-muted">{state.text}</pre>}
+      {state.kind === "failed" && <p className="text-sm text-muted">Could not load the thinking.</p>}
+      {turn.thinking !== null && !turn.thinking.complete && (
+        <p className="text-xs text-muted">The last moments of thinking before the turn ended may be missing.</p>
+      )}
+    </details>
   );
 }
 

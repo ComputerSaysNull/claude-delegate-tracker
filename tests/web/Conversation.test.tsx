@@ -19,7 +19,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
-    n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null,
+    n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null,
     toolTime: null, attempts: null, repeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, question: null, answer: null, ...overrides,
   };
@@ -69,7 +69,7 @@ describe("the conversation", () => {
 
   it("folds the open turn's thinking away", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { closed: false, partial: { reasoning: "weighing the wrappers", answer: "" } })] })} />);
-    const fold = screen.getByText("Thinking").closest("details")!;
+    const fold = screen.getByText(/^Thinking · /).closest("details")!;
     expect(fold.open).toBe(false);
     expect(fold.textContent).toContain("weighing the wrappers");
   });

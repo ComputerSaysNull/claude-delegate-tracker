@@ -47,6 +47,7 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     subscribe: () => () => {},
     view: () => null,
     follow: () => null,
+    thinking: () => null,
     history: () => null,
     clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
     cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
@@ -383,5 +384,49 @@ describe("stream view routes", () => {
     const app = makeApp();
     const res = await app.request("/api/streams/20261001T120000.000-a.jsonl", { method: "POST", ...goodHost });
     expect(res.status).toBe(405);
+  });
+});
+
+describe("thinking route", () => {
+  it("serves the thinking text for a known name and turn", async () => {
+    const thinking = vi.fn((name: string, turn: number) =>
+      name === "s.jsonl" && turn === 2 ? "Look at the file." : null,
+    );
+    const app = makeApp({ thinking });
+    const res = await app.request("/api/streams/s.jsonl/thinking/2", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ text: "Look at the file." });
+    expect(thinking).toHaveBeenCalledWith("s.jsonl", 2);
+  });
+
+  it("answers 404 JSON when deps.thinking returns null", async () => {
+    const app = makeApp({ thinking: () => null });
+    const res = await app.request("/api/streams/s.jsonl/thinking/2", goodHost);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+  });
+
+  it.each(["0", "-1", "1.5", "01", "1e3", "abc"])(
+    "rejects a bad turn %s without calling deps.thinking",
+    async (turn) => {
+      const thinking = vi.fn(() => "Look at the file.");
+      const app = makeApp({ thinking });
+      const res = await app.request(`/api/streams/s.jsonl/thinking/${turn}`, goodHost);
+      expect(res.status).toBe(404);
+      expect(await res.json()).toEqual({ error: "not found" });
+      expect(thinking).not.toHaveBeenCalled();
+    },
+  );
+
+  it("sets no access-control-allow-origin", async () => {
+    const app = makeApp({ thinking: () => "Look at the file." });
+    const res = await app.request("/api/streams/s.jsonl/thinking/2", goodHost);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("rejects a foreign host with 403", async () => {
+    const app = makeApp({ thinking: () => "Look at the file." });
+    const res = await app.request("/api/streams/s.jsonl/thinking/2", { headers: { host: "evil.example" } });
+    expect(res.status).toBe(403);
   });
 });

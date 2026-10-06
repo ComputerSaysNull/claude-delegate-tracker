@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyLine, listRow, newStreamState, type StreamState } from "../../src/server/streams.ts";
-import { applyViewEvent, buildView, diffView, newViewState, type StreamView, type ViewState } from "../../src/server/view.ts";
+import { applyViewEvent, buildView, diffView, newViewState, turnThinking, type StreamView, type ViewState } from "../../src/server/view.ts";
 
 const NOW = new Date("2026-10-01T13:00:09.000Z");
 const QUIET = 120;
@@ -865,5 +865,85 @@ describe("partial reply", () => {
       reasoning: "The test counts attempts; the loop counts time.",
       answer: "The loop retries until the deadline, ",
     });
+  });
+});
+
+describe("a closed turn's thinking", () => {
+  it("joins a closed turn's partial reasoning in order, incomplete", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(v.turns[0].closed).toBe(true);
+    expect(v.turns[0].thinking).toEqual({ chars: 17, complete: false });
+  });
+
+  it("is complete when a partial carried answer text", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "Done" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "Done" },
+    ]);
+    expect(v.turns[0].thinking).toEqual({ chars: 17, complete: true });
+  });
+
+  it("is null when the partials carried only answer text", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "", answer: "The answer" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "The answer" },
+    ]);
+    expect(v.turns[0].thinking).toBeNull();
+  });
+
+  it("is null for an open turn, whose partial still holds the reasoning", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "weighing the wrappers", answer: "" },
+    ]);
+    expect(v.turns[0].closed).toBe(false);
+    expect(v.turns[0].thinking).toBeNull();
+    expect(v.turns[0].partial).toEqual({ reasoning: "weighing the wrappers", answer: "" });
+  });
+
+  it("turnThinking joins a closed turn's partial reasoning in order", () => {
+    const { view } = build([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(turnThinking(view, 1)).toBe("Look at the file.");
+  });
+
+  it("turnThinking is null for an open turn", () => {
+    const { view } = build([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "weighing the wrappers", answer: "" },
+    ]);
+    expect(turnThinking(view, 1)).toBeNull();
+  });
+
+  it("turnThinking is null for a turn number that does not exist", () => {
+    const { view } = build([start()]);
+    expect(turnThinking(view, 1)).toBeNull();
+  });
+
+  it("turnThinking is null for a closed turn without reasoning", () => {
+    const { view } = build([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(turnThinking(view, 1)).toBeNull();
   });
 });

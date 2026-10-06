@@ -70,6 +70,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
 | `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name, ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. Each is read whole on request and never polled. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
+| `GET /api/streams/<name>/thinking/<turn>` | One finished turn's thinking, as text, fetched only when the page opens its fold. `<name>` is looked up among the names the backend listed itself and `<turn>` among the turns it holds; anything else is `404`. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
 | `GET /api/cluster/history` | The same figures over time, for the charts. See "Figures over time". |
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
@@ -297,7 +298,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### The reply as it is written
 
-- `partial` events add to the open turn's reasoning and answer. Show the answer as it grows; fold the reasoning away until opened.
+- Every turn whose partials carried reasoning keeps it in a fold labelled with its length in characters. A finished turn's thinking is the partials' reasoning joined, fetched from `/api/streams/<name>/thinking/<turn>` only when the reader opens its fold, so a delegation's view stays small. When none of its partials carried reply text the fold notes that the last moments of thinking may be missing, because a partial carries only the text since the previous one.
 - When the turn's `turn` event lands, its `text` replaces the partial text, even where they differ: a retried attempt can leave text in `partial` that never reached the reply.
 - A patch carries only the text added since the previous one.
 

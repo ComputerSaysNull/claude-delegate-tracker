@@ -62,6 +62,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     closed: false,
     heartbeat: null,
     partial: null,
+    thinking: null,
     toolTime: null,
     attempts: null,
     repeated: null,

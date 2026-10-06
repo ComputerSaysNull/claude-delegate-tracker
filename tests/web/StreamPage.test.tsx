@@ -36,6 +36,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     closed: false,
     heartbeat: null,
     partial: null,
+    thinking: null,
     toolTime: null,
     attempts: null,
     repeated: null,
@@ -285,7 +286,7 @@ describe("StreamViewBody", () => {
     const details = reasoning.closest("details");
     expect(details).not.toBeNull();
     expect((details as HTMLDetailsElement).open).toBe(false);
-    expect(screen.getByText("Thinking").closest("details")).toBe(details);
+    expect(screen.getByText(/^Thinking · /).closest("details")).toBe(details);
   });
 
   it("shows the final reply and no writing label for a closed turn", () => {

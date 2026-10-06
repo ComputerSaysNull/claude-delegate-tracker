@@ -23,6 +23,8 @@ export interface AppDeps {
   // Both return null for a name the backend did not list itself.
   view: (name: string) => StreamView | null;
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
+  // A finished turn's thinking text; null for a name the backend did not list itself or a turn still open.
+  thinking: (name: string, turn: number) => string | null;
   history: (before: string) => HistoryPage | null;
   cluster: () => Cluster;
   clusterHistory: () => ClusterHistory;
@@ -54,7 +56,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, history, cluster, clusterHistory, subscribeCluster } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -93,6 +95,14 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/streams/:name", (c) => {
     const found = view(c.req.param("name"));
     return found === null ? c.json({ error: "not found" }, 404) : c.json(found);
+  });
+
+  // A finished turn's thinking, fetched only when the reader opens its fold, so a view stays small.
+  app.get("/api/streams/:name/thinking/:turn", (c) => {
+    const turn = c.req.param("turn");
+    if (!/^[1-9][0-9]{0,5}$/.test(turn)) return c.json({ error: "not found" }, 404);
+    const text = thinking(c.req.param("name"), Number(turn));
+    return text === null ? c.json({ error: "not found" }, 404) : c.json({ text });
   });
 
   // Stream the list to the page so it updates without a reload; with ?stream=<name>,
