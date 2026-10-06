@@ -9,6 +9,26 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #39 — 2026-10-06 — fix: draw the cluster charts across their whole width and round the node figures
+
+### Fixed
+
+- **The cluster charts showed only a short squiggle at their right edge.** The history held
+  the whole hour; uPlot fits the y-axis to the data, so an idle stretch at 0 sat on the
+  canvas's bottom edge and was clipped, and only the last burst showed. Each chart now
+  leaves room above and below its values, and KV-cache use is drawn on a fixed 0–100
+  scale.
+
+### Changed
+
+- **CPU and GPU use and temperatures are whole numbers**, "15%" and "77°C" instead of
+  "14.5%" and "77.2 °C"; a temperature sits large above its caption, like the donuts, and
+  the model server's charts line up at one height. A node's GPU figures now lead its CPU's.
+- **A donut's ring is a light shade of its load colour**, so its state reads at a glance;
+  it was grey.
+- **The nodes card has one "as of" line**, from the newest healthy read; a node shows its
+  own line only when it is unreachable or its host key is refused.
+
 ## #38 — 2026-10-06 — feat: mark a retried turn and say why it was retried
 
 ### Added

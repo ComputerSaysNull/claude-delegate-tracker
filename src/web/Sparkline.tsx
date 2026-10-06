@@ -5,12 +5,37 @@ import { useEffect, useRef } from "react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
+// uPlot fits the y axis to the data, so a flat stretch at 0 sits on the canvas's bottom edge
+// and is clipped (an idle hour showed only its last burst). Leave room above and below instead:
+// a fixed range is widened by 5% of its span, a non-negative one is padded by 10% on each side,
+// a range crossing zero is padded by 10% of its own span, and a zero-only range is lifted to a
+// positive floor.
+export function sparkRange(
+  min: number | null,
+  max: number | null,
+  fixed?: [number, number],
+): [number, number] {
+  if (fixed !== undefined) {
+    const [a, b] = fixed;
+    const pad = (b - a) * 0.05;
+    return [a - pad, b + pad];
+  }
+  const top = Math.max(max ?? 0, 1);
+  if (min === null || min >= 0) {
+    return [-top * 0.1, top * 1.1];
+  }
+  const span = top - min;
+  return [min - span * 0.1, top + span * 0.1];
+}
+
 export function Sparkline({
   data,
   label,
+  fixed,
 }: {
   data: [number[], (number | null)[]];
   label: string;
+  fixed?: [number, number];
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<uPlot | null>(null);
@@ -40,6 +65,12 @@ export function Sparkline({
           axes: [{ show: false }, { show: false }],
           legend: { show: false },
           cursor: { show: false },
+          scales: {
+            y: {
+              // Leave room above and below the values; see sparkRange.
+              range: (_u: uPlot, min: number, max: number) => sparkRange(min, max, fixed),
+            },
+          },
           // uPlot draws on a canvas, which cannot read a CSS variable: take the token's value.
           series: [{}, { spanGaps: false, stroke: getComputedStyle(el).getPropertyValue("--muted").trim() || "currentColor" }],
         },
@@ -50,7 +81,7 @@ export function Sparkline({
     return () => {
       cancelled = true;
     };
-  }, [data]);
+  }, [data, fixed]);
 
   // Follow the container's width: the chart is drawn at the width it had when created, so a
   // phone turned sideways or a resized window would otherwise leave it too wide or too narrow.

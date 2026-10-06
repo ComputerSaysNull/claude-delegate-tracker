@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { Sparkline } from "../../src/web/Sparkline.tsx";
+import { Sparkline, sparkRange } from "../../src/web/Sparkline.tsx";
 
 interface RecordedChart {
   options: unknown;
@@ -61,6 +61,33 @@ function lineSeries(opts: unknown): { spanGaps?: boolean }[] {
   return series;
 }
 
+// The y range a sparkline's uPlot is given: a zero-only series is lifted off the canvas's
+// bottom edge, a non-negative one is padded by 10% on each side, a fixed range is widened by
+// 5% of its span, and a range crossing zero is padded by 10% of its own span.
+describe("y range", () => {
+  it("pads a zero-only range up to a positive floor", () => {
+    expect(sparkRange(0, 0)).toEqual([-0.1, 1.1]);
+  });
+
+  it("pads a non-negative range by 10% on each side", () => {
+    const [lo, hi] = sparkRange(0, 45);
+    expect(lo).toBeCloseTo(-4.5);
+    expect(hi).toBeCloseTo(49.5);
+  });
+
+  it("pads a null range to the positive floor", () => {
+    expect(sparkRange(null, null)).toEqual([-0.1, 1.1]);
+  });
+
+  it("widens a fixed range by 5% of its span on both sides", () => {
+    expect(sparkRange(3, 7, [0, 100])).toEqual([-5, 105]);
+  });
+
+  it("pads a range that crosses zero by 10% of its span", () => {
+    expect(sparkRange(-2, 8)).toEqual([-3, 9]);
+  });
+});
+
 describe("Sparkline", () => {
   beforeEach(() => {
     charts.length = 0;
@@ -112,6 +139,20 @@ describe("Sparkline", () => {
     render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
     await waitFor(() => expect(charts.length).toBe(1));
     expect(lineSeries(charts[0].options).some((s) => s.spanGaps === false)).toBe(true);
+  });
+
+  it("passes a y range function that pads a zero-only series", async () => {
+    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const range = (charts[0].options as { scales: { y: { range: (u: unknown, min: number, max: number) => [number, number] } } }).scales.y.range;
+    expect(range(null, 0, 0)).toEqual([-0.1, 1.1]);
+  });
+
+  it("uses a fixed y range when one is given", async () => {
+    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" fixed={[0, 100]} />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const range = (charts[0].options as { scales: { y: { range: (u: unknown, min: number, max: number) => [number, number] } } }).scales.y.range;
+    expect(range(null, 0, 0)).toEqual([-5, 105]);
   });
 
   it("creates no chart for fewer than two points, but still renders the div", async () => {

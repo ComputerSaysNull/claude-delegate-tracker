@@ -19,6 +19,8 @@ function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
   };
 }
 
+const LIMITS = { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 };
+
 describe("NodePanel", () => {
   afterEach(cleanup);
 
@@ -37,19 +39,44 @@ describe("NodePanel", () => {
 
   it("carries a percent sign on CPU and GPU use", () => {
     render(<NodePanel nodes={[figures({ cpuPercent: 61.5, gpuPercent: 7 })]} />);
-    expect(screen.getByText(`${(61.5).toLocaleString()}%`)).toBeTruthy();
-    expect(screen.getByText(`${(7).toLocaleString()}%`)).toBeTruthy();
+    expect(screen.getByText("62%")).toBeTruthy();
+    expect(screen.getByText("7%")).toBeTruthy();
   });
 
   it("carries °C on both temperatures", () => {
     render(<NodePanel nodes={[figures({ cpuTempC: 51.5, gpuTempC: 57 })]} />);
-    expect(screen.getByText(`${(51.5).toLocaleString()} °C`)).toBeTruthy();
-    expect(screen.getByText(`${(57).toLocaleString()} °C`)).toBeTruthy();
+    expect(screen.getByText("52°C")).toBeTruthy();
+    expect(screen.getByText("57°C")).toBeTruthy();
+  });
+
+  // Like the donuts: the figure large and bold on top, its caption small below it.
+  it("puts each temperature above its caption, large and bold", () => {
+    render(<NodePanel nodes={[figures({ name: "n1", cpuTempC: 52, gpuTempC: 74 })]} />);
+    for (const [caption, text] of [["CPU", "52°C"], ["GPU", "74°C"]]) {
+      const value = screen.getByLabelText(`n1 ${caption} temperature`);
+      expect(value.textContent).toBe(text);
+      expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-2xl", "font-semibold"]));
+      expect(value.nextElementSibling?.textContent).toBe(`${caption} temp`);
+    }
+  });
+
+  // The GPU does the model's work, so its figures lead: use and heat, then the CPU's.
+  it("orders a node's figures GPU use, GPU temp, CPU use, CPU temp", () => {
+    render(<NodePanel nodes={[figures({ name: "n1", cpuPercent: 12, gpuPercent: 86, cpuTempC: 52, gpuTempC: 74 })]} />);
+    const order = [
+      screen.getByRole("img", { name: "GPU use 86 percent" }),
+      screen.getByLabelText("n1 GPU temperature"),
+      screen.getByRole("img", { name: "CPU use 12 percent" }),
+      screen.getByLabelText("n1 CPU temperature"),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
   });
 
   it("names the window on the CPU use line", () => {
     render(<NodePanel nodes={[figures({ cpuPercent: 61.5, cpuWindowSeconds: 5 })]} />);
-    expect(screen.getByText(`${(61.5).toLocaleString()}%`)).toBeTruthy();
+    expect(screen.getByText("62%")).toBeTruthy();
     expect(screen.getByText(`over ${(5).toLocaleString()}s`)).toBeTruthy();
   });
 
@@ -87,6 +114,59 @@ describe("NodePanel", () => {
     expect(screen.getByText("beta")).toBeTruthy();
     expect(screen.getByText(`${(10).toLocaleString()}%`)).toBeTruthy();
     expect(screen.getByText(`${(20).toLocaleString()}%`)).toBeTruthy();
+  });
+
+  it("rounds CPU and GPU use to whole percents in the donut and its label", () => {
+    render(<NodePanel nodes={[figures({ cpuPercent: 14.5, gpuPercent: 86.5 })]} limits={LIMITS} />);
+    expect(screen.getByRole("img", { name: "CPU use 15 percent" }).textContent).toContain("15%");
+    expect(screen.getByRole("img", { name: "GPU use 87 percent" }).textContent).toContain("87%");
+  });
+
+  it("rounds temperatures to whole degrees with no space before °C", () => {
+    render(<NodePanel nodes={[figures({ cpuTempC: 77.2, gpuTempC: 44.5 })]} />);
+    expect(screen.getByText("77°C")).toBeTruthy();
+    expect(screen.getByText("45°C")).toBeTruthy();
+  });
+
+  it("tints the donut's track with the fill's level colour", () => {
+    render(<NodePanel nodes={[figures({ cpuPercent: 14.5 })]} limits={LIMITS} />);
+    const donut = screen.getByRole("img", { name: "CPU use 15 percent" });
+    const circles = donut.querySelectorAll("circle");
+    expect(circles).toHaveLength(2);
+    const [track, ring] = circles;
+    expect(track.getAttribute("class")).toMatch(/\btext-state-ok\b/);
+    expect(track.getAttribute("class")).toMatch(/\bopacity-25\b/);
+    expect(ring.getAttribute("class")).toMatch(/\btext-state-ok\b/);
+  });
+
+  it("shows one as-of line for the whole panel, from the newest healthy read", () => {
+    render(
+      <NodePanel
+        nodes={[
+          figures({ name: "alpha", status: "ok", readAt: "2024-01-15T12:00:00.000Z" }),
+          figures({ name: "beta", status: "ok", readAt: "2024-01-15T13:00:00.000Z" }),
+        ]}
+      />
+    );
+    expect(screen.getAllByText(/as of/).length).toBe(1);
+    expect(screen.getByText(`as of ${localTime("2024-01-15T13:00:00.000Z")}`)).toBeTruthy();
+  });
+
+  it("keeps a failing node's own status line beside the panel's as-of line", () => {
+    render(
+      <NodePanel
+        nodes={[
+          figures({ name: "alpha", status: "ok", readAt: "2024-01-15T13:00:00.000Z" }),
+          figures({ name: "beta", status: "unreachable", readAt: "2024-01-15T14:00:00.000Z" }),
+        ]}
+      />
+    );
+    expect(screen.getAllByText(/as of/).length).toBe(1);
+    // The unreachable node read last, yet the panel's line keeps the healthy node's time.
+    expect(screen.getByText(`as of ${localTime("2024-01-15T13:00:00.000Z")}`)).toBeTruthy();
+    expect(
+      screen.getByText(`Unreachable; no figures since ${localTime("2024-01-15T14:00:00.000Z")}`)
+    ).toBeTruthy();
   });
 
   it("shows the waiting line for a null nodes value", () => {
