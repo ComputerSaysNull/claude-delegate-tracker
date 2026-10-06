@@ -41,7 +41,7 @@ export function useNotifications(rows: ListRow[], onOpen: (name: string) => void
   }, [rows]);
 }
 
-export function NotifyButton() {
+export function NotifyButton({ iconOnly = false }: { iconOnly?: boolean }) {
   const [permission, setPermission] = useState(() => (available() ? Notification.permission : null));
   if (permission === null || permission === "granted") return null;
   if (permission === "denied") return <span className="rounded-full border border-line px-3 py-1 text-sm text-muted">Notifications blocked</span>;
@@ -50,10 +50,11 @@ export function NotifyButton() {
       type="button"
       onClick={async () => setPermission(await Notification.requestPermission())}
       title="Notify me when a delegation ends"
-      className="inline-flex items-center gap-1.5 rounded-full border border-line px-3 py-1 text-sm text-accent hover:bg-line/50"
+      aria-label="Notify me"
+      className={`inline-flex items-center gap-1.5 rounded-full border border-line text-sm text-accent hover:bg-line/50 ${iconOnly ? "h-11 w-11 shrink-0 justify-center" : "px-3 py-1"}`}
     >
-      <Bell size={14} aria-hidden="true" />
-      Notify me
+      <Bell size={iconOnly ? 18 : 14} aria-hidden="true" />
+      <span className={iconOnly ? "hidden lg:inline" : undefined}>Notify me</span>
     </button>
   );
 }

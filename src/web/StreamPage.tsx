@@ -70,7 +70,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page pt-4 pb-3">
         <div className="flex items-center gap-2">
           <StateBadge state={row.state} />
-          <h2 className="min-w-0 truncate text-xl font-semibold" title={row.title}>
+          <h2 className="min-w-0 lg:truncate text-xl font-semibold" title={row.title}>
             {row.title}
           </h2>
           <button
