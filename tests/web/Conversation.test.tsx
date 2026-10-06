@@ -335,3 +335,54 @@ describe("following the reply", () => {
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
   });
 });
+
+// On a desktop the detail pane scrolls itself and the window does not move at all, so
+// following must watch and scroll the pane (plans#55).
+describe("following the reply in a pane that scrolls itself", () => {
+  let windowScrollTo: ReturnType<typeof vi.spyOn>;
+  const grow = (text: string) => view({ turns: [turn(1, { closed: false, partial: { reasoning: "", answer: text } })] });
+  const inPane = (v: StreamView) => (
+    <div data-testid="pane" style={{ overflowY: "auto" }}>
+      <StreamViewBody view={v} />
+    </div>
+  );
+  const pane = () => {
+    const el = screen.getByTestId("pane");
+    Object.defineProperty(el, "scrollHeight", { value: 2000, configurable: true });
+    Object.defineProperty(el, "clientHeight", { value: 800, configurable: true });
+    return el;
+  };
+
+  beforeEach(() => {
+    windowScrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    Element.prototype.scrollTo = vi.fn();
+  });
+
+  afterEach(() => windowScrollTo.mockRestore());
+
+  it("keeps the newest text in sight by scrolling the pane, not the window", () => {
+    const { rerender } = render(inPane(grow("one")));
+    const el = pane();
+    el.scrollTop = 1200;
+    vi.mocked(el.scrollTo).mockClear();
+    windowScrollTo.mockClear();
+    rerender(inPane(grow("one two")));
+    expect(el.scrollTo).toHaveBeenCalledWith({ top: 2000 });
+    expect(windowScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("stops following when the reader scrolls the pane up, and Jump to latest scrolls the pane", () => {
+    const { rerender } = render(inPane(grow("one")));
+    const el = pane();
+    el.scrollTop = 200;
+    act(() => {
+      el.dispatchEvent(new Event("scroll"));
+    });
+    vi.mocked(el.scrollTo).mockClear();
+    rerender(inPane(grow("one two")));
+    expect(el.scrollTo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    expect(el.scrollTo).toHaveBeenCalledWith({ top: 2000 });
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+});
