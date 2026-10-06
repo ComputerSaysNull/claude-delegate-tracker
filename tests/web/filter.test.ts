@@ -18,6 +18,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
+    workspace: null,
     ...overrides,
   };
 }
@@ -63,8 +64,20 @@ describe("filterRows", () => {
     expect(filterRows(ROWS, { ...NO_FILTER, model: "claude-sonnet-4" }).map((r) => r.name)).toEqual(["a", "c"]);
   });
 
+  it("keeps only rows whose workspace equals the repo", () => {
+    const rows = [
+      row({ name: "a", workspace: "web-shop" }),
+      row({ name: "b", workspace: "api" }),
+      row({ name: "c", workspace: null }),
+    ];
+    expect(filterRows(rows, { ...NO_FILTER, repo: "web-shop" }).map((r) => r.name)).toEqual(["a"]);
+    expect(filterRows(rows, { ...NO_FILTER, repo: "api" }).map((r) => r.name)).toEqual(["b"]);
+    // A repo of null means no repo filter, so every row is kept.
+    expect(filterRows(rows, { ...NO_FILTER, repo: null }).map((r) => r.name)).toEqual(["a", "b", "c"]);
+  });
+
   it("combines all filters with AND", () => {
-    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4" };
+    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null };
     expect(filterRows(ROWS, f).map((r) => r.name)).toEqual(["a"]);
   });
 
@@ -88,6 +101,7 @@ describe("isFiltering", () => {
     expect(isFiltering({ ...NO_FILTER, states: ["ok"] })).toBe(true);
     expect(isFiltering({ ...NO_FILTER, kind: "one-shot" })).toBe(true);
     expect(isFiltering({ ...NO_FILTER, model: "claude-opus-4" })).toBe(true);
+    expect(isFiltering({ ...NO_FILTER, repo: "web-shop" })).toBe(true);
   });
 });
 

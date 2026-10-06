@@ -60,7 +60,7 @@ describe("the group a delegation falls in", () => {
 function row(name: string, startedAt: string | null, state: ListRow["state"] = "ok"): ListRow {
   return {
     name, state, why: null, age: null, kind: "?", model: null, effort: null, title: name,
-    startedAt, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null,
+    startedAt, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
   };
 }
 

@@ -21,7 +21,14 @@ describe("reading the address", () => {
       states: ["failed", "live"],
       kind: "claude-code",
       model: "flash",
+      repo: null,
     });
+  });
+
+  it("reads the repo filter", () => {
+    expect(readAddress("/", "?repo=web-shop").filter.repo).toBe("web-shop");
+    expect(readAddress("/", "?repo=web-shop&state=failed").filter.repo).toBe("web-shop");
+    expect(readAddress("/", "").filter.repo).toBeNull();
   });
 
   it("ignores a state it does not know, and repeats", () => {
@@ -57,7 +64,14 @@ describe("writing the address", () => {
   });
 
   it("reads back what it wrote", () => {
-    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash" }, section: "list" as const };
+    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash", repo: null }, section: "list" as const };
+    const url = new URL(addressFor(address), "http://x");
+    expect(readAddress(url.pathname, url.search)).toEqual(address);
+  });
+
+  it("writes the repo filter and reads it back", () => {
+    const address = { selected: null, filter: { ...NO_FILTER, repo: "web-shop" }, section: "list" as const };
+    expect(addressFor(address)).toBe("/?repo=web-shop");
     const url = new URL(addressFor(address), "http://x");
     expect(readAddress(url.pathname, url.search)).toEqual(address);
   });

@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #46 — 2026-10-06 — feat: show which repo sent a delegation
+
+### Added
+
+- **A delegation shows the repo that sent it**, from the stream's new `start.workspace`.
+  The card named only the tool kind, so a list of delegations from several repos read the
+  same. The card now leads with the repo. The task and the caller's answer say which repo
+  they came from, a file chip shows the path inside the repo, the details bar has a Repo
+  row, and the filter panel filters by repo. A stream without the field shows the kind and
+  the full paths as before.
+
 ## #45 — 2026-10-06 — feat: say how long each turn thought
 
 ### Added

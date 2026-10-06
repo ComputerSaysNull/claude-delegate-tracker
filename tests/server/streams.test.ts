@@ -118,6 +118,24 @@ describe("the list", () => {
   });
 });
 
+describe("the workspace", () => {
+  it("is start.workspace when it is a non-empty string", () => {
+    expect(listRow("x", build([start({ workspace: "web-shop" })]), NOW, QUIET).workspace).toBe("web-shop");
+  });
+
+  it("is null when start.workspace is absent", () => {
+    expect(listRow("x", build([start()]), NOW, QUIET).workspace).toBeNull();
+  });
+
+  it("is null when start.workspace is not a string", () => {
+    expect(listRow("x", build([start({ workspace: 7 })]), NOW, QUIET).workspace).toBeNull();
+  });
+
+  it("is null when start.workspace is empty", () => {
+    expect(listRow("x", build([start({ workspace: "" })]), NOW, QUIET).workspace).toBeNull();
+  });
+});
+
 describe("the title", () => {
   const titleOf = (over: Record<string, unknown>) => listRow("x.jsonl", build([start(over)]), NOW, QUIET).title;
 
