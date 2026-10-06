@@ -69,6 +69,34 @@ function failures(t: Tokens): string[] {
   return out;
 }
 
+// The card's tint is the state's colour over the card at this share, as CARD_TINT draws it;
+// text and muted must stay readable on it.
+const CARD_SHARE: Record<string, number> = {
+  live: 0.12,
+  asking: 0.12,
+  queued: 0.1,
+  quiet: 0.08,
+  ok: 0.08,
+  failed: 0.08,
+  stopped: 0.08,
+  "timed out": 0.08,
+  "cut off": 0.08,
+};
+
+function tintFailures(t: Tokens): string[] {
+  const out: string[] = [];
+  for (const s of STATES) {
+    const stateVar = `state-${s.replace(" ", "-")}`;
+    if (t[stateVar] === undefined) { out.push(`--${stateVar} is missing`); continue; }
+    const tint = mix(t[stateVar], t.card, CARD_SHARE[s]);
+    for (const name of ["text", "muted"]) {
+      const c = contrast(t[name], tint);
+      if (c < 4.5) out.push(`--${name} on the ${s} tint: ${c.toFixed(2)}:1`);
+    }
+  }
+  return out;
+}
+
 describe("colour tokens", () => {
   it("defines the light and the dark set", () => {
     expect(Object.keys(LIGHT).length).toBeGreaterThan(10);
@@ -86,6 +114,19 @@ describe("colour tokens", () => {
   it("the check fires on a token too light to read", () => {
     expect(failures({ ...LIGHT, muted: "#c5ccd6" })).toContain(`--muted on card: ${contrast("#c5ccd6", LIGHT.card).toFixed(2)}:1`);
     expect(failures({ ...LIGHT, muted: undefined as unknown as string })).toContain("--muted is missing");
+  });
+
+  it("the light card is not pure white and differs from the page", () => {
+    expect(LIGHT.card).not.toBe("#ffffff");
+    expect(LIGHT.card).not.toBe(LIGHT.page);
+  });
+
+  it("text and muted are at least 4.5:1 on every state's card tint, in the light theme", () => {
+    expect(tintFailures(LIGHT)).toEqual([]);
+  });
+
+  it("text and muted are at least 4.5:1 on every state's card tint, in the dark theme", () => {
+    expect(tintFailures(DARK)).toEqual([]);
   });
 });
 

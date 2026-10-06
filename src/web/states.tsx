@@ -53,16 +53,28 @@ export const STATE_BADGE: Record<State, string> = {
   "cut off": "bg-state-cut-off/14 text-state-cut-off",
 };
 
-// A run in progress (running, asking its caller, queued) is tinted; a finished one stays a plain card and its icon tells the outcome.
+// Every card is tinted in its state's colour. A run in progress (running, asking, queued) is
+// tinted more strongly, so live work stands out from finished work. Class names are written
+// out in full so Tailwind finds them.
+export const CARD_TINT: Record<State, string> = {
+  live: "bg-state-live/12 border-state-live/45",
+  asking: "bg-state-asking/12 border-state-asking/45",
+  queued: "bg-state-queued/10 border-state-queued/35",
+  quiet: "bg-state-quiet/8 border-state-quiet/30",
+  ok: "bg-state-ok/8 border-state-ok/30",
+  failed: "bg-state-failed/8 border-state-failed/35",
+  stopped: "bg-state-stopped/8 border-state-stopped/30",
+  "timed out": "bg-state-timed-out/8 border-state-timed-out/35",
+  "cut off": "bg-state-cut-off/8 border-state-cut-off/35",
+};
+
 export function cardClass(state: State): string {
-  if (state === "live") return "bg-state-live/12 border-state-live/45";
-  if (state === "asking") return "bg-state-asking/12 border-state-asking/45";
-  if (state === "queued") return "bg-state-queued/10 border-state-queued/35";
-  return "bg-card border-line";
+  return CARD_TINT[state];
 }
 
 // The state's icon alone, coloured like the badge but without the badge's pill: the list's
-// cards lead with it. A running delegation is a filled dot, as the badge draws it.
+// cards lead with it. A running delegation is a filled dot, as the badge draws it. It pulses,
+// unless the system asks for reduced motion.
 export function StateIcon({ state, size = 16 }: { state: State; size?: number }) {
   const Icon = STATE_ICON[state];
   return (
@@ -72,7 +84,7 @@ export function StateIcon({ state, size = 16 }: { state: State; size?: number })
       role="img"
       aria-label={STATE_LABEL[state]}
       fill={state === "live" ? "currentColor" : "none"}
-      className={`shrink-0 ${STATE_TEXT[state]}`}
+      className={`shrink-0 ${STATE_TEXT[state]}${state === "live" ? " motion-safe:animate-pulse" : ""}`}
     />
   );
 }
@@ -86,7 +98,7 @@ export function StateBadge({ state, className = "" }: { state: State; className?
         strokeWidth={2.4}
         aria-hidden="true"
         fill={state === "live" ? "currentColor" : "none"}
-        className={state === "live" ? "animate-pulse" : undefined}
+        className={state === "live" ? "motion-safe:animate-pulse" : undefined}
       />
       {STATE_LABEL[state]}
     </span>

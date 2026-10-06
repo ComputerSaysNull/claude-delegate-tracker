@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #34 — 2026-10-05 — feat: tint every card by its state and soften the light theme
+
+### Changed
+
+- **Every card is tinted in its state's colour**, and a run in progress more strongly. A
+  finished list read as a wall of white cards, so a failure stood out only by its icon. A
+  running card's dot pulses too, unless the system asks for reduced motion.
+- **Light-theme cards are off-white on a slightly darker page.** Pure white blocks glared.
+  The softer card cost contrast, so the blue, amber, green, red and orange text colours are
+  a shade darker to keep every text at 4.5:1 or better on its tint.
+
 ## #33 — 2026-10-04 — feat: notify on the desktop when a delegation ends
 
 ### Added

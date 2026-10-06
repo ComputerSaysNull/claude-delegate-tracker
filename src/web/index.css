@@ -1,25 +1,26 @@
 @import "tailwindcss";
 
 /* The page's colours, by name. Every colour the page draws comes from here: light first,
-   then dark when the system asks for it. tests/web/theme.test.ts checks text contrast. */
+   then dark when the system asks for it. tests/web/theme.test.ts checks text contrast.
+   In the light theme, cards are off-white on a slightly darker page, so neither glares. */
 :root {
-  --page: #f5f7fa;
-  --card: #ffffff;
+  --page: #eef1f5;
+  --card: #f7f8fa;
   --line: #dfe4ea;
   --text: #111820;
   --muted: #566273;
-  --accent: #1c65bf;
-  --warn: #955800;
-  --hot: #c42b2b;
-  --state-live: #1c65bf;
+  --accent: #1a5fb4;
+  --warn: #8d5300;
+  --hot: #bb2828;
+  --state-live: #1a5fb4;
   --state-asking: #17549e;
-  --state-queued: #955800;
+  --state-queued: #8d5300;
   --state-quiet: #566273;
-  --state-ok: #127648;
-  --state-failed: #c42b2b;
+  --state-ok: #107040;
+  --state-failed: #bb2828;
   --state-stopped: #4a5563;
-  --state-timed-out: #a94e0b;
-  --state-cut-off: #a94e0b;
+  --state-timed-out: #a24a0a;
+  --state-cut-off: #a24a0a;
 }
 
 @media (prefers-color-scheme: dark) {
