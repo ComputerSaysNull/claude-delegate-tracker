@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #45 — 2026-10-06 — feat: say how long each turn thought
+
+### Added
+
+- **A finished turn's thinking reads "Thought for 18s"**, from the stream's new
+  `turn.reasoning_seconds`. The fold only gave the thinking's length in characters, which
+  says little about where a slow turn's time went. A turn that reasoned but left no
+  thinking text still says how long, as a plain line.
+
 ## #44 — 2026-10-06 — chore: vendor the contract from server v0.8.0
 
 ### Changed

@@ -32,6 +32,7 @@ export interface TurnView {
   heartbeat: string | null;     // open turn only, from the newest `alive` after its `priced`
   partial: { reasoning: string; answer: string } | null; // open turn only: its `partial` text so far
   thinking: { chars: number; complete: boolean } | null; // closed turn only; the text itself is served by /api/streams/:name/thinking/:turn
+  reasonedFor: string | null;   // closed turn: turn.reasoning_seconds as "18s" / "<1s" / "1m05s"; null when absent, null or 0
   toolTime: string | null;      // closed turn: Σ calls' ms, else ms − backend_ms when there are calls; null without calls
   attempts: number | null;      // only when above 1
   retries: { reason: string; status: number | null; wait: string | null }[]; // closed turn: the turn event's retries, in words; [] otherwise
@@ -354,6 +355,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     heartbeat: closed ? null : heartbeatOf(slot),
     partial: partialOf(slot, closed),
     thinking: closed && slot.partialReasoning !== "" ? { chars: slot.partialReasoning.length, complete: slot.partialAnswer !== "" } : null,
+    reasonedFor: (() => { const rs = slot.turn?.reasoning_seconds; return typeof rs === "number" && rs > 0 ? (rs < 1 ? "<1s" : rs < 60 ? `${Math.round(rs)}s` : formatDuration(rs)) : null; })(),
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
     retries: retriesOf(slot.turn),

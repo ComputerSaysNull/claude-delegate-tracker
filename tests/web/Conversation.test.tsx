@@ -19,7 +19,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
-    n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, retries: [],
+    n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null, retries: [],
     toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, question: null, answer: null, ...overrides,
   };

@@ -301,7 +301,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### The reply as it is written
 
-- Every turn whose partials carried reasoning keeps it in a fold labelled with its length in characters. A finished turn's thinking is the partials' reasoning joined, fetched from `/api/streams/<name>/thinking/<turn>` only when the reader opens its fold, so a delegation's view stays small. When none of its partials carried reply text the fold notes that the last moments of thinking may be missing, because a partial carries only the text since the previous one.
+- Every turn whose partials carried reasoning keeps it in a fold labelled with its length in characters. A finished turn's thinking is the partials' reasoning joined, fetched from `/api/streams/<name>/thinking/<turn>` only when the reader opens its fold, so a delegation's view stays small. When none of its partials carried reply text the fold notes that the last moments of thinking may be missing, because a partial carries only the text since the previous one. When the stream says how long the turn reasoned (`turn.reasoning_seconds`, format 1.6), the label reads "Thought for 18s", and a turn without thinking text still says so as a plain line.
 - When the turn's `turn` event lands, its `text` replaces the partial text, even where they differ: a retried attempt can leave text in `partial` that never reached the reply.
 - A patch carries only the text added since the previous one.
 
