@@ -4,7 +4,7 @@
 // details sit in a bar beside the conversation, folded by the header's Details button.
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
-import { Fragment, useEffect, useState, type SyntheticEvent } from "react";
+import { Fragment, useEffect, useRef, useState, type SyntheticEvent } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
@@ -40,25 +40,43 @@ export function StreamPage({ name, onClose }: { name: string; onClose: () => voi
   );
 }
 
+// What actually scrolls the conversation: the nearest ancestor that scrolls by itself (the
+// detail pane on a desktop), else the window (a phone). Following must watch and move that.
+function scrollerOf(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p !== null; p = p.parentElement) {
+    const overflowY = getComputedStyle(p).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll") return p;
+  }
+  return null;
+}
+
+function atBottom(pane: HTMLElement | null): boolean {
+  return pane === null
+    ? window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80
+    : pane.clientHeight + pane.scrollTop >= pane.scrollHeight - 80;
+}
+
+function toBottom(pane: HTMLElement | null): void {
+  if (pane === null) window.scrollTo({ top: document.documentElement.scrollHeight });
+  else pane.scrollTo({ top: pane.scrollHeight });
+}
+
 export function StreamViewBody({ view }: { view: StreamView }) {
   const row = view.row;
   const [folded, toggleDetails] = useDetailsFolded();
   const [following, setFollowing] = useState(true);
+  const root = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    const onScroll = () => {
-      setFollowing(
-        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80,
-      );
-    };
-    window.addEventListener("scroll", onScroll);
-    return () => window.removeEventListener("scroll", onScroll);
+    const pane = scrollerOf(root.current);
+    const target: HTMLElement | Window = pane ?? window;
+    const onScroll = () => setFollowing(atBottom(pane));
+    target.addEventListener("scroll", onScroll);
+    return () => target.removeEventListener("scroll", onScroll);
   }, []);
 
   useEffect(() => {
-    if (following) {
-      window.scrollTo({ top: document.documentElement.scrollHeight });
-    }
+    if (following) toBottom(scrollerOf(root.current));
   }, [view, following]);
 
   // Only while the run is going: one stopped mid-turn never closes that turn, which keeps the
@@ -66,7 +84,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
   const going = row.state === "live" || row.state === "asking" || row.state === "queued" || row.state === "quiet";
 
   return (
-    <section className="flex flex-col gap-4">
+    <section ref={root} className="flex flex-col gap-4">
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page pt-4 pb-3">
         <div className="flex items-center gap-2">
           <StateBadge state={row.state} />
@@ -170,10 +188,8 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       {going && !following && (
         <button
           type="button"
-          onClick={() => {
-            window.scrollTo({ top: document.documentElement.scrollHeight });
-            setFollowing(true);
-          }}
+          // Following again scrolls to the newest text, in the pane or the window.
+          onClick={() => setFollowing(true)}
           className="fixed bottom-4 right-4 z-20 rounded-full border border-line bg-card px-4 py-2 text-sm text-accent shadow"
         >
           Jump to latest

@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #42 — 2026-10-06 — fix: follow a running delegation in the desktop's detail pane
+
+### Fixed
+
+- **On the desktop a running delegation's newest text was not kept in sight, and "Jump to
+  latest" never showed.** Following watched and scrolled the window, but since the desktop
+  layout the detail pane scrolls by itself and the window never moves. Following now uses
+  whatever scrolls the conversation: the pane on a desktop, the window on a phone.
+
 ## #41 — 2026-10-06 — feat: give the phone a bottom bar with Delegations and Cluster screens
 
 ### Changed
