@@ -98,7 +98,7 @@ function ModelFiguresBody({
             </span>
           )}
           {history !== undefined && (
-            <Sparkline data={toUplotData(history, "decodeTokensPerSecond")} label={`Decode speed over the ${windowLabel(span)}`} />
+            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "decodeTokensPerSecond")} label={`Decode speed over the ${windowLabel(span)}`} /></div>
           )}
         </li>
         <li className="flex min-w-0 flex-col gap-1">
@@ -111,7 +111,7 @@ function ModelFiguresBody({
             </span>
           </div>
           {history !== undefined && (
-            <Sparkline data={toUplotData(history, "running")} label={`Requests over the ${windowLabel(span)}`} />
+            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "running")} label={`Requests over the ${windowLabel(span)}`} /></div>
           )}
         </li>
         <li className="flex min-w-0 flex-col gap-1">
@@ -120,7 +120,7 @@ function ModelFiguresBody({
             <span className={valueClass}>{percent(model.kvCachePercent)}</span>
           </div>
           {history !== undefined && (
-            <Sparkline data={toUplotData(history, "kvCachePercent")} label={`KV-cache use over the ${windowLabel(span)}`} />
+            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "kvCachePercent")} label={`KV-cache use over the ${windowLabel(span)}`} fixed={[0, 100]} /></div>
           )}
         </li>
         <li className="flex min-w-0 flex-col gap-1">

@@ -84,8 +84,8 @@ describe("the nodes card", () => {
     expect(screen.getAllByRole("img", { name: /use \d+ percent/ })).toHaveLength(2);
   });
 
-  it("labels each temperature CPU or GPU beside its number", () => {
+  it("labels each temperature CPU temp or GPU temp under its number", () => {
     render(<NodePanel nodes={[node("node-a")]} limits={LIMITS} />);
-    expect(screen.getByLabelText("node-a GPU temperature").parentElement!.textContent).toMatch(/^GPU/);
+    expect(screen.getByLabelText("node-a GPU temperature").parentElement!.textContent).toMatch(/GPU temp$/);
   });
 });

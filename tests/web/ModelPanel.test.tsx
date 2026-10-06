@@ -1,9 +1,18 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { ModelPanel } from "../../src/web/ModelPanel.tsx";
 import { localTime } from "../../src/web/time.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
+import type { Series } from "../../src/server/history.ts";
+
+// The chart itself is Sparkline's to test; here only the range each chart is given matters.
+vi.mock("../../src/web/Sparkline.tsx", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/web/Sparkline.tsx")>()),
+  Sparkline: ({ label, fixed }: { label: string; fixed?: [number, number] }) => (
+    <div role="img" aria-label={label} data-fixed={fixed === undefined ? "" : fixed.join(",")} />
+  ),
+}));
 
 function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
   return {
@@ -88,5 +97,35 @@ describe("ModelPanel", () => {
   it("shows the waiting line for a null model", () => {
     render(<ModelPanel model={null} />);
     expect(screen.getByText("Waiting for figures…")).toBeTruthy();
+  });
+
+  it("gives the KV-cache sparkline a fixed 0-100 y range, and the others none", () => {
+    const history: Series = {
+      at: [0, 1000],
+      values: {
+        running: [0, 0],
+        waiting: [0, 0],
+        kvCachePercent: [0, 0],
+        decodeTokensPerSecond: [0, 0],
+      },
+    };
+    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
+    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-fixed")).toBe("0,100");
+    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-fixed")).toBe("");
+    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
+  });
+
+  // The figures above the charts differ in height (decode speed has its window line), so each
+  // chart is pushed to the bottom of its column, and the charts line up.
+  it("pushes every chart to the bottom of its column, so the charts line up", () => {
+    const history: Series = {
+      at: [0, 1000],
+      values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0] },
+    };
+    render(<ModelPanel model={figures({ decodeWindowSeconds: 10 })} history={history} windowSeconds={3600} />);
+    for (const name of [/^Decode speed over/, /^Requests over/, /^KV-cache use over/]) {
+      const holder = screen.getByRole("img", { name }).parentElement!;
+      expect(holder.className.split(/\s+/)).toContain("mt-auto");
+    }
   });
 });

@@ -16,7 +16,7 @@ function percent(n: number | null): string {
 }
 
 function celsius(n: number | null): string {
-  return n === null ? "—" : `${n.toLocaleString()} °C`;
+  return n === null ? "—" : `${Math.round(n)}°C`;
 }
 
 interface StatusLine {
@@ -53,15 +53,17 @@ function Donut({
   hot: number;
   limits?: Limits;
 }) {
-  const lvl = limits === undefined ? null : level(value, warn, hot);
+  const pct = value === null ? null : Math.round(value);
+  const lvl = limits === undefined ? null : level(pct, warn, hot);
   const ringClass = lvl === null ? "text-muted" : LEVEL_TEXT[lvl];
-  const filled = value === null ? 0 : (Math.min(100, Math.max(0, value)) / 100) * RING_C;
-  const label = value === null ? `${caption} use unknown` : `${caption} use ${value.toLocaleString()} percent`;
+  const filled = pct === null ? 0 : (Math.min(100, Math.max(0, pct)) / 100) * RING_C;
+  const label = pct === null ? `${caption} use unknown` : `${caption} use ${pct.toLocaleString()} percent`;
   return (
     <div className="flex flex-col items-center gap-1">
       <svg width="64" height="64" viewBox="0 0 54 54" role="img" aria-label={label}>
-        <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="text-line" />
-        {value !== null && (
+        <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6"
+          className={pct === null ? "text-line" : `${ringClass} opacity-25`} />
+        {pct !== null && (
           <circle
             data-ring
             cx="27"
@@ -77,7 +79,7 @@ function Donut({
           />
         )}
         <text x="27" y="31.5" textAnchor="middle" className="fill-current font-mono text-[13px]">
-          {percent(value)}
+          {percent(pct)}
         </text>
       </svg>
       <p className="text-xs text-muted">{caption}</p>
@@ -94,14 +96,18 @@ function NodeBlock({
 }) {
   const status = statusLine(node);
   const temp = (caption: "CPU" | "GPU", value: number | null) => {
+    const degrees = value === null ? null : Math.round(value);
     const warn = limits?.tempWarn ?? 0;
     const hot = limits?.tempHot ?? 0;
-    const lvl = limits === undefined ? null : level(value, warn, hot);
+    const lvl = limits === undefined ? null : level(degrees, warn, hot);
     const color = lvl === "warn" || lvl === "hot" ? ` ${LEVEL_TEXT[lvl]}` : "";
     return (
-      <span aria-label={`${node.name} ${caption} temperature`} className={`font-mono tabular-nums text-xl${color}`}>
-        {celsius(value)}
-      </span>
+      <div className="flex flex-col items-center gap-0.5">
+        <span aria-label={`${node.name} ${caption} temperature`} className={`font-mono tabular-nums text-2xl font-semibold${color}`}>
+          {celsius(degrees)}
+        </span>
+        <span className="text-xs text-muted">{caption} temp</span>
+      </div>
     );
   };
   return (
@@ -115,18 +121,16 @@ function NodeBlock({
         )}
       </div>
       <div className="mt-2 flex items-center gap-3">
-        <Donut caption="CPU" value={node.cpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
+        {/* The GPU does the model's work, so its use and heat lead, then the CPU's. A
+            temperature sits like a donut: the figure on top, its caption below. */}
         <Donut caption="GPU" value={node.gpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
-        <div className="flex flex-col gap-1 text-sm">
-          <p>
-            <span className="text-muted">CPU</span> {temp("CPU", node.cpuTempC)}
-          </p>
-          <p>
-            <span className="text-muted">GPU</span> {temp("GPU", node.gpuTempC)}
-          </p>
-        </div>
+        {temp("GPU", node.gpuTempC)}
+        <Donut caption="CPU" value={node.cpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
+        {temp("CPU", node.cpuTempC)}
       </div>
-      <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
+      {node.status !== "ok" && (
+        <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
+      )}
     </li>
   );
 }
@@ -138,9 +142,24 @@ export function NodePanel({
   nodes: NodeFigures[] | null;
   limits?: Limits;
 }) {
+  // One "as of" for the whole panel: the newest healthy read. A healthy node shows no line of
+  // its own; an unreachable or host-key-failing node keeps its own.
+  const newestReadAt =
+    nodes === null
+      ? null
+      : nodes.reduce((newest: string | null, node) => {
+          if (node.status !== "ok" || node.readAt === null) return newest;
+          if (newest === null || Date.parse(node.readAt) > Date.parse(newest)) return node.readAt;
+          return newest;
+        }, null);
   return (
     <section className="rounded-xl border border-line bg-card p-4">
-      <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Nodes</h2>
+      <div className="flex items-baseline gap-3">
+        <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Nodes</h2>
+        {newestReadAt !== null && (
+          <span className="text-xs text-muted">as of {localTime(newestReadAt)}</span>
+        )}
+      </div>
       {nodes === null ? (
         <p className="mt-2 text-muted">Waiting for figures…</p>
       ) : nodes.length === 0 ? (
