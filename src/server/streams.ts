@@ -143,6 +143,7 @@ export function listRow(name: string, s: StreamState, now: Date, quietAfterSecon
     why: whyOf(state, s),
     age: ageOf(state, s, nowMs),
     kind: kindOf(s),
+    workspace: typeof s.start?.workspace === "string" && s.start.workspace !== "" ? s.start.workspace : null,
     model: typeof s.start?.model_key === "string" ? s.start.model_key : null,
     effort: typeof s.start?.effort === "string" ? s.start.effort : null,
     title: titleOf(s.start),
@@ -161,6 +162,7 @@ export interface ListRow {
   name: string; state: State; why: string | null; age: string | null; kind: string;
   model: string | null; effort: string | null; title: string; startedAt: string | null;
   elapsed: string | null; turns: string | null; unknownFormat: string | null;
+  workspace: string | null;     // start.workspace (format 1.5): the workspace root a delegation ran under
   left: string | null;          // a running delegation's time left
   queueOf: string | null;       // a queued delegation's longest wait
 }

@@ -31,6 +31,7 @@ export function readAddress(pathname: string, search: string): Address {
       states,
       kind: q.get("kind") || null,
       model: q.get("model") || null,
+      repo: q.get("repo") || null,
     },
   };
 }
@@ -41,6 +42,7 @@ export function addressFor({ selected, filter, section }: Address): string {
   if (filter.states.length > 0) q.set("state", filter.states.join(","));
   if (filter.kind !== null) q.set("kind", filter.kind);
   if (filter.model !== null) q.set("model", filter.model);
+  if (filter.repo !== null) q.set("repo", filter.repo);
   const query = q.toString();
   const path =
     selected !== null

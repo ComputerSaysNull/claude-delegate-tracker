@@ -42,6 +42,7 @@ function row(over: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
+    workspace: null,
     ...over,
   };
 }

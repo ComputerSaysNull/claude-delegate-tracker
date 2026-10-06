@@ -13,7 +13,7 @@ const CHECKED_AT = "2026-10-04T12:00:00.000Z";
 function row(name: string, title: string): ListRow {
   return {
     name, state: "ok", why: null, age: null, kind: "claude-code", model: null, effort: null,
-    title, startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null,
+    title, startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
   };
 }
 

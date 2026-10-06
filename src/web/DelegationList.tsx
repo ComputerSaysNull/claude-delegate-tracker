@@ -37,7 +37,9 @@ function turnsText(row: ListRow): string | null {
 // The pieces of a card's second line, in order, with their own markup; " · " is added between.
 function metaNodes(row: ListRow): ReactNode[] {
   const pieces: ReactNode[] = [];
-  if (row.kind !== "") pieces.push(row.kind);
+  // A stream that ran under a workspace leads with that repo, in place of the tool kind.
+  const lead = row.workspace ?? row.kind;
+  if (lead !== "") pieces.push(lead);
   const turns = turnsText(row);
   if (turns !== null) pieces.push(turns);
   if (row.elapsed !== null && row.elapsed !== "") {
@@ -188,11 +190,11 @@ export function DelegationList({
     else setOwnFilter(value);
   };
 
-  // The Filters button counts the state, kind and model filters that are on; the search text is not counted.
+  // The Filters button counts the state, kind, model and repo filters that are on; the search text is not counted.
   const activeCount =
-    filter.states.length + (filter.kind !== null ? 1 : 0) + (filter.model !== null ? 1 : 0);
+    filter.states.length + (filter.kind !== null ? 1 : 0) + (filter.model !== null ? 1 : 0) + (filter.repo !== null ? 1 : 0);
 
-  // One chip per active state, kind or model filter; pressing it removes just that filter.
+  // One chip per active state, kind, model or repo filter; pressing it removes just that filter.
   const chips: { label: string; remove: () => void }[] = [];
   for (const state of filter.states) {
     chips.push({
@@ -205,6 +207,9 @@ export function DelegationList({
   }
   if (filter.model !== null) {
     chips.push({ label: `model ${filter.model}`, remove: () => setFilter((prev) => ({ ...prev, model: null })) });
+  }
+  if (filter.repo !== null) {
+    chips.push({ label: `repo ${filter.repo}`, remove: () => setFilter((prev) => ({ ...prev, repo: null })) });
   }
 
   if (list === null) {
@@ -220,6 +225,7 @@ export function DelegationList({
   const shownCount = filteredLive.length + filteredOlder.length;
   const kindChoices = choices(loaded, "kind");
   const modelChoices = choices(loaded, "model");
+  const repoChoices = choices(loaded, "workspace");
   const groups = groupRows([...filteredLive, ...filteredOlder], now);
   const counts = todayCounts(loaded, now);
 
@@ -358,6 +364,19 @@ export function DelegationList({
                 {modelChoices.map((model) => (
                   <option key={model} value={model}>
                     {model}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Repo"
+                value={filter.repo ?? ""}
+                onChange={(e) => setFilter((prev) => ({ ...prev, repo: e.target.value === "" ? null : e.target.value }))}
+                className={SELECT_CLASS}
+              >
+                <option value="">All repos</option>
+                {repoChoices.map((repo) => (
+                  <option key={repo} value={repo}>
+                    {repo}
                   </option>
                 ))}
               </select>

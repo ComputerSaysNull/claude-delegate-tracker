@@ -9,7 +9,7 @@ import { NotifyButton, useNotifications } from "../../src/web/notify.tsx";
 function row(name: string, state: ListRow["state"], overrides: Partial<ListRow> = {}): ListRow {
   return {
     name, state, why: null, age: null, kind: "?", model: null, effort: null, title: `Delegation ${name}`,
-    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, ...overrides,
+    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null, ...overrides,
   };
 }
 

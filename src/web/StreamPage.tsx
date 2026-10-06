@@ -61,6 +61,21 @@ function toBottom(pane: HTMLElement | null): void {
   else pane.scrollTo({ top: pane.scrollHeight });
 }
 
+// The path as it reads inside the repo: the segments after the last segment that equals the
+// workspace and is not the path's final segment, joined with "/"; else the path unchanged.
+function insideRepo(path: string, workspace: string | null): string {
+  if (workspace === null) return path;
+  const parts = path.split(/[\\/]/);
+  let found = -1;
+  for (let i = parts.length - 2; i >= 0; i--) {
+    if (parts[i] === workspace) {
+      found = i;
+      break;
+    }
+  }
+  return found === -1 ? path : parts.slice(found + 1).join("/");
+}
+
 export function StreamViewBody({ view }: { view: StreamView }) {
   const row = view.row;
   const [folded, toggleDetails] = useDetailsFolded();
@@ -124,6 +139,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
             >
               <p className="text-xs text-muted">
                 Task
+                {row.workspace !== null && <> from {row.workspace}</>}
                 {row.startedAt !== null && (
                   <> · <span className="font-mono tabular-nums">{localTime(row.startedAt)}</span></>
                 )}
@@ -140,7 +156,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                     >
                       <File size={12} aria-hidden="true" />
                       <span className="min-w-0 max-w-[22rem]">
-                        <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{file.path}</span>
+                        <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{insideRepo(file.path, row.workspace)}</span>
                       </span>
                       {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
                       {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
@@ -166,7 +182,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                 model={row.model}
                 waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
               />
-              {turn.answer !== null && <CallerAnswer answer={turn.answer} />}
+              {turn.answer !== null && <CallerAnswer answer={turn.answer} workspace={row.workspace} />}
             </Fragment>
           ))}
           {view.summary !== null && view.summary.finished && (
@@ -200,14 +216,15 @@ export function StreamViewBody({ view }: { view: StreamView }) {
 }
 
 // The caller's reply to a question, on the caller's side like the task.
-function CallerAnswer({ answer }: { answer: NonNullable<TurnView["answer"]> }) {
+function CallerAnswer({ answer, workspace }: { answer: NonNullable<TurnView["answer"]>; workspace: string | null }) {
   return (
     <li
       data-from="caller"
       className="ml-auto flex max-w-[88%] flex-col gap-2 rounded-2xl rounded-br-sm border border-line bg-card px-3 py-2"
     >
       <p className="text-xs text-muted">
-        Answer, after <span className="font-mono tabular-nums">{answer.waited}</span>
+        {workspace !== null ? `Answer from ${workspace}, after ` : "Answer, after "}
+        <span className="font-mono tabular-nums">{answer.waited}</span>
       </p>
       {answer.bestReading && <p className="text-sm text-muted">The caller left the choice to the delegation:</p>}
       <Markdown text={answer.text} />

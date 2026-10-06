@@ -26,6 +26,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
+    workspace: null,
     ...overrides,
   };
 }
@@ -60,7 +61,7 @@ describe("DelegationList filter panel", () => {
     render(
       <DelegationList
         list={list([row({ name: "a" })])}
-        filter={{ text: "auth", states: ["failed"], kind: "delegate", model: null }}
+        filter={{ text: "auth", states: ["failed"], kind: "delegate", model: null, repo: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -141,7 +142,7 @@ describe("DelegationList filter panel", () => {
 
   it("shows a chip per active state, kind and model filter and removes just that one on click", () => {
     const onFilterChange = vi.fn();
-    const filter: RowFilter = { text: "", states: ["failed"], kind: "delegate", model: "flash" };
+    const filter: RowFilter = { text: "", states: ["failed"], kind: "delegate", model: "flash", repo: null };
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
 
     const failedChip = screen.getByRole("button", { name: "Remove filter: Failed" });
@@ -172,7 +173,7 @@ describe("DelegationList filter panel", () => {
     render(
       <DelegationList
         list={list([row({ name: "a" })])}
-        filter={{ text: "auth", states: [], kind: null, model: null }}
+        filter={{ text: "auth", states: [], kind: null, model: null, repo: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -182,7 +183,7 @@ describe("DelegationList filter panel", () => {
 
   it("removes only its own state when two states are on", () => {
     const onFilterChange = vi.fn();
-    const filter: RowFilter = { text: "", states: ["failed", "stopped"], kind: null, model: null };
+    const filter: RowFilter = { text: "", states: ["failed", "stopped"], kind: null, model: null, repo: null };
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove filter: Failed" }));
     expect(onFilterChange).toHaveBeenLastCalledWith(expect.objectContaining({ states: ["stopped"] }));

@@ -9,7 +9,7 @@ import type { ListRow } from "../../src/server/streams.ts";
 function row(name: string, title: string): ListRow {
   return {
     name, state: "ok", why: null, age: null, kind: "claude-code", model: null, effort: null, title,
-    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null,
+    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
   };
 }
 

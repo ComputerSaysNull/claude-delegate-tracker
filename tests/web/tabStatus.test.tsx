@@ -9,7 +9,7 @@ import { faviconSvg, tabTitle, useTabStatus } from "../../src/web/tabStatus.ts";
 function row(name: string, state: ListRow["state"]): ListRow {
   return {
     name, state, why: null, age: null, kind: "?", model: null, effort: null, title: name, startedAt: null,
-    elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null,
+    elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
   };
 }
 
