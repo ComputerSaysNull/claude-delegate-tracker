@@ -162,6 +162,7 @@ export function DelegationList({
   onOpen,
   filter: shownFilter,
   onFilterChange,
+  searchOpen = false,
 }: {
   list: ListResponse | null;
   selected?: string | null;
@@ -169,6 +170,8 @@ export function DelegationList({
   // Given both, the filter lives outside (in the address); otherwise the list keeps its own.
   filter?: RowFilter;
   onFilterChange?: (next: RowFilter) => void;
+  // On a phone the search box and the filters sit behind the list header's Search button.
+  searchOpen?: boolean;
 }) {
   const [older, setOlder] = useState<ListRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
@@ -257,7 +260,7 @@ export function DelegationList({
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="whitespace-nowrap text-[17px] font-semibold">Delegations</h2>
+        <h2 className="hidden lg:block whitespace-nowrap text-[17px] font-semibold">Delegations</h2>
         <p className="text-sm text-muted">
           <span className="font-medium text-state-live">{counts.running} running</span>
           {" · "}
@@ -288,7 +291,8 @@ export function DelegationList({
         <p className="text-muted">No delegations yet.</p>
       ) : (
         <>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+          <div className={`${searchOpen ? "flex" : "hidden"} mt-2 flex-col gap-2 lg:flex`}>
+          <div className="flex flex-wrap items-center gap-2">
             <div className="relative flex-[1_1_180px]">
               <Search size={15} aria-hidden="true" className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
               <input
@@ -360,7 +364,7 @@ export function DelegationList({
             </div>
           )}
           {chips.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               {chips.map((chip) => (
                 <button
                   key={chip.label}
@@ -374,6 +378,7 @@ export function DelegationList({
               ))}
             </div>
           )}
+          </div>
           {filtering && (
             <div className="mt-2 flex flex-wrap items-center gap-2">
               {shownCount === 0 ? (

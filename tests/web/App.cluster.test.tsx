@@ -67,19 +67,19 @@ describe("the cluster band", () => {
     expect(drawn.at(-1)!.label).toMatch(/last 15 minutes/);
   });
 
-  it("on a phone folds the band into one line that opens it in full", () => {
+  it("on a phone folds the band into one line that links to the cluster section", () => {
     render(<App />);
-    const line = screen.getByRole("button", { name: /41\.2 tok\/s/ });
+    const line = screen.getByRole("link", { name: /41\.2 tok\/s/ });
     expect(line.className).toMatch(/\blg:hidden\b/);
     expect(line.textContent).toContain("2 running");
     expect(line.textContent).toContain("KV 7.4%");
     expect(line.textContent).toContain("74°C");
+    expect(line.getAttribute("href")).toBe("/cluster");
     const band = screen.getByRole("region", { name: "Cluster" });
-    expect(line.getAttribute("aria-expanded")).toBe("false");
     expect(band.className).toMatch(/(^|\s)hidden\b/);
     expect(band.className).toMatch(/\blg:flex\b/);
     fireEvent.click(line);
-    expect(line.getAttribute("aria-expanded")).toBe("true");
+    expect(window.location.pathname).toBe("/cluster");
     expect(band.className).not.toMatch(/(^|\s)hidden\b/);
   });
 

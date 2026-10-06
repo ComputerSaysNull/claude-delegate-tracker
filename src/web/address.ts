@@ -1,12 +1,11 @@
-// The address the page is at: the open delegation in the path (`/s/<name>`, which older
-// links already use) and the list's filters in the query. Pure: no React, no history.
-// A name read here is only ever looked up in the list the backend itself serves.
+// The address the page is at: the section (`/` for the list, `/cluster` for the cluster), the open delegation in the path (`/s/<name>`, which older links already use) and the list's filters in the query. Pure: no React, no history. A name read here is only ever looked up in the list the backend itself serves.
 import { STATES, type State } from "../server/streams.ts";
 import { NO_FILTER, type RowFilter } from "./filter.ts";
 
 export interface Address {
   selected: string | null;
   filter: RowFilter;
+  section: "list" | "cluster";
 }
 
 function decoded(part: string): string | null {
@@ -25,6 +24,7 @@ export function readAddress(pathname: string, search: string): Address {
     (STATES as readonly string[]).includes(s),
   );
   return {
+    section: pathname === "/cluster" ? "cluster" : "list",
     selected: name === null || name === "" ? null : name,
     filter: {
       text: q.get("q") ?? NO_FILTER.text,
@@ -35,12 +35,18 @@ export function readAddress(pathname: string, search: string): Address {
   };
 }
 
-export function addressFor({ selected, filter }: Address): string {
+export function addressFor({ selected, filter, section }: Address): string {
   const q = new URLSearchParams();
   if (filter.text !== "") q.set("q", filter.text);
   if (filter.states.length > 0) q.set("state", filter.states.join(","));
   if (filter.kind !== null) q.set("kind", filter.kind);
   if (filter.model !== null) q.set("model", filter.model);
   const query = q.toString();
-  return (selected === null ? "/" : `/s/${encodeURIComponent(selected)}`) + (query === "" ? "" : `?${query}`);
+  const path =
+    selected !== null
+      ? `/s/${encodeURIComponent(selected)}`
+      : section === "cluster"
+        ? "/cluster"
+        : "/";
+  return path + (query === "" ? "" : `?${query}`);
 }

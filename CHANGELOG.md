@@ -9,6 +9,23 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #41 — 2026-10-06 — feat: give the phone a bottom bar with Delegations and Cluster screens
+
+### Changed
+
+- **On a phone the page shows one section at a time, picked in a bar at the bottom.**
+  Before, the app header, the banners and a cluster strip stacked above everything, the
+  header wrapped over two lines, and the cluster figures folded open above the list.
+  Delegations and Cluster are now two screens, and Cluster has its own address, `/cluster`,
+  so Back and reload work.
+- **The phone's list header is "Delegations" with the live dot, the bell and a Search
+  button** that shows the search box and the filters. The health pill shows, as an icon,
+  only when something is wrong; the banner below says what.
+- **The cluster strip above the list links to the Cluster screen**, and is left out when
+  there are no figures; it was an empty white bar.
+- **An open delegation on a phone shows only its back link and itself**, and its title wraps
+  instead of being cut off.
+
 ## #40 — 2026-10-06 — feat: gather the list's filters into one panel
 
 ### Changed

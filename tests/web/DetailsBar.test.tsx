@@ -304,6 +304,14 @@ describe("DetailsBar", () => {
     expect(classes).toContain("hidden");
     expect(classes).toContain("lg:inline-flex");
   });
+
+  // A phone has room for the title only on several lines; a wide screen cuts it to one.
+  it("wraps the title on a phone and cuts it to one line only on a wide screen", () => {
+    render(<StreamViewBody view={view({})} />);
+    const classes = screen.getByRole("heading", { level: 2 }).className.split(/\s+/);
+    expect(classes).toContain("lg:truncate");
+    expect(classes).not.toContain("truncate");
+  });
 });
 
 describe("the bar, after review", () => {

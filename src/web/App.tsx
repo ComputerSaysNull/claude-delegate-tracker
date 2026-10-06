@@ -3,11 +3,12 @@
 // wide screen, one of the two on a phone. Opening a delegation never reloads the page; the
 // address follows the open delegation and the filters, so Back, reload and bookmarks work.
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { Check, CircleDot, TriangleAlert, X } from "lucide-react";
+import { Check, CircleDot, Gauge, List, Search, TriangleAlert, X } from "lucide-react";
 import { addressFor, readAddress, type Address } from "./address.ts";
 import { DelegationList } from "./DelegationList.tsx";
 import { HealthBanners } from "./HealthBanners.tsx";
 import type { Series } from "../server/history.ts";
+import type { Health } from "../server/health.ts";
 import { LEVEL_TEXT, level, sinceMs } from "./load.ts";
 import { ModelPanel } from "./ModelPanel.tsx";
 import { NodePanel } from "./NodePanel.tsx";
@@ -19,7 +20,51 @@ import { KeyboardHelp, useKeyboard } from "./keyboard.tsx";
 import { NotifyButton, useNotifications } from "./notify.tsx";
 import { localTime } from "./time.ts";
 
-type Status = "readable" | "not readable" | "not set";
+type Pill = { text: string; tone: string; Icon: typeof Check };
+
+// The header's health pill, shared by the desktop header and the phone list header.
+function pillFor(health: Health | null): Pill | null {
+  if (health === null) return null;
+  const status = health.transcriptFolder.configured
+    ? health.transcriptFolder.readable
+      ? "readable"
+      : "not readable"
+    : "not set";
+  if (status === "readable" && health.banners.length === 0)
+    return { text: "Health ok", tone: "border-state-ok/40 text-state-ok", Icon: Check };
+  if (status === "not readable")
+    return { text: "Folder not readable", tone: "border-hot/50 text-hot", Icon: X };
+  if (status === "not set")
+    return { text: "Folder not set", tone: "border-warn/50 text-warn", Icon: TriangleAlert };
+  return { text: "Check the banners", tone: "border-warn/50 text-warn", Icon: TriangleAlert };
+}
+
+// `compact` draws the icon alone, its words kept for a screen reader and a hover: the phone's
+// header is too narrow for the words, and the banners below already spell the trouble out.
+function HealthPill({
+  health,
+  showWhenOk = true,
+  compact = false,
+}: {
+  health: Health | null;
+  showWhenOk?: boolean;
+  compact?: boolean;
+}) {
+  const pill = pillFor(health);
+  if (pill === null) return null;
+  if (!showWhenOk && pill.text === "Health ok") return null;
+  return (
+    <span
+      role="status"
+      aria-label="Health"
+      title={compact ? pill.text : undefined}
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border text-sm ${compact ? "h-11 w-11 justify-center" : "px-3 py-1"} ${pill.tone}`}
+    >
+      <pill.Icon size={compact ? 18 : 14} aria-hidden="true" />
+      <span className={compact ? "sr-only" : undefined}>{pill.text}</span>
+    </span>
+  );
+}
 
 export default function App() {
   const { list, cluster, health, connected } = useLiveList();
@@ -56,30 +101,6 @@ export default function App() {
     </div>
   );
 
-  // On a phone the cluster band folds into one tappable line.
-  const [clusterOpen, setClusterOpen] = useState(false);
-  const toggle = () => setClusterOpen((open) => !open);
-
-  const status: Status | null = health
-    ? health.transcriptFolder.configured
-      ? health.transcriptFolder.readable
-        ? "readable"
-        : "not readable"
-      : "not set"
-    : null;
-
-  // The header's health pill: ok, or what is wrong with the transcript folder.
-  const healthPill =
-    status === "readable" && (health?.banners.length ?? 0) === 0
-      ? { text: "Health ok", tone: "border-state-ok/40 text-state-ok", Icon: Check }
-      : status === "not readable"
-        ? { text: "Folder not readable", tone: "border-hot/50 text-hot", Icon: X }
-        : status === "not set"
-          ? { text: "Folder not set", tone: "border-warn/50 text-warn", Icon: TriangleAlert }
-          : status === "readable"
-            ? { text: "Check the banners", tone: "border-warn/50 text-warn", Icon: TriangleAlert }
-            : null;
-
   const [address, setAddress] = useState<Address>(() => readAddress(window.location.pathname, window.location.search));
   const selected = address.selected;
 
@@ -101,11 +122,14 @@ export default function App() {
   };
 
   // A notification when a delegation ends; clicking it opens that delegation here.
-  useNotifications(list?.rows ?? [], (name) => go({ ...address, selected: name }, true));
+  useNotifications(list?.rows ?? [], (name) => go({ ...address, selected: name, section: "list" }, true));
 
   const { helpOpen, closeHelp } = useKeyboard(() => {
     if (address.selected !== null) go({ ...address, selected: null }, true);
   });
+
+  // The phone list header's Search button reveals the search box and the filters.
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // The phone line: one piece per figure, skipping any whose value is missing.
   const phonePieces: ReactNode[] = [];
@@ -140,7 +164,7 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col text-base lg:h-screen lg:overflow-hidden">
       {helpOpen && <KeyboardHelp onClose={closeHelp} />}
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
+      <header className="hidden lg:flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
         <CircleDot size={20} className="text-accent" aria-hidden="true" />
         <h1 className="text-[17px] font-semibold">Delegation tracker</h1>
         <div className="flex-1" />
@@ -154,21 +178,40 @@ export default function App() {
           {connected ? "Live" : "Reconnecting…"}
           <span className="font-mono tabular-nums text-text">{localTime(health?.checkedAt ?? null)}</span>
         </span>
-        {healthPill !== null && (
-          <span role="status" aria-label="Health" className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-sm ${healthPill.tone}`}>
-            <healthPill.Icon size={14} aria-hidden="true" />
-            {healthPill.text}
-          </span>
-        )}
+        <HealthPill health={health} />
       </header>
-      <div className="px-4 lg:px-6">
+      {selected === null && address.section === "list" && (
+        <div className="flex items-center gap-2 px-4 pt-4 lg:hidden">
+          <h1 className="shrink-0 text-2xl font-bold">Delegations</h1>
+          <span
+            aria-label="Live updates"
+            title={`Live ${localTime(health?.checkedAt ?? null)}`}
+            className={`h-2 w-2 rounded-full ${connected ? "bg-state-ok" : "bg-warn"}`}
+          />
+          <div className="flex-1" />
+          <NotifyButton iconOnly />
+          <HealthPill health={health} showWhenOk={false} compact />
+          <button
+            type="button"
+            aria-label="Search"
+            aria-expanded={searchOpen}
+            onClick={() => setSearchOpen((open) => !open)}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-line bg-card text-muted"
+          >
+            <Search size={20} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+      <div className={`${selected === null ? "" : "hidden lg:block"} px-4 lg:px-6`}>
         <HealthBanners banners={health?.banners ?? []} />
       </div>
-      {cluster !== null && (
-        <button
-          type="button"
-          aria-expanded={clusterOpen}
-          onClick={toggle}
+      {cluster !== null && selected === null && address.section === "list" && phonePieces.length > 0 && (
+        <a
+          href="/cluster"
+          onClick={(e) => {
+            e.preventDefault();
+            go({ ...address, section: "cluster", selected: null }, true);
+          }}
           className="mx-4 my-2 flex items-center gap-3 rounded-xl border border-line bg-card px-3 py-2 text-sm lg:hidden"
         >
           {phonePieces.map((piece, i) => (
@@ -177,9 +220,13 @@ export default function App() {
               {piece}
             </Fragment>
           ))}
-        </button>
+        </a>
       )}
-      <section aria-label="Cluster" className={`${clusterOpen ? "flex" : "hidden lg:flex"} flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}>
+      <section
+        aria-label="Cluster"
+        className={`${address.section === "cluster" && selected === null ? "flex" : "hidden"} lg:flex flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}
+      >
+        <h1 className="w-full text-2xl font-bold lg:hidden">Cluster</h1>
         <div className="min-w-0 flex-[3_1_560px]">
           <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} />
         </div>
@@ -187,17 +234,18 @@ export default function App() {
           <NodePanel nodes={cluster?.nodes ?? null} limits={cluster?.limits} />
         </div>
       </section>
-      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+      <div className="flex min-h-0 flex-1 flex-col pb-[84px] lg:flex-row lg:pb-0">
         <nav
           aria-label="Delegations"
-          className={`${selected === null ? "flex" : "hidden lg:flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:w-[420px] lg:max-w-[460px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
+          className={`${selected !== null || address.section === "cluster" ? "hidden lg:flex" : "flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:w-[420px] lg:max-w-[460px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
         >
           <DelegationList
             list={list}
             selected={selected}
-            onOpen={(name) => go({ ...address, selected: name }, true)}
+            onOpen={(name) => go({ ...address, selected: name, section: "list" }, true)}
             filter={address.filter}
             onFilterChange={(filter) => go({ ...address, filter }, false)}
+            searchOpen={searchOpen}
           />
         </nav>
         <main
@@ -210,6 +258,37 @@ export default function App() {
           )}
         </main>
       </div>
+      {selected === null && (
+        <nav
+          aria-label="Sections"
+          className="fixed inset-x-0 bottom-0 z-20 grid h-[68px] grid-cols-2 border-t border-line bg-card lg:hidden"
+        >
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              go({ ...address, section: "list", selected: null }, true);
+            }}
+            aria-current={address.section === "list" ? "page" : undefined}
+            className={`flex flex-col items-center justify-center gap-1 text-sm ${address.section === "list" ? "text-accent font-semibold" : "text-muted"}`}
+          >
+            <List size={20} aria-hidden="true" />
+            Delegations
+          </a>
+          <a
+            href="/cluster"
+            onClick={(e) => {
+              e.preventDefault();
+              go({ ...address, section: "cluster", selected: null }, true);
+            }}
+            aria-current={address.section === "cluster" ? "page" : undefined}
+            className={`flex flex-col items-center justify-center gap-1 text-sm ${address.section === "cluster" ? "text-accent font-semibold" : "text-muted"}`}
+          >
+            <Gauge size={20} aria-hidden="true" />
+            Cluster
+          </a>
+        </nav>
+      )}
     </div>
   );
 }
