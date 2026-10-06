@@ -532,6 +532,74 @@ describe("a turn's retries", () => {
   });
 });
 
+describe("a turn's repeated thinking", () => {
+  const thinkingTurn = (events: Record<string, unknown>[]) =>
+    viewOf([start(), { t: "priced", at: at(0), turn: 1, of_turns: 4 }, ...events]).turns[0];
+  // A line of the thinking long enough to count (20 characters or more), named by a letter.
+  const L = (x: string) => `the thinking says ${x} at length`;
+  const lines = (...xs: string[]) => xs.map(L).join("\n");
+
+  it("shares the thinking lines that repeat an earlier line, from 30%", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "b") + "\n", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "b", "a", "c"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBe("50%");
+  });
+
+  // Blank lines between paragraphs would otherwise count as repeats of each other.
+  it("leaves blank lines out of the count", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: ["a", "b", "a", "c", "a"].map(L).join("\n\n"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBe("40%");
+  });
+
+  // Braces, code fences and list markers repeat in any long thinking without meaning a loop;
+  // only lines of 20 characters or more count.
+  it("leaves short lines out of the count", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: ["}", "```", lines("a", "b", "c", "d", "e"), "}", "```", "}"].join("\n"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("is null when no thinking line repeats", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "b", "c", "d", "e", "f"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("is null for fewer than five lines that count", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "a", "a", "a"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("is null under 30%", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "b", "c", "d", "e", "f", "g", "a", "b"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("shares an open turn's joined partial reasoning", () => {
+    const t = thinkingTurn([
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("x", "x", "x", "x", "x"), answer: "" },
+    ]);
+    expect(t.closed).toBe(false);
+    expect(t.thinkingRepeated).toBe("80%");
+  });
+});
+
 describe("reply", () => {
   it("is the closing turn's text", () => {
     const v = viewOf([

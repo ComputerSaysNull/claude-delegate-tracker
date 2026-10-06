@@ -5,7 +5,7 @@
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
 import { Fragment, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, X } from "lucide-react";
+import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -245,9 +245,14 @@ function DelegationMessage({
     turn.tokS !== null ? `${turn.tokS.toLocaleString()} tok/s` : null,
     turn.toolTime !== null ? `tool ${turn.toolTime}` : null,
   ].filter((p): p is string => p !== null);
-  // A turn's budget, repeated output and evicted results fold behind the toggle.
-  const hasDetails = turn.budget !== null || turn.repeated !== null || turn.evicted !== null;
+  // A turn's budget and evicted results fold behind the toggle.
+  const hasDetails = turn.budget !== null || turn.evicted !== null;
   const retryGap = turn.attempts !== null ? turn.attempts - 1 - turn.retries.length : 0;
+  // A repeated reply or thinking marks the heading as a possible loop.
+  const repeatMarkers = [
+    { part: "reply", value: turn.repeated },
+    { part: "thinking", value: turn.thinkingRepeated },
+  ].filter((m): m is { part: string; value: string } => m.value !== null);
   // A call to ask_caller is not drawn once its question is shown in this message.
   const calls = turn.question !== null ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
   const thinkingChars = turn.thinking !== null
@@ -277,6 +282,17 @@ function DelegationMessage({
               retried {turn.attempts - 1}×
             </button>
           )}
+          {repeatMarkers.map((m) => (
+            <span
+              key={m.part}
+              role="status"
+              aria-label={`Turn ${turn.n} may be looping: ${m.part} repeats ${m.value}`}
+              className="ml-2 inline-flex items-center gap-1 text-warn font-semibold"
+            >
+              <Repeat size={12} aria-hidden="true" />
+              {m.part} repeats {m.value}
+            </span>
+          ))}
         </p>
         {turn.attempts !== null && retriesOpen && (
           <ul role="list" aria-label="Retries" className="flex flex-col gap-1 text-xs text-muted">
@@ -366,7 +382,6 @@ function DelegationMessage({
         {open && (
           <div className="flex flex-col gap-1 text-xs font-mono tabular-nums text-muted">
             {turn.budget !== null && <p>{turn.budget}</p>}
-            {turn.repeated !== null && <p>repeated output {turn.repeated}</p>}
             {turn.evicted !== null && <p>tool results evicted {turn.evicted}</p>}
           </div>
         )}

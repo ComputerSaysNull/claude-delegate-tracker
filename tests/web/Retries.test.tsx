@@ -18,7 +18,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null,
-    toolTime: null, attempts: null, repeated: null, evicted: null, retries: [], tokensIn: null, tokensOut: null, tokS: null,
+    toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, retries: [], tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, question: null, answer: null, ...overrides,
   };
 }
@@ -82,7 +82,7 @@ describe("a turn's retries", () => {
   });
 
   it("no longer reports attempts inside the turn details fold", () => {
-    render(<StreamViewBody view={view({ turns: [turn(1, { attempts: 2, repeated: "60%", retries: [retry()] })] })} />);
+    render(<StreamViewBody view={view({ turns: [turn(1, { attempts: 2, evicted: 0, retries: [retry()] })] })} />);
     fireEvent.click(screen.getByRole("button", { name: "Turn details" }));
     expect(screen.queryByText(/attempts \d/)).toBeNull();
   });
