@@ -70,6 +70,16 @@ describe("summariseRun", () => {
     expect(multi.reason).toBe("backend unreachable");
   });
 
+  it("a failed run's reason groups the same cause: numbers and ids read N, cut to eight words", () => {
+    const reasonOf = (error: string) => recordOf([startEvent(), endEvent({ ok: false, error })]).reason;
+    const stall = (s: string) => `Delegation abandoned after ${s}s, past the DELEGATE_STALL_TIMEOUT of ${s}s, with no turn completed. Progress at that point`;
+    expect(reasonOf(stall("2100.0"))).toBe(reasonOf(stall("900.0")));
+    expect(reasonOf(stall("2100.0"))).toBe("Delegation abandoned after N past the DELEGATE_STALL_TIMEOUT of…");
+    const cancel = (id: string) => `Cancelled via cancel scope ${id} by <Task pending name='loop' coro=<run() running at /x/y.py:12>>`;
+    expect(reasonOf(cancel("75db9c1249b0"))).toBe(reasonOf(cancel("7d2a26decff0")));
+    expect(reasonOf("Layer 3 cannot run")).toBe("Layer N cannot run");
+  });
+
   it("a failed run with no error text has reason 'failed'", () => {
     const r = recordOf([startEvent(), endEvent({ ok: false })]);
     expect([r.outcome, r.reason]).toEqual(["failed", "failed"]);

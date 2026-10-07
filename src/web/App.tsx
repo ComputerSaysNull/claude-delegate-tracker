@@ -3,10 +3,11 @@
 // wide screen, one of the two on a phone. Opening a delegation never reloads the page; the
 // address follows the open delegation and the filters, so Back, reload and bookmarks work.
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { Check, CircleDot, Gauge, List, Search, TriangleAlert, X } from "lucide-react";
+import { Check, CircleDot, Gauge, History, List, Search, TriangleAlert, X } from "lucide-react";
 import { addressFor, readAddress, type Address } from "./address.ts";
 import { DelegationList } from "./DelegationList.tsx";
 import { HealthBanners } from "./HealthBanners.tsx";
+import { HistoryPage } from "./HistoryPage.tsx";
 import type { Series } from "../server/history.ts";
 import type { Health } from "../server/health.ts";
 import { LEVEL_TEXT, level, sinceMs } from "./load.ts";
@@ -237,7 +238,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1 flex-col pb-[84px] lg:flex-row lg:pb-0">
         <nav
           aria-label="Delegations"
-          className={`${selected !== null || address.section === "cluster" ? "hidden lg:flex" : "flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:w-[420px] lg:max-w-[460px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
+          className={`${selected !== null || address.section === "cluster" || address.section === "history" ? "hidden lg:flex" : "flex"} min-w-0 flex-col gap-3 px-4 py-4 lg:w-[420px] lg:max-w-[460px] lg:flex-none lg:overflow-y-auto lg:border-r lg:border-line lg:pl-6`}
         >
           <DelegationList
             list={list}
@@ -249,9 +250,38 @@ export default function App() {
           />
         </nav>
         <main
-          className={`${selected === null ? "hidden lg:flex" : "flex"} min-w-0 flex-col px-4 pb-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
+          className={`${selected !== null || address.section === "history" ? "flex" : "hidden lg:flex"} min-w-0 flex-col px-4 pb-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
         >
-          {selected === null ? (
+          {/* The Delegation / History tab switch, on a wide screen; a phone uses the bottom bar. */}
+          <div className="hidden lg:flex flex-wrap items-center gap-3 pb-4">
+            <div className="flex gap-1">
+              <a
+                href="/"
+                onClick={(e) => {
+                  e.preventDefault();
+                  go({ ...address, section: "list" }, true);
+                }}
+                aria-current={address.section === "list" ? "page" : undefined}
+                className={`rounded-md px-3 py-1.5 text-sm ${address.section === "list" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
+              >
+                Delegation
+              </a>
+              <a
+                href="/history"
+                onClick={(e) => {
+                  e.preventDefault();
+                  go({ ...address, section: "history", selected: null }, true);
+                }}
+                aria-current={address.section === "history" ? "page" : undefined}
+                className={`rounded-md px-3 py-1.5 text-sm ${address.section === "history" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
+              >
+                History
+              </a>
+            </div>
+          </div>
+          {address.section === "history" ? (
+            <HistoryPage />
+          ) : selected === null ? (
             <p className="text-muted">Choose a delegation on the left to follow it.</p>
           ) : (
             <StreamPage key={selected} name={selected} onClose={() => go({ ...address, selected: null }, true)} />
@@ -261,7 +291,7 @@ export default function App() {
       {selected === null && (
         <nav
           aria-label="Sections"
-          className="fixed inset-x-0 bottom-0 z-20 grid h-[68px] grid-cols-2 border-t border-line bg-card lg:hidden"
+          className="fixed inset-x-0 bottom-0 z-20 grid h-[68px] grid-cols-3 border-t border-line bg-card lg:hidden"
         >
           <a
             href="/"
@@ -286,6 +316,18 @@ export default function App() {
           >
             <Gauge size={20} aria-hidden="true" />
             Cluster
+          </a>
+          <a
+            href="/history"
+            onClick={(e) => {
+              e.preventDefault();
+              go({ ...address, section: "history", selected: null }, true);
+            }}
+            aria-current={address.section === "history" ? "page" : undefined}
+            className={`flex flex-col items-center justify-center gap-1 text-sm ${address.section === "history" ? "text-accent font-semibold" : "text-muted"}`}
+          >
+            <History size={20} aria-hidden="true" />
+            History
           </a>
         </nav>
       )}

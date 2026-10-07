@@ -255,12 +255,22 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### On a phone
 
-- One section at a time — the Delegations list or the Cluster figures — chosen in a bar at the bottom; Cluster has its own address `/cluster`.
+- One section at a time — the Delegations list, the Cluster figures or History — chosen in a bar at the bottom; Cluster has its own address `/cluster`, History `/history`.
 - The list's header is "Delegations", with the live dot, the notification bell, the health pill only when something is wrong, and a Search button that shows the search box and the filters.
 - The strip of cluster figures above the list links to the Cluster section, and is left out when there are no figures.
 - An open delegation shows only its back link and itself.
 - Long unbroken text (paths, commands, replies) wraps; nothing widens the page past the screen.
 - A value cut to one line opens in full on a tap, since a phone has no hover for a tooltip.
+
+### History
+
+- On a wide screen a Delegation / History switch tops the main column; History takes the delegation's place there, and the list and the cluster figures stay.
+- A range of 7, 30 or 90 of the viewer's local days, 30 to start. A run counts on the day it started; a run with no start time is left out.
+- Five totals: delegations; done, the share that finished ok; did not finish, split into stopped, limits (timed out or cut off) and failed; tokens processed, input plus output; cache reuse, cached input over all input of the runs that report both. A total no run reports reads "—".
+- Delegations per day stacked by outcome, and tokens per day stacked as input from cache, new input and output, each a column per day with the day's figures on hover.
+- Why runs did not finish: each reason with its outcome's icon and count, most first; "Every run finished." when there are none.
+- By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—".
+- Under it, how the records stand: how many are kept, when they were checked against the folder and how many disagreed, how many streams are gone, and any error saving them.
 
 ### Absent is not zero
 
@@ -339,7 +349,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ## Run records
 
-- A finished run becomes one record: when it started, its outcome and a short reason when it did not finish, its repo and model, how long it took, and its tokens. A failure's reason is its error's first line up to the first colon. A missing figure stays null.
+- A finished run becomes one record: when it started, its outcome and a short reason when it did not finish, its repo and model, how long it took, and its tokens. A failure's reason is its error's first sentence, with any word holding a digit written as N and cut to eight words, so one cause with different ids and timings counts as one. A missing figure stays null.
 - The records live in `runs.json` in `DATA_DIR` (ADR-0005). The file is written to a temporary name and renamed over the old one, so a crash never leaves half a file. A file or a record of the wrong shape is ignored, never trusted.
 - At every start the backend reads the whole folder once and compares each record with its stream. A record that disagrees is rebuilt from the stream and counted; a record whose stream is gone is kept and counted. The History tab shows both counts.
 - Every `RUNS_SCAN_SECONDS` it re-reads only streams that are new or whose size changed.

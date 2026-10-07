@@ -5,7 +5,7 @@ import { NO_FILTER, type RowFilter } from "./filter.ts";
 export interface Address {
   selected: string | null;
   filter: RowFilter;
-  section: "list" | "cluster";
+  section: "list" | "cluster" | "history";
 }
 
 function decoded(part: string): string | null {
@@ -24,7 +24,7 @@ export function readAddress(pathname: string, search: string): Address {
     (STATES as readonly string[]).includes(s),
   );
   return {
-    section: pathname === "/cluster" ? "cluster" : "list",
+    section: pathname === "/cluster" ? "cluster" : pathname === "/history" ? "history" : "list",
     selected: name === null || name === "" ? null : name,
     filter: {
       text: q.get("q") ?? NO_FILTER.text,
@@ -49,6 +49,8 @@ export function addressFor({ selected, filter, section }: Address): string {
       ? `/s/${encodeURIComponent(selected)}`
       : section === "cluster"
         ? "/cluster"
-        : "/";
+        : section === "history"
+          ? "/history"
+          : "/";
   return path + (query === "" ? "" : `?${query}`);
 }

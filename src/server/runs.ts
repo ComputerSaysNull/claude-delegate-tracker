@@ -37,11 +37,13 @@ function reasonOf(outcome: Outcome, end: Record<string, unknown> | null): string
   if (outcome === "timed out") return WHY_TIMED_OUT[String(end?.ended)] ?? null;
   // Short categories to count by, not the list's advice.
   if (outcome === "cut off") return end?.finish_reason === "length" ? "hit the token limit" : "the endpoint stopped it";
+  // A failure's text carries ids and timings, so the same cause would count apart: take its
+  // first sentence, write any word with a digit as N, and cut to eight words.
   const err = end?.error;
-  if (typeof err === "string" && err !== "") {
-    const first = err.split(/\r\n|\n/)[0];
-    const colon = first.indexOf(":");
-    return (colon === -1 ? first : first.slice(0, colon)).trim();
+  if (typeof err === "string" && err.trim() !== "") {
+    const sentence = err.split(/\r?\n/)[0].split(/:\s|\.\s/)[0];
+    const words = sentence.split(/\s+/).filter((w) => w !== "").map((w) => (/\d/.test(w) ? "N" : w));
+    if (words.length > 0) return words.length > 8 ? `${words.slice(0, 8).join(" ")}…` : words.join(" ");
   }
   return "failed";
 }

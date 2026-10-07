@@ -19,7 +19,13 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   start each record is compared with its stream: of 1,501 real runs, a record changed by
   hand was rebuilt and counted, and one whose stream was gone was kept and counted. The
   full check takes about 2.4 s; between starts only new or grown streams are re-read.
-  `DATA_DIR` moves the folder, `RUNS_SCAN_SECONDS` sets how often it looks.
+  `DATA_DIR` moves the folder, `RUNS_SCAN_SECONDS` sets how often it looks. A failure's
+  reason groups its cause: error texts carry ids and timings, so 123 real failures read as
+  64 different reasons; with every word holding a digit written as N they read as 7.
+- **A History tab**, beside the delegation on the desktop and in the phone's bottom bar.
+  Over 7, 30 or 90 days it shows how many delegations ran, how many finished, why the
+  others did not, the tokens processed and the cache reuse, per day and per repo and
+  model, and how the records stand against the folder.
 
 ## #54 — 2026-10-07 — feat: open a delegation from anywhere on its card
 
