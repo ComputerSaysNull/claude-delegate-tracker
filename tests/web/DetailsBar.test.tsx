@@ -311,7 +311,8 @@ describe("DetailsBar", () => {
   // A phone has room for the title only on several lines; a wide screen cuts it to one.
   it("wraps the title on a phone and cuts it to one line only on a wide screen", () => {
     render(<StreamViewBody view={view({})} />);
-    const classes = screen.getByRole("heading", { level: 2 }).className.split(/\s+/);
+    // On the title's button inside the heading: an ellipsis on the heading would not reach it.
+    const classes = within(screen.getByRole("heading", { level: 2 })).getByRole("button").className.split(/\s+/);
     expect(classes).toContain("lg:truncate");
     expect(classes).not.toContain("truncate");
   });

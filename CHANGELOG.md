@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #53 — 2026-10-07 — feat: click a delegation's title to scroll back to the top
+
+### Added
+
+- **Clicking a delegation's title scrolls its conversation back to the task.** A finished
+  delegation opens at its end, so reaching the task of a long one took a lot of scrolling.
+  The title in the header is now a button, on the desktop's pane and on the phone, and it
+  stops following so a running delegation does not scroll straight back down.
+
 ## #52 — 2026-10-07 — fix: show which file and lines a tool call read
 
 ### Fixed
