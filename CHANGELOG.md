@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #48 — 2026-10-07 — feat: show a finished turn's whole thinking, and the server's repeat share
+
+### Changed
+
+- **A finished turn's thinking no longer says its end may be missing when the stream has
+  it all.** A partial carries only the text since the previous one, so the tracker could
+  not tell whether a turn's thinking that ended without reply text was whole. From format 1.8
+  the server marks each turn's last partial `final`, and the note now shows only for a
+  turn without one: in the real folder it had wrongly marked 82 of 187 such turns. The thinking's repeat marker uses the server's
+  `reasoning_duplicate_line_share` (format 1.9) when the turn has it, at the same 30%;
+  over 189 real turns the two figures agree within a few points. Older streams keep the
+  tracker's own count.
+
 ## #47 — 2026-10-07 — chore: vendor the contract from server v0.10.0
 
 ### Changed

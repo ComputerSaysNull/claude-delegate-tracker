@@ -264,7 +264,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 ### Absent is not zero
 
 - A missing figure shows `—` or nothing, never `0` or `0%`; a measured 0 shows as 0. This applies to cached tokens, reuse, tokens returned, load, effort, attempts, sizes, exit codes and tool time.
-- Show `attempts` only when above 1, and a repeat share only at 15% or more. A turn whose reply repeats 15% or more of its lines (the stream's `duplicate_line_share`), or whose thinking repeats 30% or more of its lines of 20 characters or more (counted by the tracker over the joined partials, from 5 such lines; short lines such as braces and fences repeat without meaning a loop), carries an amber "reply repeats N%" / "thinking repeats N%" marker in its heading, and the details bar names the run's highest share and its turn.
+- Show `attempts` only when above 1, and a repeat share only at 15% or more. A turn whose reply repeats 15% or more of its lines (the stream's `duplicate_line_share`), or whose thinking repeats 30% or more of its lines (the stream's `reasoning_duplicate_line_share`, format 1.9; for older streams counted by the tracker over the joined partials' lines of 20 characters or more, from 5 such lines, because short lines such as braces and fences repeat without meaning a loop), carries an amber "reply repeats N%" / "thinking repeats N%" marker in its heading, and the details bar names the run's highest share and its turn.
 - Omit the whole-run summary when none of its fields are present.
 - Show the shell count only when above 0. Show the "thinking / answering" split only when `reasoning_chunks` is present.
 
@@ -301,7 +301,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### The reply as it is written
 
-- Every turn whose partials carried reasoning keeps it in a fold labelled with its length in characters. A finished turn's thinking is the partials' reasoning joined, fetched from `/api/streams/<name>/thinking/<turn>` only when the reader opens its fold, so a delegation's view stays small. When none of its partials carried reply text the fold notes that the last moments of thinking may be missing, because a partial carries only the text since the previous one. When the stream says how long the turn reasoned (`turn.reasoning_seconds`, format 1.6), the label reads "Thought for 18s", and a turn without thinking text still says so as a plain line.
+- Every turn whose partials carried reasoning keeps it in a fold labelled with its length in characters. A finished turn's thinking is the partials' reasoning joined, fetched from `/api/streams/<name>/thinking/<turn>` only when the reader opens its fold, so a delegation's view stays small. From format 1.8 the turn's last partial is marked `final` and the joined partials are the whole thinking. Without a `final` partial, and when none of its partials carried reply text, the fold notes that the last moments of thinking may be missing, because a partial carries only the text since the previous one. When the stream says how long the turn reasoned (`turn.reasoning_seconds`, format 1.6), the label reads "Thought for 18s", and a turn without thinking text still says so as a plain line.
 - When the turn's `turn` event lands, its `text` replaces the partial text, even where they differ: a retried attempt can leave text in `partial` that never reached the reply.
 - A patch carries only the text added since the previous one.
 

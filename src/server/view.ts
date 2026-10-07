@@ -37,7 +37,7 @@ export interface TurnView {
   attempts: number | null;      // only when above 1
   retries: { reason: string; status: number | null; wait: string | null }[]; // closed turn: the turn event's retries, in words; [] otherwise
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
-  thinkingRepeated: string | null; // share of the thinking's lines of 20+ characters that repeat an earlier one, as a percent, only from 30% and from 5 such lines; counted here until the stream measures it (plans#57)
+  thinkingRepeated: string | null; // the thinking's repeat share as a percent, only from 30%: turn.reasoning_duplicate_line_share (format 1.9) when the turn has it, else counted here over lines of 20+ characters, from 5 such lines
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
   question: { questions: string[] } | null;  // the `question` asked during this turn
   answer: { text: string; waited: string; bestReading: boolean } | null; // the caller's reply to it
@@ -98,12 +98,12 @@ export interface ViewState {
 export interface TurnSlot {
   priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
   turn: Record<string, unknown> | null; alive: Record<string, unknown> | null;
-  partialReasoning: string; partialAnswer: string; partialSeen: boolean;
+  partialReasoning: string; partialAnswer: string; partialSeen: boolean; partialFinal: boolean;
   question: Record<string, unknown> | null; answer: Record<string, unknown> | null;
 }
 
 function newSlot(): TurnSlot {
-  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false, question: null, answer: null };
+  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false, partialFinal: false, question: null, answer: null };
 }
 
 export function newViewState(): ViewState {
@@ -142,6 +142,7 @@ export function applyViewEvent(v: ViewState, evt: Record<string, unknown>): bool
     }
     if (typeof evt.reasoning === "string") slot.partialReasoning += evt.reasoning;
     if (typeof evt.answer === "string") slot.partialAnswer += evt.answer;
+    if (evt.final === true) slot.partialFinal = true;
     slot.partialSeen = true;
     v.seq += 1;
     return true;
@@ -354,13 +355,21 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     closed,
     heartbeat: closed ? null : heartbeatOf(slot),
     partial: partialOf(slot, closed),
-    thinking: closed && slot.partialReasoning !== "" ? { chars: slot.partialReasoning.length, complete: slot.partialAnswer !== "" } : null,
+    thinking: closed && slot.partialReasoning !== "" ? { chars: slot.partialReasoning.length, complete: slot.partialFinal || slot.partialAnswer !== "" } : null,
     reasonedFor: (() => { const rs = slot.turn?.reasoning_seconds; return typeof rs === "number" && rs > 0 ? (rs < 1 ? "<1s" : rs < 60 ? `${Math.round(rs)}s` : formatDuration(rs)) : null; })(),
     toolTime: closed ? toolTimeOf(slot) : null,
     attempts: typeof attempts === "number" && attempts > 1 ? attempts : null,
     retries: retriesOf(slot.turn),
     repeated: typeof share === "number" && share >= 0.15 ? `${Math.round(share * 100)}%` : null,
-    thinkingRepeated: (() => { const s = repeatShare(slot.partialReasoning); return s !== null && s >= 0.3 ? `${Math.round(s * 100)}%` : null; })(),
+    thinkingRepeated: (() => {
+      const turn = slot.turn;
+      if (turn !== null && "reasoning_duplicate_line_share" in turn) {
+        const s = turn.reasoning_duplicate_line_share;
+        return typeof s === "number" && s >= 0.3 ? `${Math.round(s * 100)}%` : null;
+      }
+      const local = repeatShare(slot.partialReasoning);
+      return local !== null && local >= 0.3 ? `${Math.round(local * 100)}%` : null;
+    })(),
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
     question: questionOf(slot.question),
