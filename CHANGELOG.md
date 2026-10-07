@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #50 — 2026-10-07 — fix: wrap code blocks in a message instead of scrolling them sideways
+
+### Fixed
+
+- **A message with a long line in a code block gave its bubble a sideways scrollbar.** A
+  Markdown code block kept every line on one line and scrolled on its own; 79 of 1,345
+  final answers in the real folder have a code line over 100 characters. Code blocks now
+  wrap like the text around them, keeping their monospace font and border.
+
 ## #49 — 2026-10-07 — feat: say whether the person or the caller answered a question
 
 ### Added

@@ -23,6 +23,13 @@ describe("Markdown", () => {
     expect(container.querySelector("pre code")?.textContent).toContain("load_config(path)");
   });
 
+  it("wraps a code block's long lines instead of scrolling it sideways", () => {
+    const { container } = render(<Markdown text={"```\n" + "x".repeat(400) + "\n```"} />);
+    const look = (container.firstElementChild as HTMLElement).className.split(" ");
+    expect(look).toContain("[&_pre]:whitespace-pre-wrap");
+    expect(look).not.toContain("[&_pre]:overflow-x-auto");
+  });
+
   it("shows raw HTML as text and never makes elements of it", () => {
     const { container } = render(<Markdown text={'Hello <script>alert(1)</script> and <img src="x" onerror="alert(2)">'} />);
     expect(container.querySelector("script")).toBeNull();
