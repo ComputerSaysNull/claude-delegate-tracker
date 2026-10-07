@@ -96,6 +96,14 @@ describe("the conversation", () => {
     expect(rows[1].textContent).toContain("Refused: the path is outside the workspace roots");
   });
 
+  it("shows a turn's text above its tool calls, in the order the model wrote them", () => {
+    const said = turn(1, { reply: "Let me check the schema:", calls: [call({ args: [["path", "schema.py"]] })] });
+    render(<StreamViewBody view={view({ turns: [said] })} />);
+    const text = screen.getByText("Let me check the schema:");
+    const tools = screen.getByRole("list", { name: "Tool calls" });
+    expect(text.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("cuts a call's arguments to one line, all of them one tap away", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", "a/very/long/path.py"]] })] })] })} />);
     const arg = screen.getByText("a/very/long/path.py");
