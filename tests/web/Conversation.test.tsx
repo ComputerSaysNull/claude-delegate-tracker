@@ -104,9 +104,25 @@ describe("the conversation", () => {
     expect(text.compareDocumentPosition(tools) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
+  it("names a call's file and the lines it read, with the whole path on hover", () => {
+    const args: [string, string][] = [["path", "/w/proj/server.py"], ["start_line", "596"], ["end_line", "630"]];
+    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args })] })] })} />);
+    const arg = screen.getByText("server.py · start 596 end 630");
+    expect(arg.getAttribute("title")).toBe("/w/proj/server.py");
+  });
+
+  it("names a call's file alone when it gives no lines, and a call without a path by its first argument", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [
+      call({ args: [["path", "C:\\w\\proj\\notes.md"]] }),
+      call({ name: "run_bash", args: [["command", "npm test"], ["timeout", "60"]] }),
+    ] })] })} />);
+    expect(screen.getByText("notes.md")).toBeTruthy();
+    expect(screen.getByText("npm test")).toBeTruthy();
+  });
+
   it("cuts a call's arguments to one line, all of them one tap away", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", "a/very/long/path.py"]] })] })] })} />);
-    const arg = screen.getByText("a/very/long/path.py");
+    const arg = screen.getByText("path.py");
     expect(arg.className).toMatch(/\btruncate\b/);
     const toggle = screen.getByRole("button", { name: /read_file/ });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
@@ -153,7 +169,7 @@ describe("the conversation", () => {
   it("puts a call's main argument on the same line as its name", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ name: "read_file", args: [["path", "src/dates.py"]] })] })] })} />);
     const name = within(screen.getByRole("list", { name: "Tool calls" })).getByText("read_file");
-    expect(name.parentElement!.textContent).toContain("src/dates.py");
+    expect(name.parentElement!.textContent).toContain("dates.py");
   });
 
   it("writes large token counts short, as 4.6k", () => {

@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #52 — 2026-10-07 — fix: show which file and lines a tool call read
+
+### Fixed
+
+- **A read_file row said "read_file 630"** and its open details listed `end_line` before
+  `path`. A row showed its first argument, and the model stores the arguments in any order:
+  2,839 of 8,464 calls with a path in the real folder led with it. `path`, `start_line` and
+  `end_line` now always come first, in that order, and a row names the file and the lines
+  it read, "server.py · start 596 end 630", with the whole path on hover.
+
 ## #51 — 2026-10-07 — fix: show a turn's text above its tool calls
 
 ### Fixed
