@@ -10,6 +10,7 @@ import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 import type { StreamView, ViewPatch } from "../../src/server/view.ts";
+import type { RunRecord, RunsStatus } from "../../src/server/runs.ts";
 
 function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
@@ -17,6 +18,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
     metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1,
     nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1,
+    dataDir: null, runsScanSeconds: 1,
     limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 }, ...overrides,
   };
 }
@@ -37,8 +39,21 @@ const LIST: ListResponse = {
   rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
 };
 
-function makeApp(overrides: Partial<AppDeps> = {}) {
-  return createApp({
+type RunsPayload = { status: RunsStatus; runs: RunRecord[] };
+
+const RUNS: RunRecord[] = [
+  {
+    name: "20261001T120000.000-a.jsonl", size: 1200, startedAt: 1_700_000_000_000,
+    outcome: "ok", reason: null, repo: "C:\\proj", model: "flash",
+    elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
+  },
+];
+const RUNS_STATUS: RunsStatus = {
+  records: 1, checkedAt: 1_700_000_000_000, checked: 1, disagreed: 0, missing: 0, writeError: null,
+};
+
+function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}) {
+  const deps: AppDeps & { runs: () => RunsPayload } = {
     settings: makeSettings(),
     staticRoot: null,
     health: () => HEALTH,
@@ -52,8 +67,10 @@ function makeApp(overrides: Partial<AppDeps> = {}) {
     clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
     cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
     subscribeCluster: () => () => {},
+    runs: () => ({ status: RUNS_STATUS, runs: RUNS }),
     ...overrides,
-  });
+  };
+  return createApp(deps);
 }
 
 async function readUntil(res: Response, needle: string): Promise<string> {
@@ -127,6 +144,22 @@ describe("cluster figures", () => {
     expect(text).toContain(JSON.stringify(changed));
     await new Promise((r) => setTimeout(r, 20));
     expect(unsubscribe).toHaveBeenCalled();
+  });
+});
+
+describe("run records", () => {
+  it("serves the store's records and status at /api/runs", async () => {
+    const res = await makeApp().request("/api/runs", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: RUNS_STATUS, runs: RUNS });
+  });
+
+  it("reads /api/runs fresh on each request", async () => {
+    let current: RunsPayload = { status: RUNS_STATUS, runs: RUNS };
+    const app = makeApp({ runs: () => current });
+    expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
+    current = { status: { ...RUNS_STATUS, records: 3 }, runs: RUNS };
+    expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
   });
 });
 

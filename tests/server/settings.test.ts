@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { DEFAULTS, loadSettings, SettingsError } from '../../src/server/settings.ts';
 
@@ -115,5 +116,27 @@ describe('loadSettings', () => {
   it('TRANSCRIPT_DIR blank is null, otherwise trimmed kept', () => {
     expect(loadSettings({ TRANSCRIPT_DIR: '  ' }).transcriptDir).toBeNull();
     expect(loadSettings({ TRANSCRIPT_DIR: 'C:\\x' }).transcriptDir).toBe('C:\\x');
+  });
+
+  it('DATA_DIR defaults from LOCALAPPDATA, then XDG_DATA_HOME, then HOME, and is null with none', () => {
+    expect(loadSettings({ LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' }).dataDir).toBe(join('C:\\Users\\me\\AppData\\Local', 'claude-delegate-tracker'));
+    expect(loadSettings({ XDG_DATA_HOME: '/home/me/.local/share' }).dataDir).toBe(join('/home/me/.local/share', 'claude-delegate-tracker'));
+    expect(loadSettings({ HOME: '/home/me' }).dataDir).toBe(join('/home/me', '.local', 'share', 'claude-delegate-tracker'));
+    expect(loadSettings({}).dataDir).toBeNull();
+  });
+
+  it('DATA_DIR overrides the default, and a blank one falls back to it', () => {
+    expect(loadSettings({ DATA_DIR: 'C:\\runs', LOCALAPPDATA: 'C:\\appdata' }).dataDir).toBe('C:\\runs');
+    expect(loadSettings({ DATA_DIR: '  ', LOCALAPPDATA: 'C:\\appdata' }).dataDir).toBe(join('C:\\appdata', 'claude-delegate-tracker'));
+    expect(loadSettings({ DATA_DIR: '  ' }).dataDir).toBeNull();
+  });
+
+  it('RUNS_SCAN_SECONDS defaults and is used when valid', () => {
+    expect(loadSettings({}).runsScanSeconds).toBe(DEFAULTS.runsScanSeconds);
+    expect(loadSettings({ RUNS_SCAN_SECONDS: '30' }).runsScanSeconds).toBe(30);
+  });
+
+  it.each(['4', '3601', '0', 'abc', '1.5'])('RUNS_SCAN_SECONDS rejects %s', (v) => {
+    expect(() => loadSettings({ RUNS_SCAN_SECONDS: v })).toThrow(/RUNS_SCAN_SECONDS/);
   });
 });

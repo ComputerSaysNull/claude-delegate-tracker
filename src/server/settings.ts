@@ -1,4 +1,5 @@
 // This module is the only place a default lives. Docs and tests never restate them.
+import path from "node:path";
 import type { NodeTarget } from "./nodes.ts";
 export interface Settings {
   port: number;                 // TRACKER_PORT
@@ -15,6 +16,8 @@ export interface Settings {
   nodeKnownHosts: string | null; // NODE_KNOWN_HOSTS; the file pinning each node's host key
   nodesPollSeconds: number;     // NODES_POLL_SECONDS; counted from the end of the previous poll
   historyWindowSeconds: number; // HISTORY_WINDOW_SECONDS; how far back the figures over time reach
+  dataDir: string | null;       // DATA_DIR; where the run records are kept; default from LOCALAPPDATA/XDG_DATA_HOME/HOME
+  runsScanSeconds: number;      // RUNS_SCAN_SECONDS; how often the runs folder is checked for runs that ended
   limits: Limits;               // LOAD_WARN_PERCENT, LOAD_HOT_PERCENT, TEMP_WARN_C, TEMP_HOT_C
 }
 
@@ -35,6 +38,7 @@ export const DEFAULTS = {
   metricsTimeoutMs: 5000,
   nodesPollSeconds: 5,
   historyWindowSeconds: 3600,
+  runsScanSeconds: 60,
   loadWarnPercent: 50,
   loadHotPercent: 80,
   tempWarnC: 70,
@@ -65,6 +69,16 @@ function optional(env: Record<string, string | undefined>, name: string): string
 }
 
 export class SettingsError extends Error {}
+
+function dataDirDefault(env: Record<string, string | undefined>): string | null {
+  const local = env.LOCALAPPDATA?.trim() ?? "";
+  if (local !== "") return path.join(local, "claude-delegate-tracker");
+  const xdg = env.XDG_DATA_HOME?.trim() ?? "";
+  if (xdg !== "") return path.join(xdg, "claude-delegate-tracker");
+  const home = env.HOME?.trim() ?? "";
+  if (home !== "") return path.join(home, ".local", "share", "claude-delegate-tracker");
+  return null;
+}
 
 function wholeNumber(env: Record<string, string | undefined>, name: string,
                      fallback: number, min: number, max: number): number {
@@ -109,6 +123,8 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     nodeKnownHosts: optional(env, "NODE_KNOWN_HOSTS"),
     nodesPollSeconds: wholeNumber(env, "NODES_POLL_SECONDS", DEFAULTS.nodesPollSeconds, 1, 3600),
     historyWindowSeconds: wholeNumber(env, "HISTORY_WINDOW_SECONDS", DEFAULTS.historyWindowSeconds, 60, 86400),
+    dataDir: (env.DATA_DIR?.trim() ?? "") === "" ? dataDirDefault(env) : (env.DATA_DIR ?? "").trim(),
+    runsScanSeconds: wholeNumber(env, "RUNS_SCAN_SECONDS", DEFAULTS.runsScanSeconds, 5, 3600),
     limits: { loadWarn, loadHot, tempWarn, tempHot },
   };
 }

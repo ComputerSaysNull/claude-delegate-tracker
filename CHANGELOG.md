@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #55 — 2026-10-07 — feat: a History tab, from run records kept on disk
+
+### Added
+
+- **The tracker keeps one record per finished run on disk, checked against the streams.**
+  Each delegation was seen alone, so whether delegating pays off could not be read
+  anywhere. The records survive a restart and a stream being deleted (ADR-0005). At every
+  start each record is compared with its stream: of 1,501 real runs, a record changed by
+  hand was rebuilt and counted, and one whose stream was gone was kept and counted. The
+  full check takes about 2.4 s; between starts only new or grown streams are re-read.
+  `DATA_DIR` moves the folder, `RUNS_SCAN_SECONDS` sets how often it looks.
+
 ## #54 — 2026-10-07 — feat: open a delegation from anywhere on its card
 
 ### Changed

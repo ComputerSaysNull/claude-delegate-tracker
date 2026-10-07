@@ -73,6 +73,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/streams/<name>/thinking/<turn>` | One finished turn's thinking, as text, fetched only when the page opens its fold. `<name>` is looked up among the names the backend listed itself and `<turn>` among the turns it holds; anything else is `404`. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
 | `GET /api/cluster/history` | The same figures over time, for the charts. See "Figures over time". |
+| `GET /api/runs` | Every run record, newest first, and how the records stand: how many, when they were last checked against the folder, how many disagreed, how many streams are gone, and the last write error. See "Run records". |
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
 | `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and `cluster` and `health` events with the figures and the health report the same way. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
@@ -94,7 +95,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 
 ## Settings
 
-`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, the load and heat thresholds (`LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
+`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, `DATA_DIR` (where the run records are kept), `RUNS_SCAN_SECONDS`, the load and heat thresholds (`LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
 
 Defaults live only in the settings module, never in docs or tests.
 
@@ -336,12 +337,19 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Every state has its own icon besides its colour, the same in badges, cards and the conversation. A badge is a pill naming the state in a word: Running, Queued, Quiet, Done, Failed, Cut off. Every card is tinted in its state's colour, a run in progress (running, asking, queued) more strongly; a running card's dot pulses unless the system asks for reduced motion.
 - Words in IBM Plex Sans. A figure, time, duration or piece of code that stands on its own is in IBM Plex Mono, with tabular digits so a ticking number keeps its width; one inside a sentence stays in the sentence's font.
 
+## Run records
+
+- A finished run becomes one record: when it started, its outcome and a short reason when it did not finish, its repo and model, how long it took, and its tokens. A failure's reason is its error's first line up to the first colon. A missing figure stays null.
+- The records live in `runs.json` in `DATA_DIR` (ADR-0005). The file is written to a temporary name and renamed over the old one, so a crash never leaves half a file. A file or a record of the wrong shape is ignored, never trusted.
+- At every start the backend reads the whole folder once and compares each record with its stream. A record that disagrees is rebuilt from the stream and counted; a record whose stream is gone is kept and counted. The History tab shows both counts.
+- Every `RUNS_SCAN_SECONDS` it re-reads only streams that are new or whose size changed.
+
 ## Security
 
 - Exposure: the tracker listens on loopback. Only the overlay VPN's serve reaches it, so only devices on that private network can. It is never published to the internet.
 - Host check: the tracker accepts only loopback Host names plus `ALLOWED_HOSTS`. That stops a page on another origin from reading it through DNS rebinding.
 - Read-only: GET routes and SSE only. No write or control endpoints without a new design.
-- File access: the backend opens only `*.jsonl` files it listed itself in `TRANSCRIPT_DIR`, read-only. A name from a URL is looked up in that list and never joined onto a path, so no request can name a file to open.
+- File access: the backend opens only `*.jsonl` files it listed itself in `TRANSCRIPT_DIR`, read-only. A name from a URL is looked up in that list and never joined onto a path, so no request can name a file to open. The only files it writes are its own records in `DATA_DIR`, under names it chose itself.
 - What it shows: every delegation's task text, replies and reasoning. So whoever can open the page can read all of it, and today that is every device on the overlay VPN, the cluster nodes included. Tightening that is ADR-0004.
 - The node key is a dedicated SSH key that can run only the stats command. It lives outside the repo, and its path is in the gitignored `.env`.
 - Secrets: a metrics token, if any, stays in its own environment variable. The gitignored `.env` holds only that variable's name (`METRICS_TOKEN_ENV`). The token is never sent to the browser and never logged.
