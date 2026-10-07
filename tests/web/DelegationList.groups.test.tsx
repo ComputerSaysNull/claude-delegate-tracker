@@ -86,12 +86,12 @@ describe("DelegationList grouped by date", () => {
     expect(line.querySelector(".text-state-failed")!.textContent).toBe("1 failed");
   });
 
-  it("a running card shows its turns as a bar and its time left", () => {
+  it("a running card shows its turns as a bar, and leaves the time left to the details bar", () => {
     render(<DelegationList list={list([row("r", { state: "live", turns: "2 of 4", left: "2m50s" })])} />);
     const card = screen.getByRole("link", { name: "Delegation r" }).closest("li")!;
     const bar = within(card).getByRole("progressbar", { name: "Turns" });
     expect([bar.getAttribute("aria-valuenow"), bar.getAttribute("aria-valuemax")]).toEqual(["2", "4"]);
-    expect(card.textContent).toContain("2m50s left");
+    expect(card.textContent).not.toContain("left");
   });
 
   it("a queued card shows how long it has waited out of how long it may", () => {

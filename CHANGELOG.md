@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #54 — 2026-10-07 — feat: open a delegation from anywhere on its card
+
+### Changed
+
+- **A click anywhere on a delegation's card opens it**, where only the title did, so a
+  click on the card's second line did nothing. The title stays the link, for the keyboard
+  and for opening in a new tab. A running card no longer shows its time left, such as
+  "14m59s left"; the details bar still does.
+
 ## #53 — 2026-10-07 — feat: click a delegation's title to scroll back to the top
 
 ### Added

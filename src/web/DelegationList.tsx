@@ -45,7 +45,6 @@ function metaNodes(row: ListRow): ReactNode[] {
   if (row.elapsed !== null && row.elapsed !== "") {
     pieces.push(<span className="font-mono tabular-nums">{row.elapsed}</span>);
   }
-  if (row.state === "live" && row.left !== null) pieces.push(`${row.left} left`);
   return pieces;
 }
 
@@ -111,9 +110,16 @@ function RowCard({
     ));
   }
   return (
+    // The whole card opens the delegation. The title stays the link, for the keyboard and for
+    // opening in a new tab; a click on the link itself is left to the link's own handler.
     <li
-      className={`rounded-xl border px-3.5 py-3 ${cardClass(row.state)} ${selected === row.name ? "ring-2 ring-accent" : ""}`}
+      className={`cursor-pointer rounded-xl border px-3.5 py-3 ${cardClass(row.state)} ${selected === row.name ? "ring-2 ring-accent" : ""}`}
       aria-current={selected === row.name ? "true" : undefined}
+      onClick={(e) => {
+        if (!onOpen || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+        if ((e.target as HTMLElement).closest("a") !== null) return;
+        onOpen(row.name);
+      }}
     >
       <div className="flex items-center gap-2.5">
         <StateIcon state={row.state} />
