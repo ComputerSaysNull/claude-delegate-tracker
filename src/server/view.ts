@@ -40,7 +40,7 @@ export interface TurnView {
   thinkingRepeated: string | null; // the thinking's repeat share as a percent, only from 30%: turn.reasoning_duplicate_line_share (format 1.9) when the turn has it, else counted here over lines of 20+ characters, from 5 such lines
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
   question: { questions: string[] } | null;  // the `question` asked during this turn
-  answer: { text: string; waited: string; bestReading: boolean } | null; // the caller's reply to it
+  answer: { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null } | null; // the caller's reply to it; by: who answered, answer.by from format 1.10
   tokensIn: number | null;      // closed turn: input_tokens
   tokensOut: number | null;     // closed turn: output_tokens
   tokS: number | null;          // closed turn: out_tok_s, the decode speed
@@ -412,7 +412,8 @@ function questionOf(evt: Record<string, unknown> | null): TurnView["question"] {
 
 function answerOf(evt: Record<string, unknown> | null): TurnView["answer"] {
   if (evt === null || typeof evt.text !== "string" || typeof evt.waited_seconds !== "number") return null;
-  return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true };
+  const by = evt.by === "caller" || evt.by === "person" ? evt.by : null;
+  return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true, by };
 }
 
 function fileView(e: unknown): FileView | null {

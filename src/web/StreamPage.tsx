@@ -217,13 +217,16 @@ export function StreamViewBody({ view }: { view: StreamView }) {
 
 // The caller's reply to a question, on the caller's side like the task.
 function CallerAnswer({ answer, workspace }: { answer: NonNullable<TurnView["answer"]>; workspace: string | null }) {
+  const from = workspace !== null ? ` from ${workspace}` : "";
+  const header = answer.by === "person" ? "You answered, after "
+    : answer.by === "caller" ? `Caller answered${from}, after ` : `Answer${from}, after `;
   return (
     <li
       data-from="caller"
       className="ml-auto flex max-w-[88%] flex-col gap-2 rounded-2xl rounded-br-sm border border-line bg-card px-3 py-2"
     >
       <p className="text-xs text-muted">
-        {workspace !== null ? `Answer from ${workspace}, after ` : "Answer, after "}
+        {header}
         <span className="font-mono tabular-nums">{answer.waited}</span>
       </p>
       {answer.bestReading && <p className="text-sm text-muted">The caller left the choice to the delegation:</p>}

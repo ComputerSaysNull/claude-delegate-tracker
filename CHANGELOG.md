@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #49 — 2026-10-07 — feat: say whether the person or the caller answered a question
+
+### Added
+
+- **A delegation's question now says who answered it**: "You answered" when the person
+  did, "Caller answered" when the calling model did. Since server v0.10.0 a question can
+  go to the person instead of the caller, but the row read as if the caller always
+  answered. It reads the stream's new `answer.by` (format 1.10); an older stream keeps
+  "Answer".
+
 ## #48 — 2026-10-07 — feat: show a finished turn's whole thinking, and the server's repeat share
 
 ### Changed
