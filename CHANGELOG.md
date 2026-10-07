@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #47 — 2026-10-07 — chore: vendor the contract from server v0.10.0
+
+### Changed
+
+- **The contract moves from v0.8.0 to v0.10.0, transcript format 1.6 to 1.10.** The server
+  now marks a turn's last `partial` as `final` (its partials then hold the whole thinking),
+  writes `turn.reasoning_duplicate_line_share`, names every `retry.kind`, and says in
+  `answer.by` whether the caller or the person answered. The tracker may read only what its
+  vendored contract has. Only additions, so a minor; the tracker reads none of them yet.
+
 ## #46 — 2026-10-06 — feat: show which repo sent a delegation
 
 ### Added
