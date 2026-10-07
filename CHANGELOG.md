@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #56 — 2026-10-08 — feat: show when the cluster is busy, from hours kept on disk
+
+### Added
+
+- **History shows when the cluster is busy**: the KV-cache use per day (peak and average,
+  with the 90% line), how much of the time a request was running, and a weekday-by-hour
+  grid with the busiest hour named. The model server's figures lived in memory for an
+  hour, so none of this could be seen. The tracker now keeps busy time and KV-cache use
+  per UTC hour for 90 days in its data folder (ADR-0005), counting the time between two
+  readings by the earlier one and never across an outage. The charts fill from the first
+  run of this version.
+
 ## #55 — 2026-10-07 — feat: a History tab, from run records kept on disk
 
 ### Added

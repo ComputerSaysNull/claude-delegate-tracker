@@ -1,8 +1,10 @@
 // The History tab: the run records the backend keeps, over the last 7/30/90 days. The
 // figures come from historyData.ts (pure); this page only fetches the records and draws them.
 import { useEffect, useState } from "react";
+import type { HourBucket } from "../server/busy.ts";
 import type { RunRecord, RunsStatus } from "../server/runs.ts";
 import { ChartTooltip } from "./ChartTooltip.tsx";
+import { busiest, busyIn, busyTotals, kvPerDay, weekHours } from "./busyData.ts";
 import { compactCount } from "./format.ts";
 import { StateIcon } from "./states.tsx";
 import {
@@ -22,6 +24,16 @@ interface RunsResponse {
   status: RunsStatus;
   runs: RunRecord[];
 }
+
+interface BusyResponse {
+  buckets: HourBucket[];
+  writeError: string | null;
+}
+
+// Weekday names for the busiest hour and the cluster-busy grid rows; Monday is the first row.
+const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const WEEKDAYS_PLURAL = ["Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays"];
+const two = (n: number): string => String(n).padStart(2, "0");
 
 // A run's length, written short: "1m30s", "2h05m". The server's formatDuration lives in
 // src/server/streams.ts (server code), so the web keeps its own copy here.
@@ -45,6 +57,7 @@ const RANGES: Range[] = [7, 30, 90];
 
 export function HistoryPage() {
   const [data, setData] = useState<RunsResponse | null>(null);
+  const [busy, setBusy] = useState<BusyResponse | null>(null);
   const [error, setError] = useState(false);
   const [range, setRange] = useState<Range>(30);
 
@@ -62,6 +75,15 @@ export function HistoryPage() {
         }
       } catch {
         if (!cancelled) setError(true);
+      }
+      try {
+        const res = await fetch("/api/busy");
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const body = (await res.json()) as BusyResponse;
+        if (!cancelled) setBusy(body);
+      } catch {
+        // A busy failure only leaves the busy sections empty; the history still shows.
+        if (!cancelled) setBusy({ buckets: [], writeError: null });
       }
     }
     void load();
@@ -98,7 +120,7 @@ export function HistoryPage() {
       ) : (
         <>
           {error && <p className="text-muted">Could not refresh the history.</p>}
-          <HistoryBody data={data} range={range} />
+          <HistoryBody data={data} busy={busy} range={range} />
         </>
       )}
     </section>
@@ -182,7 +204,7 @@ function DayChart({
   );
 }
 
-function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
+function HistoryBody({ data, busy, range }: { data: RunsResponse; busy: BusyResponse | null; range: Range }) {
   const now = new Date();
   const runs = inRange(data.runs, range, now);
   const t = totals(runs);
@@ -190,6 +212,14 @@ function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
   const why = reasons(runs);
   const repoGroups = groupBy(runs, "repo");
   const modelGroups = groupBy(runs, "model");
+  const busyBuckets = busy === null ? [] : busyIn(busy.buckets, range, now);
+  const busyTotal = busyTotals(busyBuckets);
+  const grid = weekHours(busyBuckets);
+  const hottest = busiest(grid);
+  const kv = busy === null ? [] : kvPerDay(busy.buckets, range, now);
+  const noBusy = busyBuckets.length === 0;
+  const busyWriteError = busy === null ? null : busy.writeError;
+  const kvPoints = kv.map((k, i) => (k.average === null ? null : `${i + 0.5},${100 - k.average}`)).filter((p): p is string => p !== null).join(" ");
 
   // Each column is a share of the tallest day, so the two charts always fill the same box.
   const dayMax = days.reduce((m, d) => Math.max(m, d.ok + d.stopped + d.limits + d.failed), 0);
@@ -291,19 +321,124 @@ function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-line bg-card p-4">
-        <h3 className="text-sm font-semibold">Why runs did not finish</h3>
-        {why.length === 0 ? (
-          <p className="text-muted">Every run finished.</p>
-        ) : (
-          why.map((r) => (
-            <div key={r.reason} className="flex items-center gap-2.5 text-[13px]">
-              <StateIcon state={r.outcome} />
-              <span className="flex-1">{r.reason}</span>
-              <span className="font-mono tabular-nums">{r.count}</span>
-            </div>
-          ))
-        )}
+      <div className="flex flex-wrap gap-4">
+        <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+          <h3 className="text-sm font-semibold">KV-cache use</h3>
+          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-line" aria-hidden="true" />daily peak</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-accent" aria-hidden="true" />daily average</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-hot" aria-hidden="true" />90%: amber from here</span>
+          </div>
+          {noBusy ? (
+            <p className="text-muted">No figures from the model server in this range.</p>
+          ) : (
+            <>
+              <div className="flex gap-2">
+                <div className="flex h-[130px] flex-col justify-between text-right font-mono tabular-nums text-[11px] text-muted">
+                  <span>100%</span>
+                  <span>50%</span>
+                  <span>0%</span>
+                </div>
+                <div className="relative h-[130px] flex-1 border-b border-line">
+                  <div className="absolute inset-0 flex items-end gap-[3px]">
+                    {kv.map((k) => (
+                      <div key={k.label} className="flex h-full flex-1 flex-col justify-end">
+                        <div className="bg-line" style={{ height: `${k.peak ?? 0}%` }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="absolute left-0 right-0 top-[10%] border-t-2 border-dashed border-hot opacity-60" aria-hidden="true" />
+                  <svg className="absolute inset-0 text-accent" width="100%" height="130" viewBox={`0 0 ${kv.length} 100`} preserveAspectRatio="none" aria-hidden="true">
+                    <polyline points={kvPoints} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                  </svg>
+                </div>
+              </div>
+              <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+                {labels.map((l) => (
+                  <span key={l}>{l}</span>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-[2_1_280px] flex-col gap-3 rounded-xl border border-line bg-card p-4">
+          <h3 className="text-sm font-semibold">Busy and idle</h3>
+          {noBusy ? (
+            <p className="text-muted">No figures from the model server in this range.</p>
+          ) : (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono tabular-nums text-3xl font-medium">{busyTotal.busyPercent === null ? "—" : `${busyTotal.busyPercent}%`}</span>
+                <span className="text-muted">of the time a request was running</span>
+              </div>
+              <div className="flex h-3 overflow-hidden rounded-full" aria-hidden="true">
+                <div className="bg-accent" style={{ width: `${busyTotal.busyPercent ?? 0}%` }} />
+                <div className="flex-1 bg-line" />
+              </div>
+              <span className="text-[12.5px] text-muted">busy <span className="font-mono tabular-nums text-text">{busyTotal.busyHours}h</span> · idle <span className="font-mono tabular-nums text-text">{busyTotal.idleHours}h</span></span>
+              <div className="text-[12.5px] text-muted">
+                {hottest === null ? "No busy hour recorded." : `Busiest: ${WEEKDAYS_PLURAL[hottest.day]} ${two(hottest.hour)}:00–${two(hottest.hour + 1)}:00`}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4">
+        <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+          <h3 className="text-sm font-semibold">When the cluster is busy</h3>
+          {noBusy ? (
+            <p className="text-muted">No figures from the model server in this range.</p>
+          ) : (
+            <>
+              <div className="flex flex-col gap-[3px]">
+                {grid.map((row, d) => (
+                  <div key={d} className="flex items-center gap-[3px]">
+                    <span className="w-[34px] text-[11.5px] text-muted">{WEEKDAYS[d]}</span>
+                    {row.map((v, h) => (
+                      <span
+                        key={h}
+                        title={`${WEEKDAYS[d]} ${two(h)}:00: busy ${v === null ? 0 : Math.round(v * 100)}%`}
+                        className={`h-4 flex-1 rounded ${v === null ? "bg-line" : "bg-accent"}`}
+                        style={v === null ? undefined : { opacity: 0.06 + v * 0.89 }}
+                      />
+                    ))}
+                  </div>
+                ))}
+                <div className="flex gap-[3px] pl-[37px] font-mono tabular-nums text-[11px] text-muted">
+                  <span className="flex-[6]">00:00</span>
+                  <span className="flex-[6]">06:00</span>
+                  <span className="flex-[6]">12:00</span>
+                  <span className="flex-[6]">18:00</span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted">
+                <span>quiet</span>
+                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.06 }} />
+                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.3 }} />
+                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.6 }} />
+                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.9 }} />
+                <span>busy</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-[2_1_280px] flex-col gap-2 rounded-xl border border-line bg-card p-4">
+          <h3 className="text-sm font-semibold">Why runs did not finish</h3>
+          {why.length === 0 ? (
+            <p className="text-muted">Every run finished.</p>
+          ) : (
+            why.map((r) => (
+              <div key={r.reason} className="flex items-center gap-2.5 text-[13px]">
+                <StateIcon state={r.outcome} />
+                <span className="flex-1">{r.reason}</span>
+                <span className="font-mono tabular-nums">{r.count}</span>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
       <GroupTable name="Repo" groups={repoGroups} />
@@ -319,6 +454,12 @@ function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
           <>
             {" · "}
             <span className="text-warn">Could not save: {data.status.writeError}</span>
+          </>
+        )}
+        {busyWriteError !== null && (
+          <>
+            {" · "}
+            <span className="text-warn">Could not save: {busyWriteError}</span>
           </>
         )}
       </p>

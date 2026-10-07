@@ -7,6 +7,7 @@ import { HistoryPage } from "../../src/web/HistoryPage.tsx";
 import { dayMonthYear } from "../../src/web/historyData.ts";
 import { localTime } from "../../src/web/time.ts";
 import type { RunsStatus, RunRecord } from "../../src/server/runs.ts";
+import type { HourBucket } from "../../src/server/busy.ts";
 
 const NOW = new Date(2026, 9, 4, 12, 0, 0).getTime();
 const DAY = 24 * 60 * 60 * 1000;
@@ -52,8 +53,45 @@ function api(runs: RunRecord[], status: Partial<RunsStatus> = {}): { status: Run
   };
 }
 
-function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }): void {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(data), { status: 200 })));
+interface BusyResponse {
+  buckets: HourBucket[];
+  writeError: string | null;
+}
+
+function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }, busy?: BusyResponse): void {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/busy") {
+        return new Response(JSON.stringify(busy ?? { buckets: [], writeError: null }), { status: 200 });
+      }
+      return new Response(JSON.stringify(data), { status: 200 });
+    }),
+  );
+}
+
+// A bucket at a local wall-clock time; `hour` round-trips to the same local day and hour.
+function bucket(hour: Date, overrides: Partial<HourBucket> = {}): HourBucket {
+  return {
+    hour: hour.getTime(),
+    seconds: 3600,
+    busySeconds: 1800,
+    kvSum: 0,
+    kvSeconds: 0,
+    kvMax: null,
+    ...overrides,
+  };
+}
+
+// Buckets on 29-30 Sep 2026 (a Tuesday and a Wednesday, both inside the default 30-day range):
+// 10800 s total, 7200 s busy, and Tuesday 10:00-11:00 the busiest cell.
+function busyBuckets(): HourBucket[] {
+  return [
+    bucket(new Date(2026, 8, 29, 10), { seconds: 3600, busySeconds: 3600, kvSum: 3000, kvSeconds: 1000, kvMax: 80 }),
+    bucket(new Date(2026, 8, 29, 11), { seconds: 3600, busySeconds: 1800, kvSum: 2000, kvSeconds: 1000, kvMax: 90 }),
+    bucket(new Date(2026, 8, 30, 11), { seconds: 3600, busySeconds: 1800, kvSum: 1500, kvSeconds: 1000, kvMax: 70 }),
+  ];
 }
 
 // The card holding the "Delegations per day" chart: the heading's container.
@@ -261,5 +299,50 @@ describe("HistoryPage", () => {
         expect(column.getAttribute("title")).toBeNull();
       }
     });
+  });
+
+  it("adds the KV-cache, busy, and cluster-busy sections with the KV legend", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("KV-cache use")).toBeTruthy());
+    expect(screen.getByText("Busy and idle")).toBeTruthy();
+    expect(screen.getByText("When the cluster is busy")).toBeTruthy();
+    expect(screen.getByText("90%: amber from here")).toBeTruthy();
+  });
+
+  it("shows the busy percent, the running-time caption, and the busy/idle hours", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("Busy and idle")).toBeTruthy());
+    expect(screen.getByText("67%")).toBeTruthy();
+    expect(screen.getByText("of the time a request was running")).toBeTruthy();
+    expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "busy 2h · idle 1h")).toBeTruthy();
+    expect(screen.getByText(/Busiest: Tuesdays 10:00–11:00/)).toBeTruthy();
+  });
+
+  it("shows the no-figures message when no buckets are in range", async () => {
+    mockFetch(api(RUNS), { buckets: [], writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getAllByText("No figures from the model server in this range.").length).toBeGreaterThan(0));
+  });
+
+  it("labels the cluster-busy grid rows, hour ticks, and legend", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("When the cluster is busy")).toBeTruthy());
+    for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
+      expect(screen.getAllByText(day).length).toBeGreaterThan(0);
+    }
+    for (const tick of ["00:00", "06:00", "12:00", "18:00"]) {
+      expect(screen.getAllByText(tick).length).toBeGreaterThan(0);
+    }
+    expect(screen.getAllByText("quiet").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("busy").length).toBeGreaterThan(0);
+  });
+
+  it("joins a busy write error into the status line", async () => {
+    mockFetch(api(RUNS), { buckets: [], writeError: "busy disk full" });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText(/Could not save: busy disk full/)).toBeTruthy());
   });
 });

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app.ts";
+import { BusyStore } from "./busy.ts";
 import { buildHealth, makeSchemaCheck, type Health } from "./health.ts";
 import { ClusterHistoryStore } from "./history.ts";
 import { MetricsPoller } from "./metrics.ts";
@@ -55,7 +56,16 @@ nodes.start(settings.nodesPollSeconds);
 
 // The figures over time, kept in memory; a point per reading, a gap while a source is down.
 const figureHistory = new ClusterHistoryStore(settings.historyWindowSeconds);
-metrics.onChange((model) => figureHistory.pushModel(Date.now(), model));
+const busy = new BusyStore(
+  settings.dataDir === null ? null : path.join(settings.dataDir, "busy.json"),
+  () => Date.now(),
+  settings.metricsPollSeconds * 3,
+);
+busy.load();
+metrics.onChange((model) => {
+  figureHistory.pushModel(Date.now(), model);
+  busy.push(Date.now(), model);
+});
 nodes.onChange((figures) => figureHistory.pushNodes(Date.now(), figures));
 
 // The health report, rebuilt whenever one of its sources changes; sent only when it differs.
@@ -119,6 +129,7 @@ const app = createApp({
     };
   },
   runs: () => ({ status: runs.status(), runs: runs.records() }),
+  busy: () => ({ buckets: busy.buckets(), writeError: busy.writeError() }),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {
