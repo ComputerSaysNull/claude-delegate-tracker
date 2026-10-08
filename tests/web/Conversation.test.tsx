@@ -384,6 +384,26 @@ describe("following the reply in a pane that scrolls itself", () => {
 
   afterEach(() => windowScrollTo.mockRestore());
 
+  it("scrolls the pane back to the top when the title is clicked, and stops following", () => {
+    const { rerender } = render(inPane(grow("one")));
+    const el = pane();
+    vi.mocked(el.scrollTo).mockClear();
+    const title = screen.getByRole("button", { name: row().title });
+    expect(title.className).toMatch(/\bcursor-pointer\b/);
+    fireEvent.click(title);
+    expect(el.scrollTo).toHaveBeenCalledWith({ top: 0 });
+    vi.mocked(el.scrollTo).mockClear();
+    rerender(inPane(grow("one two")));
+    expect(el.scrollTo).not.toHaveBeenCalled();
+  });
+
+  it("scrolls the window back to the top when there is no pane (a phone)", () => {
+    render(<StreamViewBody view={grow("one")} />);
+    windowScrollTo.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: row().title }));
+    expect(windowScrollTo).toHaveBeenCalledWith({ top: 0 });
+  });
+
   it("keeps the newest text in sight by scrolling the pane, not the window", () => {
     const { rerender } = render(inPane(grow("one")));
     const el = pane();

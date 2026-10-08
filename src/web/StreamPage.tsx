@@ -61,6 +61,10 @@ function toBottom(pane: HTMLElement | null): void {
   else pane.scrollTo({ top: pane.scrollHeight });
 }
 
+function toTop(pane: HTMLElement | null): void {
+  (pane ?? window).scrollTo({ top: 0 });
+}
+
 // The path as it reads inside the repo: the segments after the last segment that equals the
 // workspace and is not the path's final segment, joined with "/"; else the path unchanged.
 function insideRepo(path: string, workspace: string | null): string {
@@ -103,8 +107,18 @@ export function StreamViewBody({ view }: { view: StreamView }) {
       <header className="sticky top-0 z-10 flex flex-col gap-2 border-b border-line bg-page pt-4 pb-3">
         <div className="flex items-center gap-2">
           <StateBadge state={row.state} />
-          <h2 className="min-w-0 lg:truncate text-xl font-semibold" title={row.title}>
-            {row.title}
+          <h2 className="min-w-0 text-xl font-semibold" title={row.title}>
+            {/* Back to the task at the top; stop following, or the next update scrolls down again. */}
+            <button
+              type="button"
+              onClick={() => {
+                setFollowing(false);
+                toTop(scrollerOf(root.current));
+              }}
+              className="block max-w-full cursor-pointer text-left lg:truncate"
+            >
+              {row.title}
+            </button>
           </h2>
           <button
             type="button"
