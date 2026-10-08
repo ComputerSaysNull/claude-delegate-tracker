@@ -202,7 +202,7 @@ describe("a question to the caller", () => {
   });
 
   it("shows the caller's answer as the caller's message, and stops waiting", () => {
-    const answered = turn(1, { closed: false, question: asked.question, answer: { text: "Leave them out", waited: "48s", bestReading: false } });
+    const answered = turn(1, { closed: false, question: asked.question, answer: { text: "Leave them out", waited: "48s", bestReading: false, by: null } });
     render(<StreamViewBody view={view({ row: row({ state: "live" }), task: null, turns: [answered] })} />);
     const [reply] = document.querySelectorAll('[data-from="caller"]');
     expect(reply.textContent).toContain("Leave them out");
@@ -211,7 +211,7 @@ describe("a question to the caller", () => {
   });
 
   it("says in the question how long the answer took, once it came", () => {
-    const answered = turn(1, { question: asked.question, answer: { text: "Leave them out", waited: "1m12s", bestReading: false } });
+    const answered = turn(1, { question: asked.question, answer: { text: "Leave them out", waited: "1m12s", bestReading: false, by: null } });
     render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
     expect(screen.getByRole("note", { name: "Question for the caller" }).textContent).toContain("Answered after 1m12s");
   });
@@ -222,7 +222,7 @@ describe("a question to the caller", () => {
   });
 
   it("says when the caller left the choice to the delegation", () => {
-    const answered = turn(1, { question: asked.question, answer: { text: "Proceed on your best reading.", waited: "1m01s", bestReading: true } });
+    const answered = turn(1, { question: asked.question, answer: { text: "Proceed on your best reading.", waited: "1m01s", bestReading: true, by: null } });
     render(<StreamViewBody view={view({ task: null, turns: [answered] })} />);
     expect(document.querySelector('[data-from="caller"]')!.textContent).toMatch(/left the choice to the delegation/);
   });

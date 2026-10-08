@@ -172,7 +172,7 @@ describe("the repo on the stream page", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false } })],
+          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: null } })],
         })}
       />,
     );
@@ -185,12 +185,53 @@ describe("the repo on the stream page", () => {
     render(
       <StreamViewBody
         view={view({
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false } })],
+          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: null } })],
         })}
       />,
     );
     expect(screen.getByText(/Answer, after/)).toBeTruthy();
     expect(screen.queryByText(/Answer from/)).toBeNull();
+  });
+
+  it("reads the person's answer as you answered, with a workspace", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          row: row({ workspace: "web-shop" }),
+          turns: [turn(1, { answer: { text: "yes", waited: "48s", bestReading: false, by: "person" } })],
+        })}
+      />,
+    );
+    const header = screen.getByText(/You answered, after/);
+    expect(header.textContent).toContain("You answered, after 48s");
+    expect(screen.queryByText(/Answer from/)).toBeNull();
+  });
+
+  it("reads the caller's answer as from the repo", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          row: row({ workspace: "web-shop" }),
+          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } })],
+        })}
+      />,
+    );
+    const header = screen.getByText(/Caller answered from web-shop, after/);
+    expect(header.textContent).toContain("Caller answered from web-shop, after");
+    expect(header.textContent).toContain("5s");
+  });
+
+  it("reads the caller's answer with no repo", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } })],
+        })}
+      />,
+    );
+    const header = screen.getByText(/Caller answered, after/);
+    expect(header.textContent).toContain("Caller answered, after");
+    expect(header.textContent).toContain("5s");
   });
 });
 
