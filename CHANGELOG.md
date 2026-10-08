@@ -9,6 +9,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #51 — 2026-10-07 — fix: show a turn's text above its tool calls
+
+### Fixed
+
+- **A turn's text showed below its tool calls**, so "Let me check the schema:" came after
+  the reads it announced. The model writes its text before it calls tools, but the bubble
+  put the tool rows first. The text now comes first, after the thinking.
+
 ## #50 — 2026-10-07 — fix: wrap code blocks in a message instead of scrolling them sideways
 
 ### Fixed

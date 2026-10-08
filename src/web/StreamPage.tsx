@@ -351,6 +351,9 @@ function DelegationMessage({
               </details>
             )
           ) : null}
+          {/* The model writes its text before it calls tools, so the text comes first. */}
+          {writing && <p className="text-xs text-muted">writing…</p>}
+          {answer !== null && <Markdown text={answer} />}
           {calls.length > 0 && (
             <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
               {calls.map((call, i) => (
@@ -358,8 +361,6 @@ function DelegationMessage({
               ))}
             </ul>
           )}
-          {writing && <p className="text-xs text-muted">writing…</p>}
-          {answer !== null && <Markdown text={answer} />}
         </div>
         )}
         {turn.question !== null && (
