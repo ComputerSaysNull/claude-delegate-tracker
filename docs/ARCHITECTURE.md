@@ -74,6 +74,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
 | `GET /api/cluster/history` | The same figures over time, for the charts. See "Figures over time". |
 | `GET /api/runs` | Every run record, newest first, and how the records stand: how many, when they were last checked against the folder, how many disagreed, how many streams are gone, and the last write error. See "Run records". |
+| `GET /api/busy` | The model server's KV-cache use per UTC hour over the last 90 days, and the last write error. See "Figures over time". |
 | `GET /api/health` | The health report: when it was checked, whether the transcript folder is set and readable, the clock skew, and the banners to show, already worded. Never the folder's path. |
 | `GET /api/updates?stream=<name>` | An SSE stream. A `list` event with the whole list on connect and again whenever the list changes, and `cluster` and `health` events with the figures and the health report the same way. With `stream=`, also a `stream` event each time that stream's view changes: its row, its waiting line, its summary, and only the turns that changed, never the closed turns already sent. An unknown name is `404`. A `: ping` comment every 15 s. |
 
@@ -189,6 +190,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 ## Figures over time
 
 - The backend keeps a point per reading for `HISTORY_WINDOW_SECONDS`, in memory only, so a restart starts the charts afresh.
+- For History it also keeps the KV-cache use per UTC hour for 90 days in `busy.json` in `DATA_DIR`, since the streams cannot give it. The time between two readings counts by the earlier one, never more than three poll intervals; a reading the server did not answer, or without the figure, ends the count until the next. The file is replaced whole at most once a minute and whenever an hour starts.
 - A missing figure is a gap, never 0, and a source that is down adds a point of gaps, so a chart shows the outage instead of joining across it.
 - The page fetches the history once, then adds each `cluster` event's figures itself.
 - A chart is a bare line with no axes. It follows its container's width, and keeps its size while hidden.
@@ -268,6 +270,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - A range of 7, 30 or 90 of the viewer's local days, 30 to start. A run counts on the day it started; a run with no start time is left out.
 - Five totals: delegations; done, the share that finished ok; did not finish, split into stopped, limits (timed out or cut off) and failed; tokens processed, input plus output; cache reuse, cached input over all input of the runs that report both. A total no run reports reads "—".
 - Delegations per day stacked by outcome, and tokens per day stacked as input from cache, new input and output, each a column per day. Outcomes have their own softer chart colours, amber apart from red, checked for colour blindness. Hovering or focusing a day opens one card: the day, each series with its value, and the total.
+- KV-cache use per day (peak as a bar, time-weighted average as a line, a dashed line at 90%, the highest peak named). Busy time comes from the run records, each run from its start for its time: the share of the range with at least one running, in busy and idle hours, the most at once and the average while busy, the busiest weekday hour, and a weekday-by-hour grid in local time shaded by how many ran at once on average. Days and cells open the same card as the day charts.
 - Why runs did not finish: each reason with its outcome's icon and count, most first; "Every run finished." when there are none.
 - By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—".
 - Under it, how the records stand: how many are kept, when they were checked against the folder and how many disagreed, how many streams are gone, and any error saving them.

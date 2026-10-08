@@ -52,6 +52,11 @@ const RUNS_STATUS: RunsStatus = {
   records: 1, checkedAt: 1_700_000_000_000, checked: 1, disagreed: 0, missing: 0, writeError: null,
 };
 
+const BUSY = {
+  buckets: [{ hour: 1_700_000_000_000, kvSum: 120, kvSeconds: 60, kvMax: 40 }],
+  writeError: null as string | null,
+};
+
 function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}) {
   const deps: AppDeps & { runs: () => RunsPayload } = {
     settings: makeSettings(),
@@ -68,6 +73,7 @@ function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}
     cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
     subscribeCluster: () => () => {},
     runs: () => ({ status: RUNS_STATUS, runs: RUNS }),
+    busy: () => BUSY,
     ...overrides,
   };
   return createApp(deps);
@@ -160,6 +166,22 @@ describe("run records", () => {
     expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
     current = { status: { ...RUNS_STATUS, records: 3 }, runs: RUNS };
     expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
+  });
+});
+
+describe("busy store", () => {
+  it("serves the busy store's buckets and writeError at /api/busy", async () => {
+    const res = await makeApp().request("/api/busy", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(BUSY);
+  });
+
+  it("reads /api/busy fresh on each request", async () => {
+    let current = BUSY;
+    const app = makeApp({ busy: () => current });
+    expect(await (await app.request("/api/busy", goodHost)).json()).toEqual(current);
+    current = { ...BUSY, writeError: "disk full" };
+    expect(await (await app.request("/api/busy", goodHost)).json()).toEqual(current);
   });
 });
 
