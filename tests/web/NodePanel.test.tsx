@@ -49,15 +49,23 @@ describe("NodePanel", () => {
     expect(screen.getByText("57°C")).toBeTruthy();
   });
 
-  // Like the donuts: the figure large and bold on top, its caption small below it.
-  it("puts each temperature above its caption, large and bold", () => {
+  // Like the donuts: the figure inside a ring, its caption small below it.
+  it("puts each temperature inside a full ring, above its caption", () => {
     render(<NodePanel nodes={[figures({ name: "n1", cpuTempC: 52, gpuTempC: 74 })]} />);
     for (const [caption, text] of [["CPU", "52°C"], ["GPU", "74°C"]]) {
       const value = screen.getByLabelText(`n1 ${caption} temperature`);
       expect(value.textContent).toBe(text);
-      expect(value.className.split(/\s+/)).toEqual(expect.arrayContaining(["text-2xl", "font-semibold"]));
+      expect(value.querySelector("svg circle[data-ring]")).not.toBeNull();
       expect(value.nextElementSibling?.textContent).toBe(`${caption} temp`);
     }
+  });
+
+  it("colours a temperature's ring green below the warning threshold, and leaves it empty without a figure", () => {
+    render(<NodePanel nodes={[figures({ name: "n1", cpuTempC: 52, gpuTempC: null })]} limits={{ loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 }} />);
+    expect(screen.getByLabelText("n1 CPU temperature").className).toMatch(/\btext-state-ok\b/);
+    const none = screen.getByLabelText("n1 GPU temperature");
+    expect(none.textContent).toBe("—");
+    expect(none.querySelector("svg circle[data-ring]")).toBeNull();
   });
 
   // The GPU does the model's work, so its figures lead: use and heat, then the CPU's.
@@ -74,10 +82,10 @@ describe("NodePanel", () => {
     }
   });
 
-  it("names the window on the CPU use line", () => {
+  it("shows CPU use without a line naming its window", () => {
     render(<NodePanel nodes={[figures({ cpuPercent: 61.5, cpuWindowSeconds: 5 })]} />);
     expect(screen.getByText("62%")).toBeTruthy();
-    expect(screen.getByText(`over ${(5).toLocaleString()}s`)).toBeTruthy();
+    expect(screen.queryByText(/over/)).toBeNull();
   });
 
   it("shows an as-of line when the status is ok", () => {

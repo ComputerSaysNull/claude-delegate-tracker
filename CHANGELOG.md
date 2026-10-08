@@ -9,6 +9,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #57 — 2026-10-08 — feat: show node temperatures in rings like the use donuts
+
+### Changed
+
+- **A node's temperatures now sit in rings beside its use donuts**, each ring green, amber
+  or red by heat with the °C inside. Large bare numbers next to the donuts looked uneven,
+  and the "CPU over 5s" line beside each node's name said little; it is gone.
+
 ## #56 — 2026-10-08 — feat: show when the cluster is busy, and its KV-cache use over days
 
 ### Added
