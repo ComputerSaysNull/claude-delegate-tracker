@@ -9,17 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
-## #56 — 2026-10-08 — feat: show when the cluster is busy, from hours kept on disk
+## #56 — 2026-10-08 — feat: show when the cluster is busy, and its KV-cache use over days
 
 ### Added
 
-- **History shows when the cluster is busy**: the KV-cache use per day (peak and average,
-  with the 90% line), how much of the time a request was running, and a weekday-by-hour
-  grid with the busiest hour named. The model server's figures lived in memory for an
-  hour, so none of this could be seen. The tracker now keeps busy time and KV-cache use
-  per UTC hour for 90 days in its data folder (ADR-0005), counting the time between two
-  readings by the earlier one and never across an outage. The charts fill from the first
-  run of this version.
+- **History shows when the cluster is busy**: how much of the time at least one
+  delegation was running, the most at once and the average while busy, and a
+  weekday-by-hour grid of how many ran at once, with the busiest hour named. It is worked
+  out from the run records, so it covers their whole history: over the last 30 days 14% of
+  the time, at most 30 at once. The model server's figures lived in memory for an hour, so
+  its KV-cache use over days could not be seen; the tracker now keeps it per UTC hour for
+  90 days in its data folder (ADR-0005), never counting across an outage, and charts each
+  day's peak and average with the 90% line. That chart fills from the first run of this
+  version.
 
 ## #55 — 2026-10-07 — feat: a History tab, from run records kept on disk
 

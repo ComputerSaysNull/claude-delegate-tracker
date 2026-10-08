@@ -38,6 +38,14 @@ const RUNS = [
   run({ name: "r3", startedAt: NOW - 20 * DAY, outcome: "stopped", reason: "stopped by the caller", repo: "infra-scripts", model: "flash", elapsedSeconds: 30, inputTokens: 200, outputTokens: 50, cachedTokens: 100 }),
 ];
 
+// Three runs on the current day (4 Oct 2026, a Sunday) that overlap: busy from 10:00 to 11:30
+// (1.5 h), with two at once between 10:30 and 11:30.
+const BUSY_RUNS = [
+  run({ name: "b1", startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: 3600 }),
+  run({ name: "b2", startedAt: new Date(2026, 9, 4, 10, 30).getTime(), elapsedSeconds: 3600 }),
+  run({ name: "b3", startedAt: new Date(2026, 9, 4, 11).getTime(), elapsedSeconds: 1800 }),
+];
+
 function api(runs: RunRecord[], status: Partial<RunsStatus> = {}): { status: RunsStatus; runs: RunRecord[] } {
   return {
     status: {
@@ -75,8 +83,6 @@ function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }, busy?: BusyR
 function bucket(hour: Date, overrides: Partial<HourBucket> = {}): HourBucket {
   return {
     hour: hour.getTime(),
-    seconds: 3600,
-    busySeconds: 1800,
     kvSum: 0,
     kvSeconds: 0,
     kvMax: null,
@@ -84,13 +90,13 @@ function bucket(hour: Date, overrides: Partial<HourBucket> = {}): HourBucket {
   };
 }
 
-// Buckets on 29-30 Sep 2026 (a Tuesday and a Wednesday, both inside the default 30-day range):
-// 10800 s total, 7200 s busy, and Tuesday 10:00-11:00 the busiest cell.
+// KV-cache buckets on 29-30 Sep 2026 (a Tuesday and a Wednesday, both inside the default 30-day
+// range): 29 Sep peaks at 90%, 30 Sep at 70%.
 function busyBuckets(): HourBucket[] {
   return [
-    bucket(new Date(2026, 8, 29, 10), { seconds: 3600, busySeconds: 3600, kvSum: 3000, kvSeconds: 1000, kvMax: 80 }),
-    bucket(new Date(2026, 8, 29, 11), { seconds: 3600, busySeconds: 1800, kvSum: 2000, kvSeconds: 1000, kvMax: 90 }),
-    bucket(new Date(2026, 8, 30, 11), { seconds: 3600, busySeconds: 1800, kvSum: 1500, kvSeconds: 1000, kvMax: 70 }),
+    bucket(new Date(2026, 8, 29, 10), { kvSum: 80_000, kvSeconds: 1000, kvMax: 80 }),
+    bucket(new Date(2026, 8, 29, 11), { kvSum: 90_000, kvSeconds: 1000, kvMax: 90 }),
+    bucket(new Date(2026, 8, 30, 11), { kvSum: 70_000, kvSeconds: 1000, kvMax: 70 }),
   ];
 }
 
@@ -114,6 +120,16 @@ function legendSwatch(label: string): HTMLElement {
 function tileText(label: string): string {
   const el = screen.getAllByText(label).find((n) => n.tagName !== "TH");
   return el?.parentElement?.textContent ?? "";
+}
+
+// The card holding the "Busy and idle" figure: the heading's container.
+function busyCard(): HTMLElement {
+  return screen.getByRole("heading", { name: "Busy and idle" }).closest("div")!;
+}
+
+// The card holding the "KV-cache use" chart: the heading's container.
+function kvCard(): HTMLElement {
+  return screen.getByRole("heading", { name: "KV-cache use" }).closest(".rounded-xl")! as HTMLElement;
 }
 
 describe("HistoryPage", () => {
@@ -310,24 +326,24 @@ describe("HistoryPage", () => {
     expect(screen.getByText("90%: amber from here")).toBeTruthy();
   });
 
-  it("shows the busy percent, the running-time caption, and the busy/idle hours", async () => {
-    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+  it("shows the busy section's figures from the runs alone", async () => {
+    mockFetch(api(BUSY_RUNS), { buckets: [], writeError: null });
     render(<HistoryPage />);
-    await waitFor(() => expect(screen.getByText("Busy and idle")).toBeTruthy());
-    expect(screen.getByText("67%")).toBeTruthy();
-    expect(screen.getByText("of the time a request was running")).toBeTruthy();
-    expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "busy 2h · idle 1h")).toBeTruthy();
-    expect(screen.getByText(/Busiest: Tuesdays 10:00–11:00/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("of the time at least one delegation was running")).toBeTruthy());
+    expect(within(busyCard()).getByText("0%")).toBeTruthy();
+    expect(screen.getByText((_, el) => el?.tagName === "SPAN" && el.textContent === "busy 1.5h · idle 706.5h")).toBeTruthy();
+    expect(screen.getByText(/at most 2 at once · on average 1.7 while busy/)).toBeTruthy();
+    expect(screen.getByText(/Busiest: Sundays 10:00–11:00/)).toBeTruthy();
   });
 
-  it("shows the no-figures message when no buckets are in range", async () => {
-    mockFetch(api(RUNS), { buckets: [], writeError: null });
+  it("says there are no delegations in range for the busy sections", async () => {
+    mockFetch(api([]), { buckets: [], writeError: null });
     render(<HistoryPage />);
-    await waitFor(() => expect(screen.getAllByText("No figures from the model server in this range.").length).toBeGreaterThan(0));
+    await waitFor(() => expect(screen.getAllByText("No delegations in this range.").length).toBeGreaterThan(0));
   });
 
   it("labels the cluster-busy grid rows, hour ticks, and legend", async () => {
-    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    mockFetch(api(RUNS), { buckets: [], writeError: null });
     render(<HistoryPage />);
     await waitFor(() => expect(screen.getByText("When the cluster is busy")).toBeTruthy());
     for (const day of ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) {
@@ -338,6 +354,52 @@ describe("HistoryPage", () => {
     }
     expect(screen.getAllByText("quiet").length).toBeGreaterThan(0);
     expect(screen.getAllByText("busy").length).toBeGreaterThan(0);
+    expect(screen.getByText("Delegations at once, on average")).toBeTruthy();
+  });
+
+  it("shows a hover card on a cluster-busy cell", async () => {
+    mockFetch(api(BUSY_RUNS), { buckets: [], writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("When the cluster is busy")).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "When the cluster is busy" }).closest("div")!;
+    // The busiest cell is Sunday 10:00: the Sunday row's 11th cell (hour index 10).
+    const sundayRow = within(card).getByText("Sun").closest("div")!;
+    const cells = within(sundayRow).getAllByRole("button");
+    fireEvent.mouseOver(cells[10]);
+    const tooltip = screen.getByRole("tooltip");
+    expect(within(tooltip).getByText("Sunday 10:00–11:00")).toBeTruthy();
+    expect(within(tooltip).getByText("on average")).toBeTruthy();
+    expect(within(tooltip).getByText(/0\.3/)).toBeTruthy();
+    expect(within(tooltip).getByText(/running at once/)).toBeTruthy();
+  });
+
+  it("shows the KV-cache peak note", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("peak 90% on 29 Sep")).toBeTruthy());
+  });
+
+  it("shows a hover card on a KV-cache day", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("KV-cache use")).toBeTruthy());
+    const col = within(kvCard()).getByRole("button", { name: /29 Sep/ });
+    fireEvent.mouseOver(col);
+    const tooltip = screen.getByRole("tooltip");
+    expect(within(tooltip).getByText("29 Sep")).toBeTruthy();
+    expect(within(tooltip).getByText("peak")).toBeTruthy();
+    expect(within(tooltip).getByText("90%")).toBeTruthy();
+    expect(within(tooltip).getByText("average")).toBeTruthy();
+    expect(within(tooltip).getByText("85%")).toBeTruthy();
+  });
+
+  it("centres the KV y-axis labels on their lines", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("KV-cache use")).toBeTruthy());
+    for (const label of ["100%", "50%", "0%"]) {
+      expect(within(kvCard()).getByText(label).className).toContain("-translate-y-1/2");
+    }
   });
 
   it("joins a busy write error into the status line", async () => {

@@ -1,21 +1,41 @@
-// The busy figures on the History tab, computed from the model server's hour buckets. Pure: the
-// tests build each bucket's `hour` from a local Date at a whole hour, so `new Date(hour)` maps it
-// back to the same local day and hour and the assertions hold in any timezone.
+// The busy figures on the History tab, computed from the run records and the model server's hour
+// buckets. Pure: the tests build each bucket's `hour` from a local Date at a whole hour, so
+// `new Date(hour)` maps it back to the same local day and hour and the assertions hold in any
+// timezone.
 import { describe, expect, it } from "vitest";
-import { busyIn, busyTotals, weekHours, busiest, kvPerDay } from "../../src/web/busyData.ts";
+import { busyIn, busiest, kvPerDay, load, weekLoad } from "../../src/web/busyData.ts";
 import type { HourBucket } from "../../src/server/busy.ts";
+import type { RunRecord } from "../../src/server/runs.ts";
+import type { Range } from "../../src/web/historyData.ts";
 
 // A bucket at a local wall-clock time: `hour` is the ms of that local instant (a UTC-hour start
 // in a whole-hour zone), and the local day/hour round-trip through `new Date(hour)` exactly.
 function bucketAt(local: Date, overrides: Partial<HourBucket> = {}): HourBucket {
   return {
     hour: local.getTime(),
-    seconds: 3600,
-    busySeconds: 1800,
     kvSum: 0,
     kvSeconds: 0,
     kvMax: null,
     ...overrides,
+  };
+}
+
+// A well-formed run record, as runs.ts builds one.
+function rec(over: Partial<RunRecord> = {}): RunRecord {
+  return {
+    name: "x.jsonl",
+    size: 1,
+    repoFromPaths: false,
+    startedAt: null,
+    outcome: "ok",
+    reason: null,
+    repo: "web-shop",
+    model: "claude-code",
+    elapsedSeconds: null,
+    inputTokens: 1,
+    outputTokens: 1,
+    cachedTokens: 0,
+    ...over,
   };
 }
 
@@ -40,69 +60,99 @@ describe("busyIn", () => {
   });
 });
 
-describe("busyTotals", () => {
-  it("is neutral with no buckets", () => {
-    expect(busyTotals([])).toEqual({ busyPercent: null, busyHours: 0, idleHours: 0 });
+describe("load", () => {
+  // 4 Oct 2026 is a Sunday; a 7-day range runs 28 Sep (Mon) .. 4 Oct (Sun), which is 6 full days
+  // plus the 12 h up to now = 156 h.
+  const now = new Date(2026, 9, 4, 12);
+  const days: Range = 7;
+
+  it("reports the union busy share, the peak, and the average while busy", () => {
+    const runs = [
+      rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: 1800 }), // 10:00-10:30
+      rec({ startedAt: new Date(2026, 9, 4, 10, 15).getTime(), elapsedSeconds: 2700 }), // 10:15-11:00
+    ];
+    expect(load(runs, days, now)).toEqual({
+      busyPercent: 1, // 1 h of 156 h
+      busyHours: 1,
+      idleHours: 155,
+      peak: 2,
+      averageWhileBusy: 1.3, // (30 + 45 min) / 60 min
+    });
   });
 
-  it("reports the busy share rounded, and the hours to one decimal", () => {
-    const result = busyTotals([
-      bucketAt(new Date(2026, 9, 4, 9), { seconds: 3600, busySeconds: 1800 }),
-      bucketAt(new Date(2026, 9, 4, 10), { seconds: 3600, busySeconds: 3600 }),
-    ]);
-    expect(result.busyPercent).toBe(75);
-    expect(result.busyHours).toBe(1.5);
-    expect(result.idleHours).toBe(0.5);
+  it("clips a run that crosses the range start", () => {
+    // A run that starts 30 min before the range start and runs 1.5 h is clipped to the 1 h in range.
+    const runs = [rec({ startedAt: new Date(2026, 8, 27, 23, 30).getTime(), elapsedSeconds: 5400 })];
+    expect(load(runs, days, now)).toEqual({
+      busyPercent: 1,
+      busyHours: 1,
+      idleHours: 155,
+      peak: 1,
+      averageWhileBusy: 1,
+    });
   });
 
-  it("rounds the busy percent", () => {
-    const result = busyTotals([bucketAt(new Date(2026, 9, 4, 9), { seconds: 300, busySeconds: 100 })]);
-    expect(result.busyPercent).toBe(33);
-    expect(result.busyHours).toBe(0);
-    expect(result.idleHours).toBe(0.1);
+  it("leaves out runs without startedAt or elapsedSeconds", () => {
+    const runs = [
+      rec({ startedAt: null, elapsedSeconds: 3600 }),
+      rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: null }),
+    ];
+    expect(load(runs, days, now)).toEqual({
+      busyPercent: 0,
+      busyHours: 0,
+      idleHours: 156,
+      peak: 0,
+      averageWhileBusy: null,
+    });
   });
 
-  it("gives a null percent when there are no seconds", () => {
-    const result = busyTotals([bucketAt(new Date(2026, 9, 4, 9), { seconds: 0, busySeconds: 0 })]);
-    expect(result.busyPercent).toBeNull();
-    expect(result.busyHours).toBe(0);
-    expect(result.idleHours).toBe(0);
+  it("reports 0% busy with no runs but a range that has time", () => {
+    expect(load([], days, now)).toEqual({
+      busyPercent: 0,
+      busyHours: 0,
+      idleHours: 156,
+      peak: 0,
+      averageWhileBusy: null,
+    });
   });
 });
 
-describe("weekHours", () => {
-  it("returns 7 rows Mon..Sun of 24 local hours", () => {
-    const grid = weekHours([]);
+describe("weekLoad", () => {
+  // 4 Oct 2026 is a Sunday; a 7-day range runs 28 Sep (Mon) .. 4 Oct (Sun), one of each weekday.
+  const now = new Date(2026, 9, 4, 12);
+  const days: Range = 7;
+
+  it("counts a run on Monday 10:00 as one run on average", () => {
+    const runs = [rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 })];
+    const grid = weekLoad(runs, days, now);
     expect(grid).toHaveLength(7);
-    for (const row of grid) expect(row).toHaveLength(24);
+    expect(grid[0]).toHaveLength(24);
+    expect(grid[0][10]).toBeCloseTo(1); // one Monday 10:00-11:00 in the range
   });
 
-  it("maps a bucket to its local weekday (Mon = row 0) and hour", () => {
-    // 5 Oct 2026 is a Monday.
-    const grid = weekHours([bucketAt(new Date(2026, 9, 5, 10), { seconds: 3600, busySeconds: 2700 })]);
-    expect(grid[0][10]).toBeCloseTo(0.75);
-    expect(grid[1][10]).toBeNull(); // Tuesday 10:00 has no bucket
-    expect(grid[0][11]).toBeNull();
+  it("averages two runs overlapping in the same hour", () => {
+    const runs = [
+      rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 }),
+      rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 }),
+    ];
+    const grid = weekLoad(runs, days, now);
+    expect(grid[0][10]).toBeCloseTo(2);
   });
 
-  it("averages the buckets that fall in the same cell", () => {
-    const grid = weekHours([
-      bucketAt(new Date(2026, 9, 5, 9), { seconds: 3600, busySeconds: 1800 }),
-      bucketAt(new Date(2026, 9, 5, 9), { seconds: 3600, busySeconds: 3600 }),
-    ]);
-    expect(grid[0][9]).toBeCloseTo(0.75);
+  it("does not count an hour not reached yet today in the denominator", () => {
+    const runs = [
+      rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: 3600 }), // Sunday 10:00, reached
+      rec({ startedAt: new Date(2026, 9, 4, 13).getTime(), elapsedSeconds: 3600 }), // Sunday 13:00, not reached
+    ];
+    const grid = weekLoad(runs, days, now);
+    expect(grid[6][10]).toBeCloseTo(1); // today's Sunday 10:00 is counted
+    expect(grid[6][13]).toBeNull(); // Sunday 13:00 is after now, so the range holds none
   });
 
-  it("leaves a cell null when no bucket falls there", () => {
-    const grid = weekHours([bucketAt(new Date(2026, 9, 5, 10))]);
-    expect(grid[6][23]).toBeNull(); // Sunday 23:00
-  });
-
-  it("puts Sunday in the last row", () => {
-    // 11 Oct 2026 is a Sunday.
-    const grid = weekHours([bucketAt(new Date(2026, 9, 11, 15), { seconds: 100, busySeconds: 25 })]);
-    expect(grid[6][15]).toBeCloseTo(0.25);
-    expect(grid[0][15]).toBeNull();
+  it("leaves a cell null where the range holds no such hour", () => {
+    const grid = weekLoad([], days, now);
+    expect(grid[6][23]).toBeNull(); // Sunday 23:00 is after now, not reached
+    expect(grid[0][10]).toBe(0); // Monday 10:00 exists but has no runs
   });
 });
 

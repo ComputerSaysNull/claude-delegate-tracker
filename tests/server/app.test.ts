@@ -53,7 +53,7 @@ const RUNS_STATUS: RunsStatus = {
 };
 
 const BUSY = {
-  buckets: [{ hour: 1_700_000_000_000, seconds: 60, busySeconds: 30, kvSum: 120, kvSeconds: 60, kvMax: 40 }],
+  buckets: [{ hour: 1_700_000_000_000, kvSum: 120, kvSeconds: 60, kvMax: 40 }],
   writeError: null as string | null,
 };
 
