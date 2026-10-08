@@ -1101,3 +1101,85 @@ describe("a closed turn's thinking", () => {
     expect(turnThinking(view, 1)).toBeNull();
   });
 });
+
+describe("a finished turn's thinking, complete when a partial was marked final", () => {
+  it("is complete from a partial marked final, reasoning only", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "", final: true },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(v.turns[0].closed).toBe(true);
+    expect(v.turns[0].thinking).toEqual({ chars: 17, complete: true });
+  });
+
+  it("is incomplete without a final partial, reasoning only", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]);
+    expect(v.turns[0].thinking).toEqual({ chars: 17, complete: false });
+  });
+
+  it("is complete from reply text without a final partial, as before", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: "Look at ", answer: "" },
+      { t: "partial", at: at(0), turn: 1, reasoning: "the file.", answer: "Done" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "Done" },
+    ]);
+    expect(v.turns[0].thinking).toEqual({ chars: 17, complete: true });
+  });
+});
+
+describe("the thinking repeat marker from the server's reasoning_duplicate_line_share", () => {
+  // A line of the thinking long enough to count (20 characters or more), named by a letter.
+  const L = (x: string) => `the thinking says ${x} at length`;
+  const lines = (...xs: string[]) => xs.map(L).join("\n");
+
+  it("shows the server's share from 30%, ignoring a count with no repeat", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "b", "c", "d", "e", "f"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", reasoning_duplicate_line_share: 0.4 },
+    ]).turns[0];
+    expect(t.thinkingRepeated).toBe("40%");
+  });
+
+  it("hides a heavy local repeat when the server's share is under 30%", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "a", "a", "a", "a", "a", "a", "a", "a", "a"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", reasoning_duplicate_line_share: 0.1 },
+    ]).turns[0];
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("is null when the turn carries a null share, even with a heavy repeat", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "a", "a", "a", "a"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", reasoning_duplicate_line_share: null },
+    ]).turns[0];
+    expect(t.thinkingRepeated).toBeNull();
+  });
+
+  it("keeps the local count when the turn carries no such key", () => {
+    const t = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "partial", at: at(0), turn: 1, reasoning: lines("a", "a", "a", "a", "a"), answer: "" },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
+    ]).turns[0];
+    expect(t.thinkingRepeated).toBe("80%");
+  });
+});
