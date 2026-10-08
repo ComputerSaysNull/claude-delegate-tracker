@@ -95,16 +95,26 @@ function NodeBlock({
   limits?: Limits;
 }) {
   const status = statusLine(node);
+  // A temperature in a full ring the size of a donut, coloured by heat, so the four sit as equals.
   const temp = (caption: "CPU" | "GPU", value: number | null) => {
     const degrees = value === null ? null : Math.round(value);
     const warn = limits?.tempWarn ?? 0;
     const hot = limits?.tempHot ?? 0;
     const lvl = limits === undefined ? null : level(degrees, warn, hot);
-    const color = lvl === "warn" || lvl === "hot" ? ` ${LEVEL_TEXT[lvl]}` : "";
+    const color = lvl === null ? "text-muted" : LEVEL_TEXT[lvl];
     return (
-      <div className="flex flex-col items-center gap-0.5">
-        <span aria-label={`${node.name} ${caption} temperature`} className={`font-mono tabular-nums text-2xl font-semibold${color}`}>
-          {celsius(degrees)}
+      <div className="flex flex-col items-center gap-1">
+        <span aria-label={`${node.name} ${caption} temperature`} className={color}>
+          <svg width="64" height="64" viewBox="0 0 54 54" aria-hidden="true">
+            {degrees === null ? (
+              <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="text-line" />
+            ) : (
+              <circle data-ring cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="opacity-60" />
+            )}
+            <text x="27" y="31.5" textAnchor="middle" className="fill-current font-mono text-[13px] text-text">
+              {celsius(degrees)}
+            </text>
+          </svg>
         </span>
         <span className="text-xs text-muted">{caption} temp</span>
       </div>
@@ -112,14 +122,7 @@ function NodeBlock({
   };
   return (
     <li>
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 className="font-semibold">{node.name}</h3>
-        {node.cpuWindowSeconds !== null && (
-          <span className="text-xs text-muted">
-            CPU <span className="font-mono tabular-nums">over {node.cpuWindowSeconds.toLocaleString()}s</span>
-          </span>
-        )}
-      </div>
+      <h3 className="font-semibold">{node.name}</h3>
       <div className="mt-2 flex items-center gap-3">
         {/* The GPU does the model's work, so its use and heat lead, then the CPU's. A
             temperature sits like a donut: the figure on top, its caption below. */}
