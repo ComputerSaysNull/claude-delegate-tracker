@@ -61,6 +61,25 @@ describe("DelegationList", () => {
     expect(link.className).toMatch(/\btruncate\b/);
   });
 
+  it("opens a delegation from a click anywhere on its card, which shows the hand cursor", () => {
+    const onOpen = vi.fn();
+    render(<DelegationList list={list([row({ name: "s1.jsonl", title: "Card title", turns: "3" })])} onOpen={onOpen} />);
+    const card = screen.getByRole("link", { name: "Card title" }).closest("li")!;
+    expect(card.className).toMatch(/\bcursor-pointer\b/);
+    fireEvent.click(card.querySelector("p")!);
+    expect(onOpen).toHaveBeenCalledWith("s1.jsonl");
+  });
+
+  it("leaves a modified click on the card to the browser, and opens once from the title", () => {
+    const onOpen = vi.fn();
+    render(<DelegationList list={list([row({ name: "s1.jsonl", title: "Card title", turns: "3" })])} onOpen={onOpen} />);
+    const link = screen.getByRole("link", { name: "Card title" });
+    fireEvent.click(link.closest("li")!.querySelector("p")!, { ctrlKey: true });
+    expect(onOpen).not.toHaveBeenCalled();
+    fireEvent.click(link);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
   it("gives each card its state's icon, named for a screen reader", () => {
     render(<DelegationList list={list([row({ state: "failed" })])} />);
     const icon = screen.getByRole("img", { name: "Failed" });
