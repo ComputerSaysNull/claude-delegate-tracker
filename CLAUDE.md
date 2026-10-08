@@ -57,7 +57,7 @@ how planned work is tracked) and is read first wherever they matter.
   stale state, or reads the wrong copy. Negative-test every check, tests included.
 
 ## Docs
-- Structural decisions live in DECISIONS.md as ADR-0001..ADR-0004; cite ADRs, never the
+- Structural decisions live in DECISIONS.md as ADRs; cite ADRs, never the
   internal spec's ids. One fact, one home.
 - Every file under src/, scripts/, .github/ and .claude/ has exactly one owning document, or is
   declared unowned. Changing the code means updating its owning document in the same commit,

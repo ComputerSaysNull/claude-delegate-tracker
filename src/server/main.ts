@@ -9,6 +9,7 @@ import { ClusterHistoryStore } from "./history.ts";
 import { MetricsPoller } from "./metrics.ts";
 import { NodesPoller, sshRunner } from "./nodes.ts";
 import { Poller } from "./poller.ts";
+import { RunStore } from "./runs.ts";
 import { DEFAULTS, loadSettings, SettingsError, type Settings } from "./settings.ts";
 
 const root = path.resolve(import.meta.dirname, "..", "..");
@@ -81,6 +82,17 @@ poller.onStatus(healthChanged);
 metrics.onChange(healthChanged);
 nodes.onChange(healthChanged);
 
+// The finished runs kept on disk, checked against the streams at start and on a scan interval.
+const runs = new RunStore(
+  settings.dataDir === null ? null : path.join(settings.dataDir, "runs.json"),
+  settings.transcriptDir,
+  () => new Date(),
+);
+runs.load();
+// The server listens before the first full check, so the page is up even if the folder is slow.
+setTimeout(() => runs.checkAll(), 0);
+setInterval(() => runs.scan(), settings.runsScanSeconds * 1000);
+
 const staticRoot = path.join(root, "dist", "web");
 const app = createApp({
   settings,
@@ -106,6 +118,7 @@ const app = createApp({
       offNodes();
     };
   },
+  runs: () => ({ status: runs.status(), runs: runs.records() }),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

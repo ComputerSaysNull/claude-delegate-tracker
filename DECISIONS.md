@@ -5,6 +5,20 @@ Structural decisions only: ones that shape how the tracker is built and would be
 reverse. Newest first; the headings are the index. A decision's body is never edited. When
 it stops being true, only its heading changes, to say what replaced it.
 
+## ADR-0005 — 2026-10-07 — The tracker keeps its own records on disk — Accepted
+
+### Context
+
+History needs totals over weeks. The streams can be deleted from the folder, and the model server's figures over time exist only while the tracker samples them. Until now the tracker wrote nothing.
+
+### Decision
+
+The tracker keeps its records in a per-user data folder outside the repo, which `DATA_DIR` can move. It writes only files it names itself, each replaced whole. A record built from a stream is checked against that stream at every start while the stream exists, and the disagreements are counted and shown.
+
+### Consequences
+
+A restart keeps history, and so does deleting streams. The records can drift from the streams, so the check runs at every start and costs a full read of the folder. Deleting the folder resets history.
+
 ## ADR-0004 — 2026-10-03 — Who may open the page — Accepted
 
 ### Context

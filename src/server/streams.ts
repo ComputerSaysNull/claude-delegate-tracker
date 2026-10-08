@@ -64,13 +64,13 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
 
 // How a run ended, from `end.ended` (format 1.4) only: never from the words in `error`.
 const TIMED_OUT = new Set(["queue_timeout", "deadline", "stalled"]);
-const WHY_TIMED_OUT: Record<string, string> = {
+export const WHY_TIMED_OUT: Record<string, string> = {
   queue_timeout: "waited too long in the queue",
   deadline: "ran past its deadline",
   stalled: "stalled: the backend went quiet",
 };
 
-function stateOf(s: StreamState, nowMs: number, quietAfterSeconds: number): State {
+export function stateOf(s: StreamState, nowMs: number, quietAfterSeconds: number): State {
   if (s.end !== null && s.end.ended === "stopped") return "stopped";
   if (s.end !== null && typeof s.end.ended === "string" && TIMED_OUT.has(s.end.ended)) return "timed out";
   if (s.end !== null && s.end.ok === false) return "failed";

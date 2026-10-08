@@ -48,6 +48,11 @@ describe("reading the address", () => {
     expect(readAddress("/", "").section).toBe("list");
     expect(readAddress("/s/x", "").section).toBe("list");
   });
+
+  it("reads the history section from /history", () => {
+    expect(readAddress("/history", "").section).toBe("history");
+    expect(readAddress("/history", "").selected).toBeNull();
+  });
 });
 
 describe("writing the address", () => {
@@ -86,5 +91,17 @@ describe("writing the address", () => {
 
   it("a selected delegation always wins over the cluster section", () => {
     expect(addressFor({ section: "cluster", selected: "x", filter: NO_FILTER })).toBe("/s/x");
+  });
+
+  it("is /history for the history section with nothing open", () => {
+    expect(addressFor({ section: "history", selected: null, filter: NO_FILTER })).toBe("/history");
+  });
+
+  it("keeps the query on /history", () => {
+    expect(addressFor({ section: "history", selected: null, filter: { ...NO_FILTER, states: ["failed"] } })).toBe("/history?state=failed");
+  });
+
+  it("a selected delegation always wins over the history section", () => {
+    expect(addressFor({ section: "history", selected: "x", filter: NO_FILTER })).toBe("/s/x");
   });
 });
