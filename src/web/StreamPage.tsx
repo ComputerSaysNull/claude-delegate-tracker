@@ -457,9 +457,21 @@ function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; lab
   );
 }
 
+// A call in one line: the file's name and the lines it read when it names a path, else its first argument.
+function callSummary(args: [string, string][]): { text: string; full: string } | null {
+  const get = (key: string) => args.find(([k]) => k === key)?.[1];
+  const path = get("path");
+  if (path === undefined) return args.length > 0 ? { text: args[0][1], full: args[0][1] } : null;
+  const name = path.split(/[\\/]/).filter((p) => p !== "").pop() ?? path;
+  const start = get("start_line");
+  const end = get("end_line");
+  const lines = [start !== undefined ? `start ${start}` : null, end !== undefined ? `end ${end}` : null].filter((p) => p !== null);
+  return { text: lines.length > 0 ? `${name} · ${lines.join(" ")}` : name, full: path };
+}
+
 function CallViewItem({ call }: { call: CallView }) {
   const [open, setOpen] = useState(false);
-  const [first] = call.args;
+  const summary = callSummary(call.args);
   const figures = [
     call.status,
     call.result,
@@ -478,9 +490,9 @@ function CallViewItem({ call }: { call: CallView }) {
         {call.ok === true && <Check aria-label="succeeded" role="img" size={14} className="text-state-ok" />}
         {call.ok === false && <X aria-label="failed" role="img" size={14} className="text-hot" />}
         <span className="whitespace-nowrap font-mono text-sm font-semibold">{call.name}</span>
-        {first !== undefined && (
-          <span className="min-w-0 grow basis-full truncate font-mono text-sm text-muted sm:basis-auto">
-            {first[1]}
+        {summary !== null && (
+          <span className="min-w-0 grow basis-full truncate font-mono text-sm text-muted sm:basis-auto" title={summary.full}>
+            {summary.text}
           </span>
         )}
         {figures.length > 0 && (

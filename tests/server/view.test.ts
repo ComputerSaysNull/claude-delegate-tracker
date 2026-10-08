@@ -193,6 +193,17 @@ describe("calls", () => {
     expect(calls[1].time).toBe("14s");
   });
 
+  it("puts path, start_line and end_line first, in that order, however the stream stored them", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+        { name: "read_file", outcome: "ran", arguments: { end_line: 630, mode: "text", path: "/w/server.py", start_line: 596 } },
+      ], text: "" },
+    ]);
+    expect(v.turns[0].calls[0].args).toEqual([["path", "/w/server.py"], ["start_line", "596"], ["end_line", "630"], ["mode", "text"]]);
+  });
+
   it("lists an open announced turn's calls from tools with running statuses", () => {
     const v = viewOf([
       start(),

@@ -309,7 +309,7 @@ describe("long values on a phone", () => {
   const LONG = "/w/" + "a_very_long_directory_name_".repeat(6) + "file.py";
 
   it("an argument is cut to one line, and one tap shows all of it", () => {
-    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["path", LONG]] })] })] })} />);
+    render(<StreamViewBody view={view({ turns: [turn(1, { calls: [call({ args: [["command", LONG]] })] })] })} />);
     const summary = screen.getByText(LONG);
     const toggle = summary.closest("button");
     expect(toggle).not.toBeNull();
@@ -317,7 +317,7 @@ describe("long values on a phone", () => {
     expect(toggle!.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle!);
     expect(toggle!.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByText(`path: ${LONG}`)).toBeTruthy();
+    expect(screen.getByText(`command: ${LONG}`)).toBeTruthy();
   });
 
   it("a file path is clamped to two lines, with the full path on hover and focus", () => {

@@ -175,10 +175,15 @@ function recordOf(x: unknown): Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x) ? x as Record<string, unknown> : {};
 }
 
+// Where a file is read, from which line to which, in reading order; the model may store them in any order.
+const LEADING_ARGS = ["path", "start_line", "end_line"];
+
 function argsOf(args: unknown): [string, string][] {
   if (typeof args !== "object" || args === null || Array.isArray(args)) return [];
-  return Object.entries(args as Record<string, unknown>).map(([k, val]) =>
-    [k, typeof val === "string" ? val : JSON.stringify(val) ?? "undefined"]);
+  const rank = (k: string) => { const i = LEADING_ARGS.indexOf(k); return i === -1 ? LEADING_ARGS.length : i; };
+  return Object.entries(args as Record<string, unknown>)
+    .sort(([a], [b]) => rank(a) - rank(b))
+    .map(([k, val]) => [k, typeof val === "string" ? val : JSON.stringify(val) ?? "undefined"]);
 }
 
 function sizeOf(bytes: number): string {

@@ -102,7 +102,7 @@ describe("the two sides", () => {
       />,
     );
     const [row] = within(screen.getByRole("list", { name: "Tool calls" })).getAllByRole("listitem");
-    expect(row.textContent).toContain("/w/proj/backoff.py");
+    expect(row.textContent).toContain("backoff.py · start 1");
     expect(row.textContent).not.toContain("path:");
     expect(row.textContent).not.toContain("start_line");
     expect(row.textContent).toContain("40 lines · 1.2 KB · <1s");
