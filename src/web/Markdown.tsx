@@ -17,7 +17,7 @@ const LOOK = [
   "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_a]:underline [&_code]:font-mono [&_code]:text-[0.9em]",
   "[&_p_code]:rounded [&_p_code]:bg-line/50 [&_p_code]:px-1",
-  "[&_pre]:overflow-x-auto [&_pre]:rounded [&_pre]:border [&_pre]:border-line [&_pre]:p-2",
+  "[&_pre]:whitespace-pre-wrap [&_pre]:rounded [&_pre]:border [&_pre]:border-line [&_pre]:p-2",
   "[&_blockquote]:border-l-2 [&_blockquote]:border-line [&_blockquote]:pl-3 [&_blockquote]:text-muted",
 ].join(" ");
 
