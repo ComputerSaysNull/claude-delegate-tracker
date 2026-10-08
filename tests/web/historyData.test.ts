@@ -9,6 +9,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
     name: "stream.jsonl",
     size: 100,
+    repoFromPaths: false,
     startedAt: new Date(2026, 9, 4, 12).getTime(),
     outcome: "ok",
     reason: null,

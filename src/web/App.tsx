@@ -105,6 +105,11 @@ export default function App() {
   const [address, setAddress] = useState<Address>(() => readAddress(window.location.pathname, window.location.search));
   const selected = address.selected;
 
+  // The last delegation the page showed, so the Delegation tab returns to it.
+  // Kept during render rather than in an effect, as React suggests for a value derived from props.
+  const [lastSelected, setLastSelected] = useState<string | null>(null);
+  if (selected !== null && selected !== lastSelected) setLastSelected(selected);
+
   // Back and Forward move between addresses this page wrote; follow them without a reload.
   useEffect(() => {
     const follow = () => setAddress(readAddress(window.location.pathname, window.location.search));
@@ -259,7 +264,7 @@ export default function App() {
                 href="/"
                 onClick={(e) => {
                   e.preventDefault();
-                  go({ ...address, section: "list" }, true);
+                  go({ ...address, section: "list", selected: lastSelected }, true);
                 }}
                 aria-current={address.section === "list" ? "page" : undefined}
                 className={`rounded-md px-3 py-1.5 text-sm ${address.section === "list" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}

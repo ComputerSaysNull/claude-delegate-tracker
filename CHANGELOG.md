@@ -22,10 +22,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   `DATA_DIR` moves the folder, `RUNS_SCAN_SECONDS` sets how often it looks. A failure's
   reason groups its cause: error texts carry ids and timings, so 123 real failures read as
   64 different reasons; with every word holding a digit written as N they read as 7.
+  Streams from before `start.workspace` name no repo, so 1,439 of 1,512 runs grouped as
+  "—"; a run now takes its repo from the folder its absolute paths sit in, learned from
+  the streams that do name theirs, which places 1,240 of them.
 - **A History tab**, beside the delegation on the desktop and in the phone's bottom bar.
   Over 7, 30 or 90 days it shows how many delegations ran, how many finished, why the
   others did not, the tokens processed and the cache reuse, per day and per repo and
-  model, and how the records stand against the folder.
+  model, and how the records stand against the folder. Outcome colours are softer, with
+  "timed out or cut off" in amber apart from "failed" in red; a day's card on hover lists
+  each series and the total. Going back from History returns to the open delegation.
 
 ## #54 — 2026-10-07 — feat: open a delegation from anywhere on its card
 

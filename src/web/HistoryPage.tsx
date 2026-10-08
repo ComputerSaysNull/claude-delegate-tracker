@@ -2,6 +2,7 @@
 // figures come from historyData.ts (pure); this page only fetches the records and draws them.
 import { useEffect, useState } from "react";
 import type { RunRecord, RunsStatus } from "../server/runs.ts";
+import { ChartTooltip } from "./ChartTooltip.tsx";
 import { compactCount } from "./format.ts";
 import { StateIcon } from "./states.tsx";
 import {
@@ -104,6 +105,83 @@ export function HistoryPage() {
   );
 }
 
+// A series of a day chart: its segment height (`value`), the tooltip line's label and
+// text, and the Tailwind class for the segment and swatch.
+interface Bar {
+  key: string;
+  label: string;
+  value: number;
+  swatch: string;
+  text: string;
+}
+
+// One per-day chart: a column per day, each a button-like hit target over the full height.
+// Hovering or focusing a column shows one ChartTooltip above the chart, over that column.
+function DayChart({
+  days,
+  pct,
+  title,
+  ariaLabel,
+  totalFor,
+  barsFor,
+}: {
+  days: Day[];
+  pct: (v: number) => number;
+  title: (d: Day) => string;
+  ariaLabel: (d: Day) => string;
+  totalFor: (d: Day) => { label: string; value: string };
+  barsFor: (d: Day) => Bar[];
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const n = days.length;
+  const day = active === null ? null : days[active];
+  // The tooltip is centred over the active column, kept inside the card.
+  const centre = active === null ? 0 : ((active + 0.5) / n) * 100;
+  const left = Math.max(8, Math.min(92, centre));
+  return (
+    <div className="relative">
+      <div className="flex h-[130px] items-end gap-[3px] border-b border-line">
+        {days.map((d, i) => {
+          const bars = barsFor(d).filter((b) => b.value > 0);
+          return (
+            <div
+              key={d.label}
+              role="button"
+              tabIndex={0}
+              aria-label={ariaLabel(d)}
+              onMouseEnter={() => setActive(i)}
+              onMouseLeave={() => setActive(null)}
+              onFocus={() => setActive(i)}
+              onBlur={() => setActive(null)}
+              className={`flex h-full flex-1 flex-col-reverse gap-[2px] ${active !== null && active !== i ? "opacity-60" : ""}`}
+            >
+              {bars.map((b, j) => (
+                <div
+                  key={b.key}
+                  className={`${b.swatch} ${j === bars.length - 1 ? "rounded-t-[3px]" : ""}`}
+                  style={{ height: `${pct(b.value)}%` }}
+                />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {day !== null && (
+        <div
+          className="absolute bottom-full left-0 mb-2"
+          style={{ left: `${left}%`, transform: "translateX(-50%)" }}
+        >
+          <ChartTooltip
+            title={title(day)}
+            rows={barsFor(day).map((b) => ({ label: b.label, value: b.text, swatch: b.swatch }))}
+            total={totalFor(day)}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
   const now = new Date();
   const runs = inRange(data.runs, range, now);
@@ -158,25 +236,24 @@ function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
         <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
           <h3 className="text-sm font-semibold">Delegations per day</h3>
           <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-state-ok" aria-hidden="true" />done</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-state-stopped" aria-hidden="true" />stopped</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-state-timed-out" aria-hidden="true" />timed out or cut off</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-state-failed" aria-hidden="true" />failed</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-done" aria-hidden="true" />done</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-stopped" aria-hidden="true" />stopped</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-limits" aria-hidden="true" />timed out or cut off</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-failed" aria-hidden="true" />failed</span>
           </div>
-          <div className="flex h-[130px] items-end gap-[3px] border-b border-line">
-            {days.map((d) => (
-              <div
-                key={d.label}
-                title={`${d.label}: ${d.ok} done, ${d.stopped} stopped, ${d.limits} timed out or cut off, ${d.failed} failed`}
-                className="flex h-full flex-1 flex-col-reverse"
-              >
-                <div className="bg-state-ok" style={{ height: `${dayPct(d.ok)}%` }} />
-                <div className="bg-state-stopped" style={{ height: `${dayPct(d.stopped)}%` }} />
-                <div className="bg-state-timed-out" style={{ height: `${dayPct(d.limits)}%` }} />
-                <div className="bg-state-failed" style={{ height: `${dayPct(d.failed)}%` }} />
-              </div>
-            ))}
-          </div>
+          <DayChart
+            days={days}
+            pct={dayPct}
+            title={(d) => d.label}
+            ariaLabel={(d) => `${d.label}: ${d.ok} done, ${d.stopped} stopped, ${d.limits} timed out or cut off, ${d.failed} failed`}
+            totalFor={(d) => ({ label: "Delegations", value: String(d.ok + d.stopped + d.limits + d.failed) })}
+            barsFor={(d) => [
+              { key: "done", label: "done", value: d.ok, swatch: "bg-chart-done", text: String(d.ok) },
+              { key: "stopped", label: "stopped", value: d.stopped, swatch: "bg-chart-stopped", text: String(d.stopped) },
+              { key: "limits", label: "timed out or cut off", value: d.limits, swatch: "bg-chart-limits", text: String(d.limits) },
+              { key: "failed", label: "failed", value: d.failed, swatch: "bg-chart-failed", text: String(d.failed) },
+            ]}
+          />
           <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
             {labels.map((l) => (
               <span key={l}>{l}</span>
@@ -194,19 +271,18 @@ function HistoryBody({ data, range }: { data: RunsResponse; range: Range }) {
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
             <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
           </div>
-          <div className="flex h-[130px] items-end gap-[3px] border-b border-line">
-            {days.map((d) => (
-              <div
-                key={d.label}
-                title={`${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
-                className="flex h-full flex-1 flex-col-reverse"
-              >
-                <div className="bg-accent/30" style={{ height: `${tokenPct(d.cached)}%` }} />
-                <div className="bg-accent/65" style={{ height: `${tokenPct(d.fresh)}%` }} />
-                <div className="bg-accent" style={{ height: `${tokenPct(d.output)}%` }} />
-              </div>
-            ))}
-          </div>
+          <DayChart
+            days={days}
+            pct={tokenPct}
+            title={(d) => d.label}
+            ariaLabel={(d) => `${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
+            totalFor={(d) => ({ label: "Tokens", value: compactCount(d.cached + d.fresh + d.output) })}
+            barsFor={(d) => [
+              { key: "cached", label: "input, from cache", value: d.cached, swatch: "bg-accent/30", text: compactCount(d.cached) },
+              { key: "fresh", label: "input, new", value: d.fresh, swatch: "bg-accent/65", text: compactCount(d.fresh) },
+              { key: "output", label: "output", value: d.output, swatch: "bg-accent", text: compactCount(d.output) },
+            ]}
+          />
           <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
             {labels.map((l) => (
               <span key={l}>{l}</span>

@@ -2,7 +2,7 @@
 // The History tab: the range switch, the five tiles, the two day charts' legends, the
 // "why runs did not finish" list, the by-repo and by-model tables and the status line.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HistoryPage } from "../../src/web/HistoryPage.tsx";
 import { dayMonthYear } from "../../src/web/historyData.ts";
 import { localTime } from "../../src/web/time.ts";
@@ -16,6 +16,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
   return {
     name: "s.jsonl",
     size: 100,
+    repoFromPaths: false,
     startedAt: NOW - DAY,
     outcome: "ok",
     reason: null,
@@ -53,6 +54,21 @@ function api(runs: RunRecord[], status: Partial<RunsStatus> = {}): { status: Run
 
 function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }): void {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(data), { status: 200 })));
+}
+
+// The card holding the "Delegations per day" chart: the heading's container.
+function delegationsCard(): HTMLElement {
+  return screen.getByRole("heading", { name: "Delegations per day" }).closest("div")!;
+}
+
+// The hit target of a day column in the delegations chart, found by its aria-label.
+function dayColumn(label: string): HTMLElement {
+  return within(delegationsCard()).getByRole("button", { name: new RegExp(label) });
+}
+
+// The legend swatch beside the given label.
+function legendSwatch(label: string): HTMLElement {
+  return screen.getByText(label).querySelector("span")!;
 }
 
 // The tile label's container, read back whole ("Delegations3"), excluding the table column
@@ -165,5 +181,85 @@ describe("HistoryPage", () => {
     mockFetch(api(RUNS, { writeError: "disk full" }));
     render(<HistoryPage />);
     await waitFor(() => expect(screen.getByText(/Could not save: disk full/)).toBeTruthy());
+  });
+
+  describe("the day charts", () => {
+    it("uses the chart colour tokens for the delegations legend swatches", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByText("done")).toBeTruthy());
+      expect(legendSwatch("done").className).toMatch(/\bbg-chart-done\b/);
+      expect(legendSwatch("stopped").className).toMatch(/\bbg-chart-stopped\b/);
+      expect(legendSwatch("timed out or cut off").className).toMatch(/\bbg-chart-limits\b/);
+      expect(legendSwatch("failed").className).toMatch(/\bbg-chart-failed\b/);
+    });
+
+    it("draws no stopped segment for a day with none stopped", async () => {
+      mockFetch(
+        api([
+          run({ name: "a", startedAt: NOW - 2 * DAY, outcome: "ok" }),
+          run({ name: "b", startedAt: NOW - 2 * DAY, outcome: "failed", reason: "boom" }),
+        ]),
+      );
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+      expect(column.querySelector(".bg-chart-stopped")).toBeNull();
+      expect(column.querySelector(".bg-chart-limits")).toBeNull();
+      expect(column.querySelector(".bg-chart-done")).not.toBeNull();
+      expect(column.querySelector(".bg-chart-failed")).not.toBeNull();
+    });
+
+    it("shows the day's tooltip on hover and hides it on leave", async () => {
+      mockFetch(
+        api([
+          run({ name: "a", startedAt: NOW - 2 * DAY, outcome: "ok" }),
+          run({ name: "b", startedAt: NOW - 2 * DAY, outcome: "stopped", reason: "r" }),
+          run({ name: "c", startedAt: NOW - 2 * DAY, outcome: "timed out", reason: "t" }),
+          run({ name: "d", startedAt: NOW - 2 * DAY, outcome: "failed", reason: "f" }),
+        ]),
+      );
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      fireEvent.mouseOver(column);
+      const tooltip = screen.getByRole("tooltip");
+      expect(within(tooltip).getByText("2 Oct")).toBeTruthy();
+      expect(within(tooltip).getByText("done")).toBeTruthy();
+      expect(within(tooltip).getByText("stopped")).toBeTruthy();
+      expect(within(tooltip).getByText("timed out or cut off")).toBeTruthy();
+      expect(within(tooltip).getByText("failed")).toBeTruthy();
+      expect(within(tooltip).getAllByText("1")).toHaveLength(4);
+      expect(within(tooltip).getByText("Delegations")).toBeTruthy();
+      expect(within(tooltip).getByText("4")).toBeTruthy();
+
+      fireEvent.mouseOut(column);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("shows the day's tooltip on keyboard focus and hides it on blur", async () => {
+      mockFetch(api([run({ name: "a", startedAt: NOW - 2 * DAY, outcome: "ok" })]));
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      fireEvent.focus(column);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+
+      fireEvent.blur(column);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("leaves no title attribute on a day column", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      for (const column of within(delegationsCard()).getAllByRole("button")) {
+        expect(column.getAttribute("title")).toBeNull();
+      }
+    });
   });
 });

@@ -21,6 +21,10 @@
   --state-stopped: #4a5563;
   --state-timed-out: #a24a0a;
   --state-cut-off: #a24a0a;
+  --chart-done: #3f9a6a;
+  --chart-stopped: #6f9fe0;
+  --chart-limits: #e0a43c;
+  --chart-failed: #cf5049;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -42,6 +46,10 @@
     --state-stopped: #c3ccd6;
     --state-timed-out: #ff9e57;
     --state-cut-off: #ff9e57;
+    --chart-done: #3f9a6a;
+    --chart-stopped: #5a8fd4;
+    --chart-limits: #be8a20;
+    --chart-failed: #c8405a;
   }
 }
 
@@ -63,6 +71,10 @@
   --color-state-stopped: var(--state-stopped);
   --color-state-timed-out: var(--state-timed-out);
   --color-state-cut-off: var(--state-cut-off);
+  --color-chart-done: var(--chart-done);
+  --color-chart-stopped: var(--chart-stopped);
+  --color-chart-limits: var(--chart-limits);
+  --color-chart-failed: var(--chart-failed);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }

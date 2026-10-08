@@ -3,13 +3,13 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RunStore, summariseRun, type RunRecord } from "../../src/server/runs.ts";
+import { RunStore, absolutePaths, learnParents, repoFromPaths, summariseRun, type RunRecord } from "../../src/server/runs.ts";
 
 const NOW = new Date("2026-10-01T13:00:00.000Z");
 // A well-formed record, as the store writes it.
 const GOOD = {
   name: "20261001T120000.000-a.jsonl", size: 100, startedAt: Date.parse("2026-10-01T12:00:00Z"), outcome: "ok", reason: null,
-  repo: "web-shop", model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
+  repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
 };
 const START_AT = "2026-10-01T12:00:00.000000+00:00";
 const END_AT = "2026-10-01T12:01:00.000000+00:00";
@@ -32,6 +32,15 @@ function endEvent(over: Record<string, unknown> = {}): Record<string, unknown> {
   };
 }
 
+// A tool call as the contract's turn/tools events carry it: name, outcome, arguments.path.
+function toolCall(name: string, path: string, outcome = "ran"): Record<string, unknown> {
+  return { name, outcome, arguments: { path } };
+}
+
+function toolEvent(t: "turn" | "tools", calls: Record<string, unknown>[]): Record<string, unknown> {
+  return { t, at: END_AT, turn: 1, tool_calls: calls };
+}
+
 function writeStream(dir: string, name: string, events: unknown[]): string {
   const path = join(dir, name);
   writeFileSync(path, events.map(toLine).join("\n") + "\n");
@@ -44,7 +53,7 @@ function makeDir(): string {
 
 function okRecord(name: string, size: number): RunRecord {
   return {
-    name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj",
+    name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
     model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
   };
 }
@@ -58,7 +67,7 @@ function recordOf(events: unknown[]): RunRecord {
 describe("summariseRun", () => {
   it("summarises an ok run with a null reason", () => {
     expect(summariseRun("a.jsonl", 1200, lines([startEvent(), endEvent({ ended: "finished" })]), NOW)).toEqual({
-      name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj",
+      name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
     });
   });
@@ -120,6 +129,92 @@ describe("summariseRun", () => {
     expect(r.inputTokens).toBeNull();
     expect(r.outputTokens).toBeNull();
     expect(r.cachedTokens).toBeNull();
+  });
+});
+
+describe("absolutePaths", () => {
+  it("picks the four sources: files_read, files_skipped, and turn/tools tool calls", () => {
+    const ev = [
+      startEvent({
+        files_read: [{ path: "C:/r/a.py", given: "C:/r/a-g.py", bytes: 1, est_tokens: 1 }],
+        files_skipped: [{ path: "C:/s/b.py", given: "C:/s/b-g.py", reason: "nope", kind: "refused" }],
+      }),
+      toolEvent("turn", [toolCall("read_file", "C:/t/c.py")]),
+      toolEvent("tools", [toolCall("run_bash", "C:/u/d.py")]),
+    ];
+    expect(absolutePaths(lines(ev))).toEqual(["C:/r/a.py", "C:/r/a-g.py", "C:/s/b.py", "C:/s/b-g.py", "C:/t/c.py", "C:/u/d.py"]);
+  });
+
+  it("keeps a path with a lower-case drive letter, upper-casing it", () => {
+    expect(absolutePaths(lines([startEvent({ files_read: [{ path: "c:\\only\\one.py", given: "c:\\only\\one.py", bytes: 1, est_tokens: 1 }] })]))).toEqual(["C:/only/one.py"]);
+  });
+
+  it("drops relative and non-string paths and normalises the absolute forms", () => {
+    const ev = [
+      startEvent({
+        files_read: [{ path: "C:\\x\\y", given: "relative/g.py", bytes: 1, est_tokens: 1 }],
+        files_skipped: [{ path: "c:/x/y", given: "c:/x/y", reason: "nope", kind: "refused" }],
+      }),
+      toolEvent("turn", [toolCall("read_file", "/mnt/c/x/y")]),
+      toolEvent("tools", [
+        toolCall("read_file", "C:/x/y/"),
+        toolCall("read_file", "C:/x/y"),
+        { name: "read_file", arguments: { path: 42 } },
+      ]),
+    ];
+    expect(absolutePaths(lines(ev))).toEqual(["C:/x/y"]);
+  });
+});
+
+describe("learnParents", () => {
+  it("marks the joined segments before a path segment equal to the repo", () => {
+    expect(learnParents([{ repo: "web-shop", paths: ["C:/u/proj/web-shop/a.py"] }])).toEqual(["C:/u/proj"]);
+  });
+
+  it("returns distinct parents and ignores runs whose paths never name the repo", () => {
+    expect(learnParents([
+      { repo: "web-shop", paths: ["C:/u/proj/web-shop/a.py", "C:/u/proj/web-shop/b.py"] },
+      { repo: "web-shop", paths: ["C:/u/proj/web-shop/c.py"] },
+      { repo: "other", paths: ["C:/x/y"] },
+    ])).toEqual(["C:/u/proj"]);
+  });
+});
+
+describe("a repo for runs that name none", () => {
+  it("is taken from the paths they read, under the folder a named run sits in", () => {
+    const dir = makeDir();
+    writeStream(dir, "20261001T120000.000-a.jsonl", [startEvent({ workspace: "web-shop" }), toolEvent("turn", [toolCall("read_file", "/mnt/c/u/proj/web-shop/a.py")]), endEvent()]);
+    writeStream(dir, "20261001T110000.000-b.jsonl", [startEvent({ workspace: undefined }), toolEvent("turn", [toolCall("read_file", "C:\\u\\proj\\web-shop\\b.py")]), endEvent()]);
+    writeStream(dir, "20261001T100000.000-c.jsonl", [startEvent({ workspace: undefined }), toolEvent("turn", [toolCall("read_file", "C:/u/proj/web-shop/c.py"), toolCall("read_file", "C:/u/proj/infra/d.py")]), endEvent()]);
+    const store = new RunStore(join(dir, "runs.json"), dir, () => NOW);
+    store.checkAll();
+    const byName = new Map(store.records().map((r) => [r.name.slice(-7), [r.repo, r.repoFromPaths]]));
+    expect(byName.get("a.jsonl")).toEqual(["web-shop", false]);
+    expect(byName.get("b.jsonl")).toEqual(["web-shop", true]);
+    expect(byName.get("c.jsonl")).toEqual([null, false]);
+    expect(JSON.parse(readFileSync(join(dir, "runs.json"), "utf8")).runs.every((r: Record<string, unknown>) => !("paths" in r))).toBe(true);
+  });
+});
+
+describe("repoFromPaths", () => {
+  it("names the folder under a learned parent", () => {
+    expect(repoFromPaths(["C:/u/proj/web-shop/a.py"], ["C:/u/proj"])).toBe("web-shop");
+  });
+
+  it("names a sibling folder no stream named, beside a learned one", () => {
+    expect(repoFromPaths(["C:/u/proj/other/z.py"], ["C:/u/proj"])).toBe("other");
+  });
+
+  it("is null when the paths sit under two repos", () => {
+    expect(repoFromPaths(["C:/u/proj/web-shop/a.py", "C:/u/proj/other/z.py"], ["C:/u/proj"])).toBeNull();
+  });
+
+  it("is null when no path is under a parent", () => {
+    expect(repoFromPaths(["D:/elsewhere/t.py"], ["C:/u/proj"])).toBeNull();
+  });
+
+  it("picks the longest parent when parents nest", () => {
+    expect(repoFromPaths(["C:/u/proj/web-shop/a.py"], ["C:/u", "C:/u/proj"])).toBe("web-shop");
   });
 });
 
@@ -226,7 +321,7 @@ describe("RunStore", () => {
   it("drops a record of the wrong shape and keeps the good ones", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const bad = [{ ...GOOD, name: 7 }, { ...GOOD, outcome: "exploded" }, { ...GOOD, inputTokens: "many" }, null, "x"];
+    const bad = [{ ...GOOD, name: 7 }, { ...GOOD, outcome: "exploded" }, { ...GOOD, inputTokens: "many" }, { ...GOOD, repoFromPaths: "yes" }, null, "x"];
     writeFileSync(file, JSON.stringify({ version: 1, runs: [GOOD, ...bad] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();

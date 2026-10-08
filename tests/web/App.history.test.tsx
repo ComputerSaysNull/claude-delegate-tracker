@@ -3,10 +3,24 @@
 // column, on a phone a third link in the bottom bar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ListResponse } from "../../src/server/poller.ts";
+import type { ListRow } from "../../src/server/streams.ts";
+
+function row(name: string, title: string): ListRow {
+  return {
+    name, state: "ok", why: null, age: null, kind: "claude-code", model: null, effort: null,
+    title, startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
+  };
+}
+
+const LIST: ListResponse = {
+  rows: [row("s1", "First delegation"), row("s2", "Second delegation")],
+  capped: false, total: 2, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
+};
 
 vi.mock("../../src/web/useLiveList.ts", () => ({
   useLiveList: () => ({
-    list: null,
+    list: LIST,
     connected: true,
     health: { checkedAt: null, banners: [], transcriptFolder: { configured: true, readable: true } },
     cluster: null,
@@ -15,6 +29,10 @@ vi.mock("../../src/web/useLiveList.ts", () => ({
 vi.mock("../../src/web/useClusterHistory.ts", () => ({ useClusterHistory: () => null }));
 // The page itself is tested on its own; here only where it appears.
 vi.mock("../../src/web/HistoryPage.tsx", () => ({ HistoryPage: () => <section aria-label="History" /> }));
+// The detail pane fetches its own data; here it only has to say which delegation it shows.
+vi.mock("../../src/web/StreamPage.tsx", () => ({
+  StreamPage: ({ name }: { name: string }) => <div data-testid="detail">detail of {name}</div>,
+}));
 
 const { default: App } = await import("../../src/web/App.tsx");
 
@@ -66,5 +84,15 @@ describe("the History tab", () => {
     window.history.replaceState(null, "", "/history");
     render(<App />);
     expect(within(main()).getByRole("region", { name: "History" })).toBeTruthy();
+  });
+
+  it("returns the Delegation tab to the last open delegation", () => {
+    render(<App />);
+    fireEvent.click(screen.getByRole("link", { name: "First delegation" }));
+    expect(window.location.pathname).toBe("/s/s1");
+    fireEvent.click(within(main()).getByRole("link", { name: "History" }));
+    expect(window.location.pathname).toBe("/history");
+    fireEvent.click(within(main()).getByRole("link", { name: "Delegation" }));
+    expect(window.location.pathname).toBe("/s/s1");
   });
 });
