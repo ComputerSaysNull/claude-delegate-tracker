@@ -156,6 +156,8 @@ Read only these names. Ignore every other metric: some carry deployment details 
 | `vllm:generation_tokens_total` | counter (tokens) | decode speed = difference between two scrapes ÷ seconds between them |
 | `vllm:prefix_cache_hits_total`, `vllm:prefix_cache_queries_total` | counters (tokens) | prefix-cache hit rate since the engine started = hits ÷ queries |
 | `vllm:num_preemptions_total` | counter | preemptions (shown when above 0) |
+| `vllm:spec_decode_num_draft_tokens_total`, `vllm:spec_decode_num_accepted_tokens_total` | counters (tokens) | MTP acceptance = Δaccepted ÷ Δdraft between two scrapes, × 100 %; `—` when no drafts |
+| `vllm:prompt_tokens_total`, `vllm:prompt_tokens_cached_total` | counters (tokens) | prefill speed = Δ(prompt − cached) ÷ seconds between them (cache hits are not prefill work); a window with no prefill is a measured 0 |
 
 Rules for every figure (the node figures follow them too):
 

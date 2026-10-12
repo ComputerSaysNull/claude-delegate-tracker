@@ -9,6 +9,10 @@ export const METRIC_NAMES = [
   "vllm:prefix_cache_hits_total",
   "vllm:prefix_cache_queries_total",
   "vllm:num_preemptions_total",
+  "vllm:spec_decode_num_draft_tokens_total",
+  "vllm:spec_decode_num_accepted_tokens_total",
+  "vllm:prompt_tokens_total",
+  "vllm:prompt_tokens_cached_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -31,6 +35,8 @@ export interface ModelFigures {
   decodeTokensPerSecond: number | null; // Δ generation_tokens_total ÷ seconds between readings, one decimal
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
+  mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the window, one decimal; null when no drafts
+  prefillTokensPerSecond: number | null; // Δ(prompt − cached) ÷ seconds between readings, one decimal
   preemptions: number | null;          // the counter, only when above 0
   readAt: string | null;               // ISO time of the newest successful reading, kept while unreachable
 }
@@ -119,14 +125,16 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
   if (cur === null) {
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
-      decodeWindowSeconds: null, prefixHitPercent: null, preemptions: null, readAt: null,
+      decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      prefillTokensPerSecond: null, preemptions: null, readAt: null,
     };
   }
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
-      decodeWindowSeconds: null, prefixHitPercent: null, preemptions: null, readAt,
+      decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      prefillTokensPerSecond: null, preemptions: null, readAt,
     };
   }
 
@@ -151,6 +159,39 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     }
   }
 
+  const draftCur = s["vllm:spec_decode_num_draft_tokens_total"];
+  const acceptedCur = s["vllm:spec_decode_num_accepted_tokens_total"];
+
+  let mtpAcceptancePercent: number | null = null;
+  if (prev !== null && draftCur !== undefined && acceptedCur !== undefined) {
+    const draftPrev = prev.sample["vllm:spec_decode_num_draft_tokens_total"];
+    const acceptedPrev = prev.sample["vllm:spec_decode_num_accepted_tokens_total"];
+    if (draftPrev !== undefined && acceptedPrev !== undefined && cur.atMs > prev.atMs) {
+      const deltaDraft = draftCur - draftPrev;
+      const deltaAccepted = acceptedCur - acceptedPrev;
+      if (deltaDraft > 0 && deltaAccepted >= 0) {
+        mtpAcceptancePercent = Math.round((deltaAccepted / deltaDraft) * 1000) / 10;
+      }
+    }
+  }
+
+  const promptCur = s["vllm:prompt_tokens_total"];
+  const cachedCur = s["vllm:prompt_tokens_cached_total"];
+
+  let prefillTokensPerSecond: number | null = null;
+  if (prev !== null && promptCur !== undefined && cachedCur !== undefined) {
+    const promptPrev = prev.sample["vllm:prompt_tokens_total"];
+    const cachedPrev = prev.sample["vllm:prompt_tokens_cached_total"];
+    if (promptPrev !== undefined && cachedPrev !== undefined && cur.atMs > prev.atMs) {
+      const deltaPrompt = promptCur - promptPrev;
+      const deltaCached = cachedCur - cachedPrev;
+      if (deltaPrompt >= 0 && deltaCached >= 0 && deltaPrompt >= deltaCached) {
+        const deltaSeconds = (cur.atMs - prev.atMs) / 1000;
+        prefillTokensPerSecond = Math.round(((deltaPrompt - deltaCached) / deltaSeconds) * 10) / 10;
+      }
+    }
+  }
+
   return {
     status,
     running: s["vllm:num_requests_running"] ?? null,
@@ -161,6 +202,8 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     prefixHitPercent: hits !== undefined && queries !== undefined && queries > 0
       ? Math.round((hits / queries) * 1000) / 10
       : null,
+    mtpAcceptancePercent,
+    prefillTokensPerSecond,
     preemptions: preempt !== undefined && preempt > 0 ? preempt : null,
     readAt,
   };

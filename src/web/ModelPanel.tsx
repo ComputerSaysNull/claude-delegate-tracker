@@ -85,7 +85,7 @@ function ModelFiguresBody({
   const valueClass = "font-mono tabular-nums text-2xl font-medium";
   return (
     <>
-      <ul aria-label="Model server figures" className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-4">
+      <ul aria-label="Model server figures" className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-3">
         <li className="flex min-w-0 flex-col gap-1">
           <span className="text-[13px] text-muted">Decode speed</span>
           <div className="flex items-baseline gap-1.5">
@@ -99,6 +99,16 @@ function ModelFiguresBody({
           )}
           {history !== undefined && (
             <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "decodeTokensPerSecond")} label={`Decode speed over the ${windowLabel(span)}`} /></div>
+          )}
+        </li>
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">Prefill speed</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{num(model.prefillTokensPerSecond)}</span>
+            <span className="text-[13px] text-muted">tok/s</span>
+          </div>
+          {history !== undefined && (
+            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "prefillTokensPerSecond")} label={`Prefill speed over the ${windowLabel(span)}`} /></div>
           )}
         </li>
         <li className="flex min-w-0 flex-col gap-1">
@@ -129,6 +139,13 @@ function ModelFiguresBody({
             <span className={valueClass}>{percent(model.prefixHitPercent)}</span>
           </div>
           <span className="text-xs text-muted">since the engine started</span>
+        </li>
+        <li className="flex min-w-0 flex-col gap-1">
+          <span className="text-[13px] text-muted">MTP acceptance</span>
+          <div className="flex items-baseline gap-1.5">
+            <span className={valueClass}>{percent(model.mtpAcceptancePercent)}</span>
+          </div>
+          <span className="text-xs text-muted">drafted tokens accepted</span>
         </li>
       </ul>
       {model.preemptions !== null && (

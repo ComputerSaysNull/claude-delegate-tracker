@@ -57,6 +57,8 @@ function model(over: Partial<ModelFigures> = {}): ModelFigures {
     decodeWindowSeconds: null,
     prefixHitPercent: null,
     preemptions: null,
+    mtpAcceptancePercent: null,
+    prefillTokensPerSecond: null,
     readAt: null,
     ...over,
   };
