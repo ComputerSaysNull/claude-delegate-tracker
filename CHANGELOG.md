@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #59 — 2026-10-12 — feat: prefetched file chips show the lines read, at one width
+
+### Added
+
+- **A file prefetched as a line range says so on its chip: "lines 596–630".** A ranged
+  file looked the same as a whole one, so a delegation that was given 35 lines read as if it
+  had the whole file. The tracker now reads `start_line`/`end_line` from `start.files_read`
+  (format 1.11) and shows a range only when both are there and make sense.
+
+### Changed
+
+- **Every file chip has one width**, shrinking to the column on a phone. Each chip was as
+  wide as its path, so a row of chips was ragged.
+
 ## #58 — 2026-10-12 — chore: vendor the contract from server v0.11.0
 
 ### Changed

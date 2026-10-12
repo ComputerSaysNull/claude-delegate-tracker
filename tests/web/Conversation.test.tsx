@@ -50,8 +50,8 @@ describe("the conversation", () => {
       <StreamViewBody
         view={view({
           files: [
-            { path: "deploy/settings.py", size: "6.8 KB", skipped: null },
-            { path: "secrets/.env", size: null, skipped: "refused: not allowed" },
+            { path: "deploy/settings.py", size: "6.8 KB", skipped: null, lines: null },
+            { path: "secrets/.env", size: null, skipped: "refused: not allowed", lines: null },
           ],
         })}
       />,

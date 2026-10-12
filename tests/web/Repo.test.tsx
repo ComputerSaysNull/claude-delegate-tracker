@@ -241,7 +241,7 @@ describe("the repo on a file chip", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          files: [{ path: "C:\\w\\web-shop\\src\\dates.py", size: null, skipped: null }],
+          files: [{ path: "C:\\w\\web-shop\\src\\dates.py", size: null, skipped: null, lines: null }],
         })}
       />,
     );
@@ -254,7 +254,7 @@ describe("the repo on a file chip", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null }],
+          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null, lines: null }],
         })}
       />,
     );
@@ -265,7 +265,7 @@ describe("the repo on a file chip", () => {
     render(
       <StreamViewBody
         view={view({
-          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null }],
+          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null, lines: null }],
         })}
       />,
     );
@@ -277,7 +277,7 @@ describe("the repo on a file chip", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "api" }),
-          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null }],
+          files: [{ path: "/w/web-shop/src/dates.py", size: null, skipped: null, lines: null }],
         })}
       />,
     );
