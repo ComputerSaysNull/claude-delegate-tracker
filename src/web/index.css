@@ -25,6 +25,8 @@
   --chart-stopped: #6f9fe0;
   --chart-limits: #e0a43c;
   --chart-failed: #cf5049;
+  --chart-node-1: #4a7fd1;
+  --chart-node-2: #c96f35;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -50,6 +52,8 @@
     --chart-stopped: #5a8fd4;
     --chart-limits: #be8a20;
     --chart-failed: #c8405a;
+    --chart-node-1: #5288d8;
+    --chart-node-2: #d27a40;
   }
 }
 
@@ -75,6 +79,8 @@
   --color-chart-stopped: var(--chart-stopped);
   --color-chart-limits: var(--chart-limits);
   --color-chart-failed: var(--chart-failed);
+  --color-chart-node-1: var(--chart-node-1);
+  --color-chart-node-2: var(--chart-node-2);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }

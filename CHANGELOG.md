@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #61 — 2026-10-13 — feat: keep GPU power per hour and show it in History
+
+### Added
+
+- **History shows the nodes' GPU power over days**: energy per day per node as stacked
+  columns, the range's total, and Wh per 1k output tokens. The node panel showed watts only
+  for the moment, so what the cluster used over a day or a month could not be seen. The
+  tracker now keeps each node's GPU power per UTC hour for 90 days in `power.json` beside
+  `busy.json`, never counting across an outage, and splits a reading's time across the hours
+  it spans. Wh per 1k tokens counts only the runs of days that have a power figure, so the
+  days before power was kept do not make it look cheaper. It is GPU power, not wall power;
+  the card says so. The chart fills from the first run of this version.
+
 ## #60 — 2026-10-12 — feat: show each node's memory, GPU power, disk and network
 
 ### Added

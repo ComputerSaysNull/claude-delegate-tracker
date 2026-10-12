@@ -8,6 +8,7 @@ import { dayMonthYear } from "../../src/web/historyData.ts";
 import { localTime } from "../../src/web/time.ts";
 import type { RunsStatus, RunRecord } from "../../src/server/runs.ts";
 import type { HourBucket } from "../../src/server/busy.ts";
+import type { PowerBucket } from "../../src/server/power.ts";
 
 const NOW = new Date(2026, 9, 4, 12, 0, 0).getTime();
 const DAY = 24 * 60 * 60 * 1000;
@@ -66,11 +67,20 @@ interface BusyResponse {
   writeError: string | null;
 }
 
-function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }, busy?: BusyResponse): void {
+interface PowerResponse {
+  buckets: PowerBucket[];
+  writeError: string | null;
+}
+
+function mockFetch(data: { status: RunsStatus; runs: RunRecord[] }, busy?: BusyResponse, power?: PowerResponse | "fail"): void {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url === "/api/power") {
+        if (power === "fail") throw new Error("power down");
+        return new Response(JSON.stringify(power ?? { buckets: [], writeError: null }), { status: 200 });
+      }
       if (url === "/api/busy") {
         return new Response(JSON.stringify(busy ?? { buckets: [], writeError: null }), { status: 200 });
       }
@@ -86,6 +96,18 @@ function bucket(hour: Date, overrides: Partial<HourBucket> = {}): HourBucket {
     kvSum: 0,
     kvSeconds: 0,
     kvMax: null,
+    ...overrides,
+  };
+}
+
+// A power bucket at a local wall-clock time; `hour` round-trips to the same local day and hour.
+function powerBucket(hour: Date, overrides: Partial<PowerBucket> = {}): PowerBucket {
+  return {
+    hour: hour.getTime(),
+    node: "alpha",
+    wh: 0,
+    seconds: 0,
+    maxW: null,
     ...overrides,
   };
 }
@@ -130,6 +152,11 @@ function busyCard(): HTMLElement {
 // The card holding the "KV-cache use" chart: the heading's container.
 function kvCard(): HTMLElement {
   return screen.getByRole("heading", { name: "KV-cache use" }).closest(".rounded-xl")! as HTMLElement;
+}
+
+// The card holding the "GPU power" chart: the heading's container.
+function powerCard(): HTMLElement {
+  return screen.getByRole("heading", { name: "GPU power" }).closest(".rounded-xl")! as HTMLElement;
 }
 
 describe("HistoryPage", () => {
@@ -406,5 +433,64 @@ describe("HistoryPage", () => {
     mockFetch(api(RUNS), { buckets: [], writeError: "busy disk full" });
     render(<HistoryPage />);
     await waitFor(() => expect(screen.getByText(/Could not save: busy disk full/)).toBeTruthy());
+  });
+
+  describe("the GPU power card", () => {
+    // Power on 2 Oct 2026 (a Friday): two nodes total 1250 Wh. Runs on that day give 7 500 output
+    // tokens; 2 500 more on 3 Oct, a day with no power figure, must not count. So the range total is
+    // 1.3 kWh and Wh per 1k tokens is 1250 ÷ 7.5 = 166.67.
+    const POWER_BUCKETS = [
+      powerBucket(new Date(2026, 9, 2, 10), { node: "alpha", wh: 700, seconds: 3600, maxW: 200 }),
+      powerBucket(new Date(2026, 9, 2, 11), { node: "alpha", wh: 300, seconds: 1800, maxW: 220 }),
+      powerBucket(new Date(2026, 9, 2, 10), { node: "beta", wh: 250, seconds: 3600, maxW: 150 }),
+    ];
+    const POWER_RUNS = [
+      run({ name: "p1", startedAt: new Date(2026, 9, 2, 10).getTime(), outputTokens: 5000 }),
+      run({ name: "p2", startedAt: new Date(2026, 9, 2, 12).getTime(), outputTokens: 2500 }),
+      run({ name: "p3", startedAt: new Date(2026, 9, 3, 9).getTime(), outputTokens: 2500 }),
+    ];
+
+    it("shows the range total, Wh per 1k output tokens, and the note", async () => {
+      mockFetch(api(POWER_RUNS), { buckets: [], writeError: null }, { buckets: POWER_BUCKETS, writeError: null });
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "GPU power" })).toBeTruthy());
+      const card = powerCard();
+      expect(within(card).getByText("1.3 kWh")).toBeTruthy(); // 1250 Wh ≥ 1000
+      expect(within(card).getByText("Wh per 1k output tokens")).toBeTruthy();
+      expect(within(card).getByText("166.67")).toBeTruthy(); // 1250 ÷ (7500 ÷ 1000); 3 Oct has no power
+      expect(within(card).getByText("GPU power only, not wall power")).toBeTruthy();
+    });
+
+    it("shows the range total in Wh below 1000", async () => {
+      const buckets = [
+        powerBucket(new Date(2026, 9, 2, 10), { node: "alpha", wh: 500, seconds: 3600, maxW: 200 }),
+        powerBucket(new Date(2026, 9, 2, 11), { node: "beta", wh: 350, seconds: 1800, maxW: 150 }),
+      ];
+      mockFetch(api(POWER_RUNS), { buckets: [], writeError: null }, { buckets, writeError: null });
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "GPU power" })).toBeTruthy());
+      expect(within(powerCard()).getByText("850 Wh")).toBeTruthy();
+    });
+
+    it("shows a dash for the total and per-1k figure with no power buckets", async () => {
+      mockFetch(api(RUNS), { buckets: [], writeError: null }, { buckets: [], writeError: null });
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "GPU power" })).toBeTruthy());
+      expect(within(powerCard()).getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("leaves the rest of History showing when /api/power fails", async () => {
+      mockFetch(api(RUNS), { buckets: [], writeError: null }, "fail");
+      render(<HistoryPage />);
+      await waitFor(() => expect(tileText("Delegations")).toContain("3"));
+      expect(screen.getByRole("heading", { name: "GPU power" })).toBeTruthy();
+      expect(within(powerCard()).getAllByText("—").length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("joins a power write error into the status line", async () => {
+      mockFetch(api(RUNS), { buckets: [], writeError: null }, { buckets: [], writeError: "power disk full" });
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByText(/Could not save: power disk full/)).toBeTruthy());
+    });
   });
 });

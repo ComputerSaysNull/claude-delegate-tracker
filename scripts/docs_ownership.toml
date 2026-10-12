@@ -85,6 +85,7 @@ owns = [
   "src/server/history.ts",
   "src/server/runs.ts",
   "src/server/busy.ts",
+  "src/server/power.ts",
   "src/server/metrics.ts",
   "src/server/nodes.ts",
   "src/server/titles.ts",
