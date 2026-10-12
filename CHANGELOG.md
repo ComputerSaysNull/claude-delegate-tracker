@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #58 — 2026-10-12 — chore: vendor the contract from server v0.11.0
+
+### Changed
+
+- **The contract moves from v0.10.0 to v0.11.0, transcript format 1.10 to 1.11.** A file
+  prefetched as a line range was recorded as a bare path, so the tracker could not say which
+  lines a delegation was given. The server now writes optional `start_line` and `end_line` on
+  a `start.files_read` entry. The tracker may read only what its vendored contract has. Only
+  additions, so a minor; the tracker reads none of them yet.
+
 ## #57 — 2026-10-08 — feat: show node temperatures in rings like the use donuts
 
 ### Changed
