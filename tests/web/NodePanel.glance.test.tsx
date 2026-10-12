@@ -11,7 +11,9 @@ const LIMITS = { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 };
 function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
   return {
     name: "node-a", status: "ok", cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null,
-    gpuPercent: null, gpuTempC: null, readAt: null, ...overrides,
+    gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null,
+    diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null,
+    readAt: null, ...overrides,
   };
 }
 

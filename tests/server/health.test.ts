@@ -72,6 +72,14 @@ function node(over: Partial<NodeFigures> = {}): NodeFigures {
     gpuPercent: null,
     gpuTempC: null,
     readAt: null,
+    memUsedPercent: null,
+    memAvailableBytes: null,
+    gpuPowerW: null,
+    diskUsedPercent: null,
+    diskReadBps: null,
+    diskWriteBps: null,
+    netRxBps: null,
+    netTxBps: null,
     ...over,
   };
 }
