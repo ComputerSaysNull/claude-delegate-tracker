@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #66 — 2026-10-13 — feat: smaller delegation titles in the list and smaller conversation text
+
+### Changed
+
+- **The list's titles and the conversation read at a smaller size.** A list title was 16px
+  semibold and looked bigger than the delegation beside it; the task, replies and questions
+  were 16px next to 14px tool calls and details. Titles are now 15px semibold, and the task,
+  replies and questions 14px.
+
 ## #65 — 2026-10-13 — fix: line up Turns and Time left with the other figures in the details bar
 
 ### Fixed

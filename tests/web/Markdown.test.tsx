@@ -23,6 +23,12 @@ describe("Markdown", () => {
     expect(container.querySelector("pre code")?.textContent).toContain("load_config(path)");
   });
 
+  // Replies, the task and questions read at 14px, the size of the tool calls beside them.
+  it("writes its text at 14px", () => {
+    const { container } = render(<Markdown text="A reply." />);
+    expect((container.firstElementChild as HTMLElement).className.split(" ")).toContain("text-sm");
+  });
+
   it("wraps a code block's long lines instead of scrolling it sideways", () => {
     const { container } = render(<Markdown text={"```\n" + "x".repeat(400) + "\n```"} />);
     const look = (container.firstElementChild as HTMLElement).className.split(" ");

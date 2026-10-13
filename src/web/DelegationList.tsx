@@ -125,7 +125,7 @@ function RowCard({
         <StateIcon state={row.state} />
         <a
           href={"/s/" + encodeURIComponent(row.name)}
-          className="min-w-0 flex-1 truncate font-semibold hover:underline text-text"
+          className="min-w-0 flex-1 truncate text-[15px] font-semibold hover:underline text-text"
           title={row.title}
           onClick={(e) => {
             if (

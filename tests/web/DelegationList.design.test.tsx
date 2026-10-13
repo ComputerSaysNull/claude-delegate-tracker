@@ -62,6 +62,14 @@ describe("the list as designed", () => {
     expect(card("a").querySelector(".rounded-full")).toBeNull();
   });
 
+  // One step under the page's 16px, so the list reads at the conversation's weight.
+  it("writes each card's title at 15px, semibold", () => {
+    render(<DelegationList list={list([row("a")])} />);
+    const title = screen.getByRole("link", { name: "Delegation a" }).className.split(/\s+/);
+    expect(title).toContain("text-[15px]");
+    expect(title).toContain("font-semibold");
+  });
+
   it("puts the start time on the title's line, in Plex Mono", () => {
     render(<DelegationList list={list([row("a")])} />);
     const time = within(card("a")).getByText(localTime(TODAY));
