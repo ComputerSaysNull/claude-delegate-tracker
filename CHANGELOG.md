@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #63 — 2026-10-13 — fix: draw a node's temperature rings in the full colour of its use rings
+
+### Fixed
+
+- **A node's temperature rings were paler than the filled part of its use rings**, so a
+  green 65°C looked like a different green from a green 12%. The temperature ring was drawn
+  at 60% strength, the use ring's fill at full strength. Both are now drawn at full strength;
+  only a use ring's empty track stays light.
+
 ## #62 — 2026-10-13 — feat: MTP acceptance, prefill speed and a live decode speed in the Model server panel
 
 ### Added

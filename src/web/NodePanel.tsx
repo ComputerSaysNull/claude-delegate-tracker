@@ -110,7 +110,7 @@ function NodeBlock({
             {degrees === null ? (
               <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="text-line" />
             ) : (
-              <circle data-ring cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="opacity-60" />
+              <circle data-ring cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" />
             )}
             <text x="27" y="31.5" textAnchor="middle" className="fill-current font-mono text-[13px] text-text">
               {celsius(degrees)}
