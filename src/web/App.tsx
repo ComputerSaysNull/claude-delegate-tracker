@@ -170,7 +170,7 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col text-base lg:h-screen lg:overflow-hidden">
       {helpOpen && <KeyboardHelp onClose={closeHelp} />}
-      <header className="hidden lg:flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
+      <header className="hidden lg:flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-1.5 lg:px-6">
         <CircleDot size={20} className="text-accent" aria-hidden="true" />
         <h1 className="text-[17px] font-semibold">Delegation tracker</h1>
         {/* The Delegation / History switch sits beside the title on a wide screen; a phone uses
@@ -256,7 +256,7 @@ export default function App() {
       )}
       <section
         aria-label="Cluster"
-        className={`${address.section === "cluster" && selected === null ? "flex" : "hidden"} lg:flex flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}
+        className={`${address.section === "cluster" && selected === null ? "flex" : "hidden"} lg:flex flex-wrap gap-2 border-b border-line px-4 py-2 lg:px-6`}
       >
         <h1 className="w-full text-2xl font-bold lg:hidden">Cluster</h1>
         <div className="min-w-0 flex-[5_1_560px]">

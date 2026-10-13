@@ -183,7 +183,7 @@ export function NodePanel({
           return newest;
         }, null);
   return (
-    <section className="rounded-xl border border-line bg-card p-4">
+    <section className="h-full rounded-xl border border-line bg-card p-3">
       <div className="flex items-baseline gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Nodes</h2>
         {newestReadAt !== null && (
@@ -195,7 +195,7 @@ export function NodePanel({
       ) : nodes.length === 0 ? (
         <p className="mt-2 text-muted">No nodes configured (NODES is not set)</p>
       ) : (
-        <ul aria-label="Nodes" className="mt-3 grid grid-cols-1 gap-3">
+        <ul aria-label="Nodes" className="mt-2 grid grid-cols-1 gap-2">
           {nodes.map((node) => (
             <NodeBlock key={node.name} node={node} limits={limits} />
           ))}

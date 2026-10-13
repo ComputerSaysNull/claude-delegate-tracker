@@ -95,3 +95,20 @@ describe("the nodes card", () => {
     expect(screen.getByLabelText("node-a GPU temperature").parentElement!.textContent).toMatch(/GPU temp$/);
   });
 });
+
+// The band stretches both slots to the taller card; each card fills its slot, so side by side
+// the two cards end on one line.
+describe("both cards side by side", () => {
+  it("fill their slot's height, so they are the same height", () => {
+    render(
+      <>
+        <ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />
+        <NodePanel nodes={[node("node-a")]} limits={LIMITS} />
+      </>,
+    );
+    for (const name of ["Model server figures", "Nodes"]) {
+      const card = screen.getByRole("list", { name }).closest("section")!;
+      expect(card.className.split(/\s+/)).toContain("h-full");
+    }
+  });
+});

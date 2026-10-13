@@ -59,7 +59,7 @@ export function ModelPanel({
 }) {
   const status = model === null ? null : statusLine(model);
   return (
-    <section className="@container rounded-xl border border-line bg-card p-4">
+    <section className="@container h-full rounded-xl border border-line bg-card p-3">
       <div className="flex items-baseline gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Model server</h2>
         {status !== null && <span className={`text-xs ${status.color}`}>{status.text}</span>}
@@ -115,7 +115,7 @@ function ModelFiguresBody({
     );
   return (
     <>
-      <ul aria-label="Model server figures" className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
+      <ul aria-label="Model server figures" className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
         <Figure
           label="Decode speed"
           value={num(decodeValue)}

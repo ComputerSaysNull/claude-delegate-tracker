@@ -17,7 +17,8 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   get more of the screen. Each model server figure stacked its label, number and chart, and
   each node stacked its name, rings and figures, with the two nodes side by side. Now a
   figure's chart sits beside its number, and each node is one line (name, smaller rings,
-  then memory, power, disk and network), the two nodes one under the other.
+  then memory, power, disk and network), the two nodes one under the other. Side by side the
+  two cards are one height, and the header and the space around the cards are slimmer.
 - **Decode speed no longer says "over 1s" under it.** With the speed read every second the
   line never changed; when readings stop, the card's status line already says since when.
 - **The Delegation and History tabs sit in the header beside the title.** They had a row of
