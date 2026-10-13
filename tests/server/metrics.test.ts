@@ -162,6 +162,7 @@ describe("figuresFrom", () => {
     expect(f.prefixHitPercent).toBeNull();
     expect(f.preemptions).toBeNull();
     expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBeNull();
   });
@@ -388,6 +389,7 @@ describe("figuresFrom", () => {
       reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:prompt_tokens_total": 3000 }),
     );
     expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
   });
 
@@ -406,8 +408,68 @@ describe("figuresFrom", () => {
     expect(f.prefixHitPercent).toBeNull();
     expect(f.preemptions).toBeNull();
     expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBe(new Date(T0).toISOString());
+  });
+});
+
+describe("MTP acceptance since start", () => {
+  it("uses the totals from the latest reading, not the window", () => {
+    const prev = reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 50,
+      "vllm:spec_decode_num_draft_tokens_total": 100,
+    });
+    const cur = reading(T0 + 10_000, {
+      "vllm:spec_decode_num_accepted_tokens_total": 250,
+      "vllm:spec_decode_num_draft_tokens_total": 300,
+    });
+    const f = figuresFrom("ok", prev, cur);
+    expect(f.mtpAcceptancePercent).toBe(100.0);
+    expect(f.mtpAcceptanceSinceStartPercent).toBe(83.3);
+  });
+
+  it("is present on a first reading", () => {
+    const f = figuresFrom("ok", null, reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 100,
+      "vllm:spec_decode_num_draft_tokens_total": 400,
+    }));
+    expect(f.mtpAcceptanceSinceStartPercent).toBe(25);
+  });
+
+  it("is null when the draft total is 0, not 0", () => {
+    const f = figuresFrom("ok", null, reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 100,
+      "vllm:spec_decode_num_draft_tokens_total": 0,
+    }));
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
+  });
+
+  it("is null when the accepted counter is missing from the latest reading", () => {
+    const f = figuresFrom("ok", null, reading(T0, {
+      "vllm:spec_decode_num_draft_tokens_total": 400,
+    }));
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
+  });
+
+  it("is null when the draft counter is missing from the latest reading", () => {
+    const f = figuresFrom("ok", null, reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 100,
+    }));
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
+  });
+
+  it("is null when the status is not ok", () => {
+    const f = figuresFrom("unreachable", null, reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 100,
+      "vllm:spec_decode_num_draft_tokens_total": 400,
+    }));
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
+  });
+
+  it("is null when there is no reading", () => {
+    const f = figuresFrom("ok", null, null);
+    expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
   });
 });
 

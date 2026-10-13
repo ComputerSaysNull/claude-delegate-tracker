@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #69 — 2026-10-13 — feat: show MTP acceptance since the model server started beside the current figure
+
+### Added
+
+- **MTP acceptance shows a since-start figure beside the current one**, e.g. "52% now · 47%
+  since start". The figure was worked out over the last poll window only, so it showed `—`
+  whenever nothing was drafting, and there was no long-run figure to compare a recent one
+  against. The since-start figure divides the model server's accepted and drafted totals,
+  so it needs no earlier reading and stays put while idle.
+
 ## #68 — 2026-10-13 — feat: fold a long thinking text without scrolling back to its top
 
 ### Added

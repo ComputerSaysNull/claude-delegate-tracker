@@ -64,7 +64,7 @@ describe("pointFromModel", () => {
     decodeWindowSeconds: null,
     prefixHitPercent: null,
     preemptions: null,
-    mtpAcceptancePercent: null,
+    mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
     prefillTokensPerSecond: null,
     readAt: "2024-01-15T13:45:00.000Z",
     ...overrides,

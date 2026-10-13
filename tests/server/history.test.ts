@@ -20,7 +20,7 @@ const model = (over: Partial<ModelFigures> = {}): ModelFigures => ({
   decodeWindowSeconds: 5,
   prefixHitPercent: 50,
   preemptions: 0,
-  mtpAcceptancePercent: 75,
+  mtpAcceptancePercent: 75, mtpAcceptanceSinceStartPercent: null,
   prefillTokensPerSecond: 8.5,
   readAt: new Date(T0).toISOString(),
   ...over,

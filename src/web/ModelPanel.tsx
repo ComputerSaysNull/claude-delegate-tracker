@@ -155,7 +155,11 @@ function ModelFiguresBody({
         <Figure
           label="MTP acceptance"
           value={percent(model.mtpAcceptancePercent)}
-          unit={<span className={captionClass}>drafted tokens accepted</span>}
+          unit={
+            <span className={captionClass}>
+              now · <span className="font-mono tabular-nums">{percent(model.mtpAcceptanceSinceStartPercent)}</span> since start
+            </span>
+          }
         />
       </ul>
       {model.preemptions !== null && (
