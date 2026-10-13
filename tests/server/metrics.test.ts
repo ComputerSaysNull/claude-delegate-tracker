@@ -7,6 +7,7 @@ import {
   type MetricsDeps,
   type Reading,
   type Sample,
+  type DecodeNow,
 } from "../../src/server/metrics.ts";
 
 const T0 = 1_700_000_000_000;
@@ -539,5 +540,82 @@ describe("MetricsPoller", () => {
     p.body('vllm:num_requests_running{engine="0"} 3');
     await p.poller.scrape();
     expect(fired).toBe(2);
+  });
+
+  it("tick sends a decode rate every refresh second and a full figure change only every interval", async () => {
+    const p = makePoller();
+    const decode: DecodeNow[] = [];
+    let onChangeFires = 0;
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.onChange(() => { onChangeFires += 1; });
+    // Configure interval 10, refresh 1; start()'s immediate tick is tick 0.
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    p.poller.start(10, 1);
+    p.poller.stop(); // keep interval/refresh and tick 0, but no auto-refresh timers
+    await new Promise((r) => setTimeout(r, 0)); // let tick 0 finish before the clock moves
+    for (let i = 1; i < 25; i++) {
+      p.advance(1000);
+      p.body(`vllm:generation_tokens_total{engine="0"} ${1000 + 40 * i}`);
+      await p.poller.tick();
+    }
+    // The first tick has no previous fast reading, so it is nulls; every later tick carries
+    // the rate over that 1 s pair.
+    expect(decode).toHaveLength(25);
+    expect(decode[0]).toEqual({ tokensPerSecond: null, windowSeconds: null });
+    for (const d of decode.slice(1)) {
+      expect(d).toEqual({ tokensPerSecond: 40.0, windowSeconds: 1 });
+    }
+    // A full reading is taken only when intervalSeconds (10) have passed since the last one.
+    expect(onChangeFires).toBe(3);
+    expect(p.poller.figures().decodeTokensPerSecond).toBe(40.0);
+    expect(p.poller.figures().decodeWindowSeconds).toBe(10);
+  });
+
+  it("a failed fetch sends nulls to onDecode", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    // A second good reading first, so the last decode is a number before the failure.
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 1040');
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1 });
+    const before = decode.length;
+    p.advance(1000);
+    p.fail(new Error("boom"));
+    await p.poller.tick();
+    expect(decode.length).toBe(before + 1);
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+  });
+
+  it("a counter that went down sends nulls to onDecode", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 800');
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+  });
+
+  it("a fast tick that is not due does not change figures", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0)); // tick 0 is a full reading
+    const before = p.poller.figures();
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 1040');
+    await p.poller.tick();
+    expect(p.poller.figures()).toEqual(before);
   });
 });

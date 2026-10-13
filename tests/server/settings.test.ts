@@ -86,7 +86,16 @@ describe('loadSettings', () => {
     expect(s.followPollSeconds).toBe(3);
   });
 
-  it.each(['QUIET_AFTER_SECONDS', 'STREAMS_POLL_SECONDS', 'FOLLOW_POLL_SECONDS', 'METRICS_POLL_SECONDS'])('%s rejects 0 and non-numbers', (name) => {
+  it('DECODE_REFRESH_SECONDS defaults and is used when valid', () => {
+    expect(loadSettings({}).decodeRefreshSeconds).toBe(DEFAULTS.decodeRefreshSeconds);
+    expect(loadSettings({ DECODE_REFRESH_SECONDS: '5' }).decodeRefreshSeconds).toBe(5);
+  });
+
+  it.each(['0', '3601', 'abc', '1.5'])('DECODE_REFRESH_SECONDS rejects %s', (v) => {
+    expect(() => loadSettings({ DECODE_REFRESH_SECONDS: v })).toThrow(/DECODE_REFRESH_SECONDS/);
+  });
+
+  it.each(['QUIET_AFTER_SECONDS', 'STREAMS_POLL_SECONDS', 'FOLLOW_POLL_SECONDS', 'METRICS_POLL_SECONDS', 'DECODE_REFRESH_SECONDS'])('%s rejects 0 and non-numbers', (name) => {
     for (const v of ['0', 'abc', '1.5']) {
       expect(() => loadSettings({ [name]: v })).toThrow(new RegExp(name));
     }

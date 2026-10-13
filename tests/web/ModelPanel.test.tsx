@@ -165,4 +165,38 @@ describe("ModelPanel", () => {
     render(<ModelPanel model={figures({ prefillTokensPerSecond: 0 })} />);
     expect(screen.getByText("0")).toBeTruthy();
   });
+
+  it("shows the live decode value and its window once a decode event has arrived, over the model's own", () => {
+    render(
+      <ModelPanel
+        model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+      />,
+    );
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((61.4).toLocaleString());
+    expect(decodeCell.textContent).toContain("tok/s");
+    expect(decodeCell.textContent).toContain("over 1s");
+    expect(decodeCell.textContent).not.toContain((80.5).toLocaleString());
+  });
+
+  it("shows the model's own decode figure and window when no decode event has arrived", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} decode={null} />);
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
+  });
+
+  it("shows the model's own decode figure and window when the model status is not ok, even with a decode event", () => {
+    render(
+      <ModelPanel
+        model={figures({ status: "unreachable", readAt: "2026-10-03T12:00:00.000Z", decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+      />,
+    );
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
+    expect(decodeCell.textContent).not.toContain((61.4).toLocaleString());
+  });
 });

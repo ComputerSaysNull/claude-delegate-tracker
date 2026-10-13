@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { closeLive, openLive } from "./live.ts";
 import type { ListResponse } from "../server/poller.ts";
-import type { ModelFigures } from "../server/metrics.ts";
+import type { ModelFigures, DecodeNow } from "../server/metrics.ts";
 import type { NodeFigures } from "../server/nodes.ts";
 import type { Health } from "../server/health.ts";
 import type { Limits } from "../server/settings.ts";
@@ -12,11 +12,13 @@ export function useLiveList(): {
   list: ListResponse | null;
   cluster: Cluster | null;
   health: Health | null;
+  decode: DecodeNow | null;
   connected: boolean;
 } {
   const [list, setList] = useState<ListResponse | null>(null);
   const [cluster, setCluster] = useState<Cluster | null>(null);
   const [health, setHealth] = useState<Health | null>(null);
+  const [decode, setDecode] = useState<DecodeNow | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -33,9 +35,13 @@ export function useLiveList(): {
       setHealth(JSON.parse((event as MessageEvent<string>).data) as Health);
       setConnected(true);
     });
+    source.addEventListener("decode", (event) => {
+      setDecode(JSON.parse((event as MessageEvent<string>).data) as DecodeNow);
+      setConnected(true);
+    });
     source.onerror = () => setConnected(false);
     return () => closeLive(source);
   }, []);
 
-  return { list, cluster, health, connected };
+  return { list, cluster, health, decode, connected };
 }

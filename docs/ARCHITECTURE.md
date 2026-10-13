@@ -171,6 +171,7 @@ Rules for the model server only:
 - Its counters count tokens, not requests.
 - A `/metrics` that answers `404` means "not available", not "idle".
 - These are one engine's figures, not a fleet's. A name that appears more than once (a second engine) is left out rather than summed.
+- Decode speed is refreshed every `DECODE_REFRESH_SECONDS` over the last pair of scrapes, as its own `decode` event; the full figures, their history and busy time keep the `METRICS_POLL_SECONDS` cadence.
 
 ## The nodes
 

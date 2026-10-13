@@ -1,6 +1,6 @@
 // The model server's figures, as the backend sends them on the cluster event.
 import type { ReactNode } from "react";
-import type { ModelFigures } from "../server/metrics.ts";
+import type { ModelFigures, DecodeNow } from "../server/metrics.ts";
 import type { Series } from "../server/history.ts";
 import { localTime } from "./time.ts";
 import { Sparkline, windowLabel } from "./Sparkline.tsx";
@@ -49,11 +49,13 @@ export function ModelPanel({
   history,
   windowSeconds,
   headerExtra,
+  decode,
 }: {
   model: ModelFigures | null;
   history?: Series;
   windowSeconds?: number;
   headerExtra?: ReactNode;
+  decode?: DecodeNow | null;
 }) {
   const status = model === null ? null : statusLine(model);
   return (
@@ -66,7 +68,7 @@ export function ModelPanel({
       {model === null ? (
         <p className="mt-2 text-muted">Waiting for figures…</p>
       ) : (
-        <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} />
+        <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} decode={decode} />
       )}
     </section>
   );
@@ -76,25 +78,32 @@ function ModelFiguresBody({
   model,
   history,
   windowSeconds,
+  decode,
 }: {
   model: ModelFigures;
   history?: Series;
   windowSeconds?: number;
+  decode?: DecodeNow | null;
 }) {
   const span = windowSeconds ?? 3600;
   const valueClass = "font-mono tabular-nums text-2xl font-medium";
+  // The live decode event, when one has arrived and the model is ok, replaces the figure
+  // from the last full reading; the sparkline stays on the full cadence.
+  const live = decode !== null && decode !== undefined && model.status === "ok";
+  const decodeValue = live ? decode.tokensPerSecond : model.decodeTokensPerSecond;
+  const decodeWindow = live ? decode.windowSeconds : model.decodeWindowSeconds;
   return (
     <>
       <ul aria-label="Model server figures" className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-3">
         <li className="flex min-w-0 flex-col gap-1">
           <span className="text-[13px] text-muted">Decode speed</span>
           <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{num(model.decodeTokensPerSecond)}</span>
+            <span className={valueClass}>{num(decodeValue)}</span>
             <span className="text-[13px] text-muted">tok/s</span>
           </div>
-          {model.decodeWindowSeconds !== null && (
+          {decodeWindow !== null && (
             <span className="text-xs text-muted">
-              <span className="font-mono tabular-nums">over {model.decodeWindowSeconds.toLocaleString()}s</span>
+              <span className="font-mono tabular-nums">over {decodeWindow.toLocaleString()}s</span>
             </span>
           )}
           {history !== undefined && (

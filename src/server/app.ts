@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { Health } from "./health.ts";
 import type { HourBucket } from "./busy.ts";
 import type { PowerBucket } from "./power.ts";
-import type { ModelFigures } from "./metrics.ts";
+import type { ModelFigures, DecodeNow } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
 import type { Limits } from "./settings.ts";
 import type { ClusterHistory } from "./history.ts";
@@ -32,6 +32,7 @@ export interface AppDeps {
   cluster: () => Cluster;
   clusterHistory: () => ClusterHistory;
   subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
+  subscribeDecode: (listener: (d: DecodeNow) => void) => () => void;
   runs: () => { status: RunsStatus; runs: RunRecord[] };
   busy: () => { buckets: HourBucket[]; writeError: string | null };
   power: () => { buckets: PowerBucket[]; writeError: string | null };
@@ -62,7 +63,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster, runs, busy, power } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster, subscribeDecode, runs, busy, power } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -141,6 +142,9 @@ export function createApp(deps: AppDeps): Hono {
       const unsubscribeCluster = subscribeCluster((figures) => {
         stream.writeSSE({ event: "cluster", data: JSON.stringify(figures) });
       });
+      const unsubscribeDecode = subscribeDecode((d) => {
+        stream.writeSSE({ event: "decode", data: JSON.stringify(d) });
+      });
       // Patches may arrive before the stream opens; send them in order.
       const flush = (): void => {
         for (const patch of patches.splice(0)) stream.writeSSE({ event: "stream", data: JSON.stringify(patch) });
@@ -153,6 +157,7 @@ export function createApp(deps: AppDeps): Hono {
         stream.onAbort(() => {
           unsubscribe();
           unsubscribeCluster();
+          unsubscribeDecode();
           unsubscribeHealth();
           unfollow?.();
           if (timer !== null) clearInterval(timer);

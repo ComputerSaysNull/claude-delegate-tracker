@@ -59,6 +59,7 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `STREAMS_POLL_SECONDS` — how often the transcript folder is read, counted from the end of the previous read.
 - `FOLLOW_POLL_SECONDS` — how often a delegation that a page has open is read.
 - `METRICS_POLL_SECONDS` — how often the model server's figures are read.
+- `DECODE_REFRESH_SECONDS` — how often the decode speed is refreshed.
 - `NODES_POLL_SECONDS` — how often each node's figures are read.
 - `HISTORY_WINDOW_SECONDS` — how far back the charts of the figures reach.
 - `DATA_DIR` — where the tracker keeps its records (ADR-0005); unset, a per-user data folder.

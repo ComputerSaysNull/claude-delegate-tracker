@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../../src/server/app.ts";
 import type { AppDeps, Cluster } from "../../src/server/app.ts";
 import type { Health } from "../../src/server/health.ts";
-import type { ModelFigures } from "../../src/server/metrics.ts";
+import type { ModelFigures, DecodeNow } from "../../src/server/metrics.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { Settings } from "../../src/server/settings.ts";
 import type { ListRow } from "../../src/server/streams.ts";
@@ -16,7 +16,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
   return {
     port: 1, transcriptDir: "C:\\t", allowedHosts: ["tracker.example"],
     quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
-    metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1,
+    metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1, decodeRefreshSeconds: 1,
     nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1,
     dataDir: null, runsScanSeconds: 1,
     limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 }, ...overrides,
@@ -73,6 +73,7 @@ function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}
     clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
     cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
     subscribeCluster: () => () => {},
+    subscribeDecode: () => () => {},
     runs: () => ({ status: RUNS_STATUS, runs: RUNS }),
     busy: () => BUSY,
     power: () => ({ buckets: [], writeError: null }),
@@ -150,6 +151,19 @@ describe("cluster figures", () => {
     listener!(changed);
     const text = await readUntil(res, '"running":5');
     expect(text).toContain(JSON.stringify(changed));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("sends a decode event for each decode update, and unsubscribes on disconnect", async () => {
+    let listener: ((d: DecodeNow) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const app = makeApp({ subscribeDecode: (l) => { listener = l; return unsubscribe; } });
+    const res = await app.request("/api/updates", goodHost);
+    const d: DecodeNow = { tokensPerSecond: 40.0, windowSeconds: 1 };
+    listener!(d);
+    const text = await readUntil(res, "event: decode");
+    expect(text).toContain(`event: decode\ndata: ${JSON.stringify(d)}`);
     await new Promise((r) => setTimeout(r, 20));
     expect(unsubscribe).toHaveBeenCalled();
   });

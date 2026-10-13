@@ -11,6 +11,7 @@ vi.mock("../../src/web/useLiveList.ts", () => ({
   useLiveList: () => ({
     list: null,
     connected: true,
+    decode: { tokensPerSecond: 77.7, windowSeconds: 1 },
     health: { checkedAt: null, banners: [], transcriptFolder: { configured: true, readable: true } },
     cluster: {
       model: { status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 41.2, decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null, prefillTokensPerSecond: null, readAt: null },
@@ -51,6 +52,14 @@ describe("the cluster band", () => {
   });
 
   const lastPoints = (label: RegExp) => drawn.filter((d) => label.test(d.label)).at(-1)!.points;
+
+  it("shows the live decode speed from the update stream, not the slower poll's", () => {
+    render(<App />);
+    const figures = screen.getByRole("list", { name: "Model server figures" });
+    expect(figures.textContent).toContain("77.7");
+    expect(figures.textContent).toContain("over 1s");
+    expect(figures.textContent).not.toContain("41.2");
+  });
 
   it("charts the last hour by default, and the last 15 minutes when asked", () => {
     render(<App />);
