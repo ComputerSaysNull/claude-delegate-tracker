@@ -73,6 +73,20 @@ describe("NodePanel", () => {
     }
   });
 
+  // A temperature ring and a use ring's filled part are one colour at one strength; only the
+  // use ring's track is light.
+  it("draws a temperature's ring in the full colour of a use ring's filled part", () => {
+    render(<NodePanel nodes={[figures({ name: "n1", gpuPercent: 30, gpuTempC: 52 })]} limits={LIMITS} />);
+    const fill = screen.getByRole("img", { name: "GPU use 30 percent" }).querySelector("[data-ring]")!;
+    const temp = screen.getByLabelText("n1 GPU temperature");
+    const ring = temp.querySelector("[data-ring]")!;
+    expect(fill.getAttribute("class")).toMatch(/\btext-state-ok\b/);
+    expect(temp.className).toMatch(/\btext-state-ok\b/);
+    for (const circle of [fill, ring]) {
+      expect(circle.getAttribute("class") ?? "").not.toMatch(/\bopacity-/);
+    }
+  });
+
   it("colours a temperature's ring green below the warning threshold, and leaves it empty without a figure", () => {
     render(<NodePanel nodes={[figures({ name: "n1", cpuTempC: 52, gpuTempC: null })]} limits={{ loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 }} />);
     expect(screen.getByLabelText("n1 CPU temperature").className).toMatch(/\btext-state-ok\b/);
