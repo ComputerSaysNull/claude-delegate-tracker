@@ -18,9 +18,10 @@ vi.mock("../../src/web/Sparkline.tsx", () => ({
 
 const MODEL: ModelFigures = {
   status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 41.2,
-  decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, readAt: "2026-10-04T17:42:01.000Z",
+  decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null,
+  prefillTokensPerSecond: null, readAt: "2026-10-04T17:42:01.000Z",
 };
-const SERIES = { at: [1, 2, 3], values: { running: [1, 2, 2], kvCachePercent: [5, 6, 7], decodeTokensPerSecond: [30, 40, 41] } };
+const SERIES = { at: [1, 2, 3], values: { running: [1, 2, 2], kvCachePercent: [5, 6, 7], decodeTokensPerSecond: [30, 40, 41], prefillTokensPerSecond: [20, 30, 31] } };
 const LIMITS = { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 };
 
 function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
@@ -33,13 +34,13 @@ function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
 }
 
 describe("the model server card", () => {
-  it("lays its four figures out side by side, each under its own label", () => {
+  it("lays its six figures out side by side, each under its own label", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const grid = screen.getByRole("list", { name: "Model server figures" });
     expect(grid.className).toMatch(/\bgrid-cols-2\b/);
-    expect(grid.className).toMatch(/\bmd:grid-cols-4\b/);
+    expect(grid.className).toMatch(/\bmd:grid-cols-3\b/);
     const labels = within(grid).getAllByRole("listitem").map((cell) => cell.firstElementChild!.textContent);
-    expect(labels).toEqual(["Decode speed", "Requests", "KV-cache use", "Prefix-cache hits"]);
+    expect(labels).toEqual(["Decode speed", "Prefill speed", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance"]);
   });
 
   it("writes each figure large in Plex Mono, with its unit beside it", () => {
@@ -57,12 +58,14 @@ describe("the model server card", () => {
     expect(cell.textContent).toContain("0 waiting");
   });
 
-  it("draws a small chart under decode speed, requests and KV-cache use, and none under prefix hits", () => {
+  it("draws a small chart under decode speed, prefill speed, requests and KV-cache use, and none under prefix hits or MTP acceptance", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const charts = screen.getAllByRole("img").map((c) => c.getAttribute("aria-label"));
-    expect(charts).toHaveLength(3);
+    expect(charts).toHaveLength(4);
     expect(charts.join(" ")).toMatch(/Decode speed/);
+    expect(charts.join(" ")).toMatch(/Prefill speed/);
     expect(charts.join(" ")).not.toMatch(/Prefix/);
+    expect(charts.join(" ")).not.toMatch(/MTP/);
   });
 
   it("names itself in small capitals with the time of its newest reading", () => {

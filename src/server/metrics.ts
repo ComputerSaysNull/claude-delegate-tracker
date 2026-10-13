@@ -9,6 +9,10 @@ export const METRIC_NAMES = [
   "vllm:prefix_cache_hits_total",
   "vllm:prefix_cache_queries_total",
   "vllm:num_preemptions_total",
+  "vllm:spec_decode_num_draft_tokens_total",
+  "vllm:spec_decode_num_accepted_tokens_total",
+  "vllm:prompt_tokens_total",
+  "vllm:prompt_tokens_cached_total",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -31,6 +35,8 @@ export interface ModelFigures {
   decodeTokensPerSecond: number | null; // Δ generation_tokens_total ÷ seconds between readings, one decimal
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
+  mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the window, one decimal; null when no drafts
+  prefillTokensPerSecond: number | null; // Δ(prompt − cached) ÷ seconds between readings, one decimal
   preemptions: number | null;          // the counter, only when above 0
   readAt: string | null;               // ISO time of the newest successful reading, kept while unreachable
 }
@@ -119,14 +125,16 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
   if (cur === null) {
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
-      decodeWindowSeconds: null, prefixHitPercent: null, preemptions: null, readAt: null,
+      decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      prefillTokensPerSecond: null, preemptions: null, readAt: null,
     };
   }
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
-      decodeWindowSeconds: null, prefixHitPercent: null, preemptions: null, readAt,
+      decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      prefillTokensPerSecond: null, preemptions: null, readAt,
     };
   }
 
@@ -151,6 +159,39 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     }
   }
 
+  const draftCur = s["vllm:spec_decode_num_draft_tokens_total"];
+  const acceptedCur = s["vllm:spec_decode_num_accepted_tokens_total"];
+
+  let mtpAcceptancePercent: number | null = null;
+  if (prev !== null && draftCur !== undefined && acceptedCur !== undefined) {
+    const draftPrev = prev.sample["vllm:spec_decode_num_draft_tokens_total"];
+    const acceptedPrev = prev.sample["vllm:spec_decode_num_accepted_tokens_total"];
+    if (draftPrev !== undefined && acceptedPrev !== undefined && cur.atMs > prev.atMs) {
+      const deltaDraft = draftCur - draftPrev;
+      const deltaAccepted = acceptedCur - acceptedPrev;
+      if (deltaDraft > 0 && deltaAccepted >= 0) {
+        mtpAcceptancePercent = Math.round((deltaAccepted / deltaDraft) * 1000) / 10;
+      }
+    }
+  }
+
+  const promptCur = s["vllm:prompt_tokens_total"];
+  const cachedCur = s["vllm:prompt_tokens_cached_total"];
+
+  let prefillTokensPerSecond: number | null = null;
+  if (prev !== null && promptCur !== undefined && cachedCur !== undefined) {
+    const promptPrev = prev.sample["vllm:prompt_tokens_total"];
+    const cachedPrev = prev.sample["vllm:prompt_tokens_cached_total"];
+    if (promptPrev !== undefined && cachedPrev !== undefined && cur.atMs > prev.atMs) {
+      const deltaPrompt = promptCur - promptPrev;
+      const deltaCached = cachedCur - cachedPrev;
+      if (deltaPrompt >= 0 && deltaCached >= 0 && deltaPrompt >= deltaCached) {
+        const deltaSeconds = (cur.atMs - prev.atMs) / 1000;
+        prefillTokensPerSecond = Math.round(((deltaPrompt - deltaCached) / deltaSeconds) * 10) / 10;
+      }
+    }
+  }
+
   return {
     status,
     running: s["vllm:num_requests_running"] ?? null,
@@ -161,9 +202,16 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     prefixHitPercent: hits !== undefined && queries !== undefined && queries > 0
       ? Math.round((hits / queries) * 1000) / 10
       : null,
+    mtpAcceptancePercent,
+    prefillTokensPerSecond,
     preemptions: preempt !== undefined && preempt > 0 ? preempt : null,
     readAt,
   };
+}
+
+export interface DecodeNow {
+  tokensPerSecond: number | null;
+  windowSeconds: number | null;
 }
 
 export interface MetricsDeps {
@@ -178,8 +226,14 @@ export interface MetricsDeps {
 export class MetricsPoller {
   private readonly deps: MetricsDeps;
   private readonly listeners = new Set<(figures: ModelFigures) => void>();
+  private readonly decodeListeners = new Set<(d: DecodeNow) => void>();
   private prev: Reading | null = null;
   private last: Reading | null = null;
+  private fastPrev: Reading | null = null;
+  private fastLast: Reading | null = null;
+  private lastFullAt: number | null = null;
+  private intervalSeconds = 1;
+  private refreshSeconds = 1;
   private current: ModelFigures;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private running = false;
@@ -191,27 +245,45 @@ export class MetricsPoller {
 
   // One scrape: 200 → a new reading; 404 → "not available"; anything else → "unreachable".
   async scrape(): Promise<void> {
-    const { url, token, fetch: doFetch, now, timeoutMs } = this.deps;
+    const url = this.deps.url;
     if (url === null) return;
-    const target = `${url.replace(/\/+$/, "")}/metrics`;
-    const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };
-    let status: ModelStatus;
-    try {
-      const res = await doFetch(target, { headers, signal: AbortSignal.timeout(timeoutMs) });
-      if (res.status === 200) {
-        const reading: Reading = { atMs: now().getTime(), sample: parseMetrics(await res.text()) };
-        this.prev = this.last;
-        this.last = reading;
-        status = "ok";
-      } else if (res.status === 404) {
-        status = "not available";
-      } else {
-        status = "unreachable";
-      }
-    } catch {
-      status = "unreachable";
+    const { reading, status } = await this.fetchOnce(url);
+    if (reading !== null) {
+      this.prev = this.last;
+      this.last = reading;
     }
     this.apply(status);
+  }
+
+  // A fast tick: one fetch, used both as the next point of the fast decode pair (sent to the
+  // onDecode listeners) and, when `intervalSeconds` have passed since the last full reading,
+  // as a full reading exactly as `scrape()` does. A non-200 or failed fetch is a decode null,
+  // and counts as a full reading only when one is due.
+  async tick(): Promise<void> {
+    const url = this.deps.url;
+    if (url === null) return;
+    const { atMs, reading, status } = await this.fetchOnce(url);
+    const due = this.lastFullAt === null || atMs - this.lastFullAt >= this.intervalSeconds * 1000;
+    if (reading !== null) {
+      this.fastPrev = this.fastLast;
+      this.fastLast = reading;
+      this.sendDecode();
+    } else {
+      this.sendDecodeNulls();
+    }
+    if (due) {
+      this.lastFullAt = atMs;
+      if (reading !== null) {
+        this.prev = this.last;
+        this.last = reading;
+      }
+      this.apply(status);
+    }
+  }
+
+  onDecode(listener: (d: DecodeNow) => void): () => void {
+    this.decodeListeners.add(listener);
+    return () => this.decodeListeners.delete(listener);
   }
 
   figures(): ModelFigures {
@@ -223,19 +295,21 @@ export class MetricsPoller {
     return () => this.listeners.delete(listener);
   }
 
-  start(intervalSeconds: number): void {
+  start(intervalSeconds: number, refreshSeconds: number = intervalSeconds): void {
     this.stop();
     if (this.deps.url === null) return;
+    this.intervalSeconds = intervalSeconds;
+    this.refreshSeconds = refreshSeconds;
     this.running = true;
-    const tick = async (): Promise<void> => {
+    const run = async (): Promise<void> => {
       try {
-        await this.scrape();
+        await this.tick();
       } catch (e) {
         console.error(e);
       }
-      if (this.running) this.timer = setTimeout(() => void tick(), intervalSeconds * 1000);
+      if (this.running) this.timer = setTimeout(() => void run(), this.refreshSeconds * 1000);
     };
-    void tick();
+    void run();
   }
 
   stop(): void {
@@ -244,6 +318,52 @@ export class MetricsPoller {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  // One fetch of `<url>/metrics`: the reading on a 200, or the status on a 404 or any other
+  // failure. The timestamp is captured once, before the fetch, so the fast pair and the due
+  // check agree.
+  private async fetchOnce(url: string): Promise<{ atMs: number; reading: Reading | null; status: ModelStatus }> {
+    const { token, fetch: doFetch, now, timeoutMs } = this.deps;
+    const atMs = now().getTime();
+    const target = `${url.replace(/\/+$/, "")}/metrics`;
+    const headers: Record<string, string> = token === null ? {} : { Authorization: `Bearer ${token}` };
+    try {
+      const res = await doFetch(target, { headers, signal: AbortSignal.timeout(timeoutMs) });
+      if (res.status === 200) {
+        return { atMs, reading: { atMs, sample: parseMetrics(await res.text()) }, status: "ok" };
+      }
+      if (res.status === 404) return { atMs, reading: null, status: "not available" };
+      return { atMs, reading: null, status: "unreachable" };
+    } catch {
+      return { atMs, reading: null, status: "unreachable" };
+    }
+  }
+
+  // The decode rate over the fast pair: Δ generation_tokens_total ÷ Δs, one decimal, the window
+  // whole; nulls on a first reading, a missing counter, no time or a counter that went down.
+  private sendDecode(): void {
+    let tokensPerSecond: number | null = null;
+    let windowSeconds: number | null = null;
+    const prev = this.fastPrev;
+    const cur = this.fastLast;
+    if (prev !== null && cur !== null && cur.atMs > prev.atMs) {
+      const genCur = cur.sample["vllm:generation_tokens_total"];
+      const genPrev = prev.sample["vllm:generation_tokens_total"];
+      if (genCur !== undefined && genPrev !== undefined) {
+        const deltaTokens = genCur - genPrev;
+        if (deltaTokens >= 0) {
+          const deltaSeconds = (cur.atMs - prev.atMs) / 1000;
+          tokensPerSecond = Math.round((deltaTokens / deltaSeconds) * 10) / 10;
+          windowSeconds = Math.round(deltaSeconds);
+        }
+      }
+    }
+    for (const listener of this.decodeListeners) listener({ tokensPerSecond, windowSeconds });
+  }
+
+  private sendDecodeNulls(): void {
+    for (const listener of this.decodeListeners) listener({ tokensPerSecond: null, windowSeconds: null });
   }
 
   private apply(status: ModelStatus): void {

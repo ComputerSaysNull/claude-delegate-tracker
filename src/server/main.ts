@@ -45,7 +45,7 @@ const metrics = new MetricsPoller({
   now: () => new Date(),
   timeoutMs: DEFAULTS.metricsTimeoutMs,
 });
-metrics.start(settings.metricsPollSeconds);
+metrics.start(settings.metricsPollSeconds, settings.decodeRefreshSeconds);
 
 // Node figures need the node list, the dedicated key and the pinned host keys; without
 // all three nothing connects.
@@ -138,6 +138,7 @@ const app = createApp({
       offNodes();
     };
   },
+  subscribeDecode: (listener) => metrics.onDecode(listener),
   runs: () => ({ status: runs.status(), runs: runs.records() }),
   busy: () => ({ buckets: busy.buckets(), writeError: busy.writeError() }),
   power: () => ({ buckets: power.buckets(), writeError: power.writeError() }),

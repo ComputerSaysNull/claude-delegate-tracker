@@ -68,7 +68,7 @@ function HealthPill({
 }
 
 export default function App() {
-  const { list, cluster, health, connected } = useLiveList();
+  const { list, cluster, health, decode, connected } = useLiveList();
   const history = useClusterHistory(cluster);
   useTabStatus(list?.rows ?? null);
 
@@ -234,7 +234,7 @@ export default function App() {
       >
         <h1 className="w-full text-2xl font-bold lg:hidden">Cluster</h1>
         <div className="min-w-0 flex-[3_1_560px]">
-          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} />
+          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} decode={decode} />
         </div>
         <div className="min-w-0 flex-[2_1_420px]">
           <NodePanel nodes={cluster?.nodes ?? null} limits={cluster?.limits} />

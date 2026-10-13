@@ -23,7 +23,8 @@ const LIST: ListResponse = {
 const CLUSTER_FULL = {
   model: {
     status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 41.2,
-    decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, readAt: null,
+    decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null,
+    prefillTokensPerSecond: null, readAt: null,
   },
   nodes: [
     { name: "node-a", status: "ok", cpuPercent: 12, cpuWindowSeconds: 5, cpuTempC: 52, gpuPercent: 86, gpuTempC: 74, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt: null },
@@ -36,7 +37,7 @@ const CLUSTER_EMPTY = {
   model: {
     status: "not configured", running: null, waiting: null, kvCachePercent: null,
     decodeTokensPerSecond: null, decodeWindowSeconds: null, prefixHitPercent: null,
-    preemptions: null, readAt: null,
+    preemptions: null, mtpAcceptancePercent: null, prefillTokensPerSecond: null, readAt: null,
   },
   nodes: [],
   limits: { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 },

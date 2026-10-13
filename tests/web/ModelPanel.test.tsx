@@ -24,6 +24,8 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     decodeWindowSeconds: null,
     prefixHitPercent: null,
     preemptions: null,
+    mtpAcceptancePercent: null,
+    prefillTokensPerSecond: null,
     readAt: null,
     ...overrides,
   };
@@ -52,9 +54,10 @@ describe("ModelPanel", () => {
 
   it("names the window on the decode line", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} />);
-    expect(screen.getByText(`${(80.5).toLocaleString()}`)).toBeTruthy();
-    expect(screen.getByText("tok/s")).toBeTruthy();
-    expect(screen.getByText(`over ${(10).toLocaleString()}s`)).toBeTruthy();
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain("tok/s");
+    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
   });
 
   it("omits the preemptions row when it is null and shows it when set", () => {
@@ -107,11 +110,13 @@ describe("ModelPanel", () => {
         waiting: [0, 0],
         kvCachePercent: [0, 0],
         decodeTokensPerSecond: [0, 0],
+        prefillTokensPerSecond: [0, 0],
       },
     };
     render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
     expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-fixed")).toBe("0,100");
     expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-fixed")).toBe("");
+    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-fixed")).toBe("");
     expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
   });
 
@@ -120,12 +125,78 @@ describe("ModelPanel", () => {
   it("pushes every chart to the bottom of its column, so the charts line up", () => {
     const history: Series = {
       at: [0, 1000],
-      values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0] },
+      values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
     };
     render(<ModelPanel model={figures({ decodeWindowSeconds: 10 })} history={history} windowSeconds={3600} />);
-    for (const name of [/^Decode speed over/, /^Requests over/, /^KV-cache use over/]) {
+    for (const name of [/^Decode speed over/, /^Prefill speed over/, /^Requests over/, /^KV-cache use over/]) {
       const holder = screen.getByRole("img", { name }).parentElement!;
       expect(holder.className.split(/\s+/)).toContain("mt-auto");
     }
+  });
+
+  it("shows Prefill speed right after Decode speed, with its tok/s unit", () => {
+    render(<ModelPanel model={figures({ prefillTokensPerSecond: 120.5 })} />);
+    const cells = screen.getAllByRole("listitem");
+    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed")!;
+    expect(prefillCell.textContent).toContain((120.5).toLocaleString());
+    expect(prefillCell.textContent).toContain("tok/s");
+    const labels = cells.map((cell) => cell.firstElementChild!.textContent);
+    expect(labels).toEqual([
+      "Decode speed", "Prefill speed", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance",
+    ]);
+  });
+
+  it("shows MTP acceptance as a percent with its caption", () => {
+    render(<ModelPanel model={figures({ mtpAcceptancePercent: 47.5 })} />);
+    expect(screen.getByText(`${(47.5).toLocaleString()}%`)).toBeTruthy();
+    expect(screen.getByText("drafted tokens accepted")).toBeTruthy();
+  });
+
+  it("shows a dash for Prefill speed and MTP acceptance when null", () => {
+    render(<ModelPanel model={figures()} />);
+    const cells = screen.getAllByRole("listitem");
+    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed")!;
+    expect(prefillCell.textContent).toContain("—");
+    const mtpCell = cells.find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
+    expect(mtpCell.textContent).toContain("—");
+  });
+
+  it("shows 0 for a prefill of 0, not a dash", () => {
+    render(<ModelPanel model={figures({ prefillTokensPerSecond: 0 })} />);
+    expect(screen.getByText("0")).toBeTruthy();
+  });
+
+  it("shows the live decode value and its window once a decode event has arrived, over the model's own", () => {
+    render(
+      <ModelPanel
+        model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+      />,
+    );
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((61.4).toLocaleString());
+    expect(decodeCell.textContent).toContain("tok/s");
+    expect(decodeCell.textContent).toContain("over 1s");
+    expect(decodeCell.textContent).not.toContain((80.5).toLocaleString());
+  });
+
+  it("shows the model's own decode figure and window when no decode event has arrived", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} decode={null} />);
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
+  });
+
+  it("shows the model's own decode figure and window when the model status is not ok, even with a decode event", () => {
+    render(
+      <ModelPanel
+        model={figures({ status: "unreachable", readAt: "2026-10-03T12:00:00.000Z", decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+      />,
+    );
+    const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
+    expect(decodeCell.textContent).not.toContain((61.4).toLocaleString());
   });
 });

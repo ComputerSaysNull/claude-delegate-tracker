@@ -7,13 +7,14 @@ import {
   type MetricsDeps,
   type Reading,
   type Sample,
+  type DecodeNow,
 } from "../../src/server/metrics.ts";
 
 const T0 = 1_700_000_000_000;
 const reading = (atMs: number, sample: Sample): Reading => ({ atMs, sample });
 
 describe("parseMetrics", () => {
-  it("keeps each of the seven allowlisted names with their values", () => {
+  it("keeps each of the eleven allowlisted names with their values", () => {
     const result = parseMetrics(
       [
         '# HELP vllm:num_requests_running Requests currently running.',
@@ -24,6 +25,10 @@ describe("parseMetrics", () => {
         'vllm:prefix_cache_hits_total{engine="0"} 10',
         'vllm:prefix_cache_queries_total{engine="0"} 20',
         'vllm:num_preemptions_total{engine="0"} 3',
+        'vllm:spec_decode_num_draft_tokens_total{engine="0"} 5000',
+        'vllm:spec_decode_num_accepted_tokens_total{engine="0"} 4000',
+        'vllm:prompt_tokens_total{engine="0"} 2000',
+        'vllm:prompt_tokens_cached_total{engine="0"} 1500',
       ].join("\n"),
     );
     expect(result["vllm:num_requests_running"]).toBe(1);
@@ -33,6 +38,25 @@ describe("parseMetrics", () => {
     expect(result["vllm:prefix_cache_hits_total"]).toBe(10);
     expect(result["vllm:prefix_cache_queries_total"]).toBe(20);
     expect(result["vllm:num_preemptions_total"]).toBe(3);
+    expect(result["vllm:spec_decode_num_draft_tokens_total"]).toBe(5000);
+    expect(result["vllm:spec_decode_num_accepted_tokens_total"]).toBe(4000);
+    expect(result["vllm:prompt_tokens_total"]).toBe(2000);
+    expect(result["vllm:prompt_tokens_cached_total"]).toBe(1500);
+  });
+
+  it("parses the four MTP and prefill names from a labelled exposition with exponent values", () => {
+    const result = parseMetrics(
+      [
+        'vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="m"} 6.3804e+06',
+        'vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="m"} 3.1e+06',
+        'vllm:prompt_tokens_total{engine="0",model_name="m"} 2.0e+06',
+        'vllm:prompt_tokens_cached_total{engine="0",model_name="m"} 1.5e+06',
+      ].join("\n"),
+    );
+    expect(result["vllm:spec_decode_num_draft_tokens_total"]).toBe(6_380_400);
+    expect(result["vllm:spec_decode_num_accepted_tokens_total"]).toBe(3_100_000);
+    expect(result["vllm:prompt_tokens_total"]).toBe(2_000_000);
+    expect(result["vllm:prompt_tokens_cached_total"]).toBe(1_500_000);
   });
 
   it("ignores any other name, including look-alikes", () => {
@@ -137,6 +161,8 @@ describe("figuresFrom", () => {
     expect(f.decodeWindowSeconds).toBeNull();
     expect(f.prefixHitPercent).toBeNull();
     expect(f.preemptions).toBeNull();
+    expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBeNull();
   });
 
@@ -224,6 +250,147 @@ describe("figuresFrom", () => {
     expect(f.running).toBe(2);
   });
 
+  it("MTP acceptance is the window ratio, not the lifetime ratio", () => {
+    const prev = reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 1000,
+      "vllm:spec_decode_num_draft_tokens_total": 4000,
+    });
+    const cur = reading(T0 + 10_000, {
+      "vllm:spec_decode_num_accepted_tokens_total": 1900,
+      "vllm:spec_decode_num_draft_tokens_total": 5000,
+    });
+    const f = figuresFrom("ok", prev, cur);
+    expect(f.mtpAcceptancePercent).toBe(90.0);
+  });
+
+  it("MTP acceptance is null on a first reading", () => {
+    const f = figuresFrom("ok", null, reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 1900,
+      "vllm:spec_decode_num_draft_tokens_total": 5000,
+    }));
+    expect(f.mtpAcceptancePercent).toBeNull();
+  });
+
+  it("MTP acceptance is null when either counter is missing in either reading", () => {
+    const missingDraftPrev = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000 }),
+      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:spec_decode_num_draft_tokens_total": 5000 }),
+    );
+    expect(missingDraftPrev.mtpAcceptancePercent).toBeNull();
+    const missingDraftCur = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:spec_decode_num_draft_tokens_total": 4000 }),
+      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900 }),
+    );
+    expect(missingDraftCur.mtpAcceptancePercent).toBeNull();
+  });
+
+  it("MTP acceptance is null when no drafts were made in the window", () => {
+    const prev = reading(T0, {
+      "vllm:spec_decode_num_accepted_tokens_total": 1000,
+      "vllm:spec_decode_num_draft_tokens_total": 4000,
+    });
+    const cur = reading(T0 + 10_000, {
+      "vllm:spec_decode_num_accepted_tokens_total": 1000,
+      "vllm:spec_decode_num_draft_tokens_total": 4000,
+    });
+    expect(figuresFrom("ok", prev, cur).mtpAcceptancePercent).toBeNull();
+  });
+
+  it("MTP acceptance is null when a counter went down", () => {
+    const acceptedDown = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:spec_decode_num_draft_tokens_total": 4000 }),
+      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 900, "vllm:spec_decode_num_draft_tokens_total": 5000 }),
+    );
+    expect(acceptedDown.mtpAcceptancePercent).toBeNull();
+    const draftDown = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:spec_decode_num_draft_tokens_total": 4000 }),
+      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:spec_decode_num_draft_tokens_total": 3000 }),
+    );
+    expect(draftDown.mtpAcceptancePercent).toBeNull();
+  });
+
+  it("MTP acceptance is null when time did not advance", () => {
+    const f = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:spec_decode_num_draft_tokens_total": 4000 }),
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:spec_decode_num_draft_tokens_total": 5000 }),
+    );
+    expect(f.mtpAcceptancePercent).toBeNull();
+  });
+
+  it("prefill speed subtracts cached tokens from prompt tokens", () => {
+    const prev = reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
+    const cur = reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 });
+    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBe(100.0);
+  });
+
+  it("a window with no prefill work is a measured 0, not null", () => {
+    const prev = reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
+    const cur = reading(T0 + 10_000, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
+    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBe(0);
+  });
+
+  it("prefill speed is null on a first reading", () => {
+    const f = figuresFrom("ok", null, reading(T0, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 }));
+    expect(f.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("prefill speed is null when a counter is missing", () => {
+    const f = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:prompt_tokens_total": 1000 }),
+      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000 }),
+    );
+    expect(f.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("prefill speed is null when time did not advance", () => {
+    const f = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
+      reading(T0, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 }),
+    );
+    expect(f.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("prefill speed is null, never negative, when cached grew more than prompt", () => {
+    const f = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
+      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 1100, "vllm:prompt_tokens_cached_total": 1000 }),
+    );
+    expect(f.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("prefill speed is null when prompt or cached went down", () => {
+    const promptDown = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
+      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 900, "vllm:prompt_tokens_cached_total": 1800 }),
+    );
+    expect(promptDown.prefillTokensPerSecond).toBeNull();
+    const cachedDown = figuresFrom(
+      "ok",
+      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
+      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 700 }),
+    );
+    expect(cachedDown.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("MTP acceptance and prefill speed are null when the status is not ok", () => {
+    const f = figuresFrom(
+      "unreachable",
+      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:prompt_tokens_total": 1000 }),
+      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:prompt_tokens_total": 3000 }),
+    );
+    expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.prefillTokensPerSecond).toBeNull();
+  });
+
   it("readAt is the ISO time of the newest reading", () => {
     const f = figuresFrom("ok", null, reading(T0, { "vllm:num_requests_running": 1 }));
     expect(f.readAt).toBe(new Date(T0).toISOString());
@@ -238,6 +405,8 @@ describe("figuresFrom", () => {
     expect(f.decodeWindowSeconds).toBeNull();
     expect(f.prefixHitPercent).toBeNull();
     expect(f.preemptions).toBeNull();
+    expect(f.mtpAcceptancePercent).toBeNull();
+    expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBe(new Date(T0).toISOString());
   });
 });
@@ -371,5 +540,82 @@ describe("MetricsPoller", () => {
     p.body('vllm:num_requests_running{engine="0"} 3');
     await p.poller.scrape();
     expect(fired).toBe(2);
+  });
+
+  it("tick sends a decode rate every refresh second and a full figure change only every interval", async () => {
+    const p = makePoller();
+    const decode: DecodeNow[] = [];
+    let onChangeFires = 0;
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.onChange(() => { onChangeFires += 1; });
+    // Configure interval 10, refresh 1; start()'s immediate tick is tick 0.
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    p.poller.start(10, 1);
+    p.poller.stop(); // keep interval/refresh and tick 0, but no auto-refresh timers
+    await new Promise((r) => setTimeout(r, 0)); // let tick 0 finish before the clock moves
+    for (let i = 1; i < 25; i++) {
+      p.advance(1000);
+      p.body(`vllm:generation_tokens_total{engine="0"} ${1000 + 40 * i}`);
+      await p.poller.tick();
+    }
+    // The first tick has no previous fast reading, so it is nulls; every later tick carries
+    // the rate over that 1 s pair.
+    expect(decode).toHaveLength(25);
+    expect(decode[0]).toEqual({ tokensPerSecond: null, windowSeconds: null });
+    for (const d of decode.slice(1)) {
+      expect(d).toEqual({ tokensPerSecond: 40.0, windowSeconds: 1 });
+    }
+    // A full reading is taken only when intervalSeconds (10) have passed since the last one.
+    expect(onChangeFires).toBe(3);
+    expect(p.poller.figures().decodeTokensPerSecond).toBe(40.0);
+    expect(p.poller.figures().decodeWindowSeconds).toBe(10);
+  });
+
+  it("a failed fetch sends nulls to onDecode", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    // A second good reading first, so the last decode is a number before the failure.
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 1040');
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1 });
+    const before = decode.length;
+    p.advance(1000);
+    p.fail(new Error("boom"));
+    await p.poller.tick();
+    expect(decode.length).toBe(before + 1);
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+  });
+
+  it("a counter that went down sends nulls to onDecode", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 800');
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+  });
+
+  it("a fast tick that is not due does not change figures", async () => {
+    const p = makePoller();
+    p.body('vllm:generation_tokens_total{engine="0"} 1000');
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0)); // tick 0 is a full reading
+    const before = p.poller.figures();
+    p.advance(1000);
+    p.body('vllm:generation_tokens_total{engine="0"} 1040');
+    await p.poller.tick();
+    expect(p.poller.figures()).toEqual(before);
   });
 });

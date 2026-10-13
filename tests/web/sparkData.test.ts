@@ -64,12 +64,14 @@ describe("pointFromModel", () => {
     decodeWindowSeconds: null,
     prefixHitPercent: null,
     preemptions: null,
+    mtpAcceptancePercent: null,
+    prefillTokensPerSecond: null,
     readAt: "2024-01-15T13:45:00.000Z",
     ...overrides,
   });
 
-  it("records the four figures at the read time when ok", () => {
-    const p = pointFromModel(ok({ running: 2, waiting: 1, kvCachePercent: 7.5, decodeTokensPerSecond: 80 }));
+  it("records the five figures at the read time when ok", () => {
+    const p = pointFromModel(ok({ running: 2, waiting: 1, kvCachePercent: 7.5, decodeTokensPerSecond: 80, prefillTokensPerSecond: 30 }));
     expect(p).not.toBeNull();
     expect(p!.atMs).toBe(Date.parse("2024-01-15T13:45:00.000Z"));
     expect(p!.values).toEqual({
@@ -77,6 +79,7 @@ describe("pointFromModel", () => {
       waiting: 1,
       kvCachePercent: 7.5,
       decodeTokensPerSecond: 80,
+      prefillTokensPerSecond: 30,
     });
   });
 
@@ -95,6 +98,7 @@ describe("pointFromModel", () => {
       waiting: null,
       kvCachePercent: null,
       decodeTokensPerSecond: null,
+      prefillTokensPerSecond: null,
     });
   });
 });

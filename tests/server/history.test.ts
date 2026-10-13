@@ -20,6 +20,8 @@ const model = (over: Partial<ModelFigures> = {}): ModelFigures => ({
   decodeWindowSeconds: 5,
   prefixHitPercent: 50,
   preemptions: 0,
+  mtpAcceptancePercent: 75,
+  prefillTokensPerSecond: 8.5,
   readAt: new Date(T0).toISOString(),
   ...over,
 });
@@ -47,13 +49,14 @@ const node = (name: string, over: Partial<NodeFigures> = {}): NodeFigures => ({
 describe("FigureHistory", () => {
   it("records a pushed point with its values aligned to `at`", () => {
     const h = new FigureHistory(10, MODEL_KEYS);
-    h.push(T0, { running: 1, waiting: 2, kvCachePercent: 50, decodeTokensPerSecond: 12.5 });
+    h.push(T0, { running: 1, waiting: 2, kvCachePercent: 50, decodeTokensPerSecond: 12.5, prefillTokensPerSecond: 7.5 });
     const s = h.snapshot();
     expect(s.at).toEqual([T0]);
     expect(s.values["running"]).toEqual([1]);
     expect(s.values["waiting"]).toEqual([2]);
     expect(s.values["kvCachePercent"]).toEqual([50]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([12.5]);
+    expect(s.values["prefillTokensPerSecond"]).toEqual([7.5]);
   });
 
   it("records a missing key as a gap (null), never 0", () => {
@@ -65,6 +68,7 @@ describe("FigureHistory", () => {
     expect(s.values["waiting"]).toEqual([null]);
     expect(s.values["kvCachePercent"]).toEqual([null]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([null]);
+    expect(s.values["prefillTokensPerSecond"]).toEqual([null]);
   });
 
   it("records a value that is not a finite number (NaN, ±Infinity, a string) as a gap, never 0", () => {
@@ -95,6 +99,7 @@ describe("FigureHistory", () => {
     expect(s.values["waiting"]).toEqual([null, null]);
     expect(s.values["kvCachePercent"]).toEqual([null, null]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([null, null]);
+    expect(s.values["prefillTokensPerSecond"]).toEqual([null, null]);
   });
 
   it("ignores a point not newer than the last", () => {
@@ -109,7 +114,7 @@ describe("FigureHistory", () => {
 
   it("returns copies from snapshot, so mutating one does not change the store", () => {
     const h = new FigureHistory(10, MODEL_KEYS);
-    h.push(T0, { running: 1, waiting: 2, kvCachePercent: 3, decodeTokensPerSecond: 4 });
+    h.push(T0, { running: 1, waiting: 2, kvCachePercent: 3, decodeTokensPerSecond: 4, prefillTokensPerSecond: 5 });
     const s = h.snapshot();
     s.at.push(999);
     s.values["running"].push(999);
@@ -120,7 +125,7 @@ describe("FigureHistory", () => {
 });
 
 describe("ClusterHistoryStore", () => {
-  it("records running/waiting/kvCachePercent/decodeTokensPerSecond when the model is ok", () => {
+  it("records running/waiting/kvCachePercent/decodeTokensPerSecond/prefillTokensPerSecond when the model is ok", () => {
     const store = new ClusterHistoryStore(10);
     store.pushModel(T0, model({ running: 1, waiting: 2, kvCachePercent: 50, decodeTokensPerSecond: 12.5 }));
     const s = store.snapshot();
@@ -130,6 +135,7 @@ describe("ClusterHistoryStore", () => {
     expect(s.model.values["waiting"]).toEqual([2]);
     expect(s.model.values["kvCachePercent"]).toEqual([50]);
     expect(s.model.values["decodeTokensPerSecond"]).toEqual([12.5]);
+    expect(s.model.values["prefillTokensPerSecond"]).toEqual([8.5]);
   });
 
   it("records a point of gaps when the model is unreachable", () => {

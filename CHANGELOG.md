@@ -9,6 +9,22 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #62 — 2026-10-13 — feat: MTP acceptance, prefill speed and a live decode speed in the Model server panel
+
+### Added
+
+- **The Model server panel shows prefill speed and MTP acceptance.** It showed how fast the
+  model writes, but not how fast it reads a prompt or how many drafted tokens speculative
+  decoding gets accepted, so a slow delegation could not be told apart. Prefill speed is the
+  prompt tokens actually computed per second (prompt minus cached: a cache hit is not prefill
+  work), with its own small chart; between prompts it is a measured 0. MTP acceptance is the
+  accepted share of drafted tokens over the poll window, and `—` when nothing was drafted.
+- **Decode speed moves every second.** It was worked out over the 10 s poll, so a stall
+  showed late and a burst was averaged away. The model server's figures are now read every
+  `DECODE_REFRESH_SECONDS`, and the decode speed over the last second goes to the page as its
+  own event; the other figures, their charts and busy time still use the slower poll, so
+  their history does not grow tenfold.
+
 ## #61 — 2026-10-13 — feat: keep GPU power per hour and show it in History
 
 ### Added

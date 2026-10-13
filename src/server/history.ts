@@ -3,7 +3,7 @@
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
 
-export const MODEL_KEYS = ["running", "waiting", "kvCachePercent", "decodeTokensPerSecond"] as const;
+export const MODEL_KEYS = ["running", "waiting", "kvCachePercent", "decodeTokensPerSecond", "prefillTokensPerSecond"] as const;
 export const NODE_KEYS = ["cpuPercent", "gpuPercent", "cpuTempC", "gpuTempC"] as const;
 
 export interface Series {

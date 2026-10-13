@@ -11,6 +11,7 @@ export interface Settings {
   metricsUrl: string | null;    // METRICS_URL; the model server's root; null when unset or blank
   metricsTokenEnv: string | null; // METRICS_TOKEN_ENV; the NAME of the env var holding a bearer token
   metricsPollSeconds: number;   // METRICS_POLL_SECONDS; counted from the end of the previous scrape
+  decodeRefreshSeconds: number; // DECODE_REFRESH_SECONDS; how often the decode speed is refreshed
   nodes: NodeTarget[];          // NODES; comma-separated name=user@host[:port]; default none
   nodeKey: string | null;       // NODE_KEY; the dedicated key's path
   nodeKnownHosts: string | null; // NODE_KNOWN_HOSTS; the file pinning each node's host key
@@ -35,6 +36,7 @@ export const DEFAULTS = {
   streamsPollSeconds: 2,
   followPollSeconds: 1,
   metricsPollSeconds: 10,
+  decodeRefreshSeconds: 1,
   metricsTimeoutMs: 5000,
   nodesPollSeconds: 5,
   historyWindowSeconds: 3600,
@@ -118,6 +120,7 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     metricsUrl: optional(env, "METRICS_URL"),
     metricsTokenEnv: optional(env, "METRICS_TOKEN_ENV"),
     metricsPollSeconds: wholeNumber(env, "METRICS_POLL_SECONDS", DEFAULTS.metricsPollSeconds, 1, 3600),
+    decodeRefreshSeconds: wholeNumber(env, "DECODE_REFRESH_SECONDS", DEFAULTS.decodeRefreshSeconds, 1, 3600),
     nodes: nodeTargets(env),
     nodeKey: optional(env, "NODE_KEY"),
     nodeKnownHosts: optional(env, "NODE_KNOWN_HOSTS"),
