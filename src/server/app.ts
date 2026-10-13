@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Health } from "./health.ts";
 import type { HourBucket } from "./busy.ts";
+import type { PowerBucket } from "./power.ts";
 import type { ModelFigures } from "./metrics.ts";
 import type { NodeFigures } from "./nodes.ts";
 import type { Limits } from "./settings.ts";
@@ -33,6 +34,7 @@ export interface AppDeps {
   subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
   runs: () => { status: RunsStatus; runs: RunRecord[] };
   busy: () => { buckets: HourBucket[]; writeError: string | null };
+  power: () => { buckets: PowerBucket[]; writeError: string | null };
 }
 
 export interface Cluster {
@@ -60,7 +62,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster, runs, busy } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster, runs, busy, power } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -96,6 +98,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/cluster/history", (c) => c.json(clusterHistory()));
   app.get("/api/runs", (c) => c.json(runs()));
   app.get("/api/busy", (c) => c.json(busy()));
+  app.get("/api/power", (c) => c.json(power()));
 
   // One stream's whole view; the name is only ever looked up, never joined onto a path.
   app.get("/api/streams/:name", (c) => {

@@ -10,6 +10,7 @@ import { ClusterHistoryStore } from "./history.ts";
 import { MetricsPoller } from "./metrics.ts";
 import { NodesPoller, sshRunner } from "./nodes.ts";
 import { Poller } from "./poller.ts";
+import { PowerStore } from "./power.ts";
 import { RunStore } from "./runs.ts";
 import { DEFAULTS, loadSettings, SettingsError, type Settings } from "./settings.ts";
 
@@ -66,7 +67,16 @@ metrics.onChange((model) => {
   figureHistory.pushModel(Date.now(), model);
   busy.push(Date.now(), model);
 });
-nodes.onChange((figures) => figureHistory.pushNodes(Date.now(), figures));
+const power = new PowerStore(
+  settings.dataDir === null ? null : path.join(settings.dataDir, "power.json"),
+  () => Date.now(),
+  settings.nodesPollSeconds * 3,
+);
+power.load();
+nodes.onChange((figures) => {
+  figureHistory.pushNodes(Date.now(), figures);
+  power.push(Date.now(), figures);
+});
 
 // The health report, rebuilt whenever one of its sources changes; sent only when it differs.
 const healthNow = (): Health => buildHealth({
@@ -130,6 +140,7 @@ const app = createApp({
   },
   runs: () => ({ status: runs.status(), runs: runs.records() }),
   busy: () => ({ buckets: busy.buckets(), writeError: busy.writeError() }),
+  power: () => ({ buckets: power.buckets(), writeError: power.writeError() }),
 });
 
 serve({ fetch: app.fetch, port: settings.port, hostname: "127.0.0.1" }, (info) => {

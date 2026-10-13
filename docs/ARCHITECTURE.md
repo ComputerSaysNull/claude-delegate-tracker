@@ -194,6 +194,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 
 - The backend keeps a point per reading for `HISTORY_WINDOW_SECONDS`, in memory only, so a restart starts the charts afresh.
 - For History it also keeps the KV-cache use per UTC hour for 90 days in `busy.json` in `DATA_DIR`, since the streams cannot give it. The time between two readings counts by the earlier one, never more than three poll intervals; a reading the server did not answer, or without the figure, ends the count until the next. The file is replaced whole at most once a minute and whenever an hour starts.
+- It also keeps the GPU power per node per UTC hour for the same days in `power.json` in `DATA_DIR`, crediting gaps capped like busy and split across hours, never across an outage.
 - A missing figure is a gap, never 0, and a source that is down adds a point of gaps, so a chart shows the outage instead of joining across it.
 - The page fetches the history once, then adds each `cluster` event's figures itself.
 - A chart is a bare line with no axes. It follows its container's width, and keeps its size while hidden.
@@ -274,6 +275,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Five totals: delegations; done, the share that finished ok; did not finish, split into stopped, limits (timed out or cut off) and failed; tokens processed, input plus output; cache reuse, cached input over all input of the runs that report both. A total no run reports reads "—".
 - Delegations per day stacked by outcome, and tokens per day stacked as input from cache, new input and output, each a column per day. Outcomes have their own softer chart colours, amber apart from red, checked for colour blindness. Hovering or focusing a day opens one card: the day, each series with its value, and the total.
 - KV-cache use per day (peak as a bar, time-weighted average as a line, a dashed line at 90%, the highest peak named). Busy time comes from the run records, each run from its start for its time: the share of the range with at least one running, in busy and idle hours, the most at once and the average while busy, the busiest weekday hour, and a weekday-by-hour grid in local time shaded by how many ran at once on average. Days and cells open the same card as the day charts.
+- GPU power per day (per-node Wh as stacked columns, Wh per 1k output tokens of the runs started that day, the range figure counting only days with a power figure; GPU power only, not wall power).
 - Why runs did not finish: each reason with its outcome's icon and count, most first; "Every run finished." when there are none.
 - By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—".
 - Under it, how the records stand: how many are kept, when they were checked against the folder and how many disagreed, how many streams are gone, and any error saving them.

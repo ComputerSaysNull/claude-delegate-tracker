@@ -74,6 +74,7 @@ function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}
     subscribeCluster: () => () => {},
     runs: () => ({ status: RUNS_STATUS, runs: RUNS }),
     busy: () => BUSY,
+    power: () => ({ buckets: [], writeError: null }),
     ...overrides,
   };
   return createApp(deps);
@@ -182,6 +183,18 @@ describe("busy store", () => {
     expect(await (await app.request("/api/busy", goodHost)).json()).toEqual(current);
     current = { ...BUSY, writeError: "disk full" };
     expect(await (await app.request("/api/busy", goodHost)).json()).toEqual(current);
+  });
+});
+
+describe("power store", () => {
+  it("serves the power store's buckets and writeError at /api/power, fresh on each request", async () => {
+    let current = { buckets: [{ hour: 0, node: "node-a", wh: 1.5, seconds: 180, maxW: 31 }], writeError: null as string | null };
+    const app = makeApp({ power: () => current });
+    const res = await app.request("/api/power", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(current);
+    current = { ...current, writeError: "disk full" };
+    expect(await (await app.request("/api/power", goodHost)).json()).toEqual(current);
   });
 });
 
