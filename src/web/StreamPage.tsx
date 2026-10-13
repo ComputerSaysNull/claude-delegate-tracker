@@ -4,8 +4,8 @@
 // details sit in a bar beside the conversation, folded by the header's Details button.
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
-import { Fragment, useEffect, useRef, useState, type SyntheticEvent } from "react";
-import { Asterisk, Check, ChevronDown, ChevronRight, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
+import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -355,13 +355,9 @@ function DelegationMessage({
             turn.thinking !== null ? (
               <ThinkingFold name={name} turn={turn} label={thinkingLabel} />
             ) : (
-              <details className="group">
-                <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden">
-                  <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
-                  {thinkingLabel}
-                </summary>
+              <ThinkingDetails label={thinkingLabel}>
                 <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial?.reasoning ?? ""}</pre>
-              </details>
+              </ThinkingDetails>
             )
           ) : null}
           {/* The model writes its text before it calls tools, so the text comes first. */}
@@ -455,17 +451,59 @@ function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; lab
       .catch(() => setState({ kind: "failed" }));
   };
   return (
-    <details className="group" onToggle={onToggle}>
-      <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden">
-        <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
-        {label}
-      </summary>
+    <ThinkingDetails label={label} onToggle={onToggle}>
       {state.kind === "loading" && <p className="text-sm text-muted">Loading…</p>}
       {state.kind === "loaded" && <pre className="whitespace-pre-wrap text-sm text-muted">{state.text}</pre>}
       {state.kind === "failed" && <p className="text-sm text-muted">Could not load the thinking.</p>}
       {turn.thinking !== null && !turn.thinking.complete && (
         <p className="text-xs text-muted">The last moments of thinking before the turn ended may be missing.</p>
       )}
+    </ThinkingDetails>
+  );
+}
+
+// A thinking fold. A long text folds again without scrolling back to its top: on a wide
+// screen the fold's line stays in sight under the 57px header while it is open, and a button
+// after the text folds it. Folded once its top was scrolled past, the page scrolls back so
+// the fold's line sits just under the header, where the reader last saw it. A click on the
+// text itself never folds it, so it can be selected.
+function ThinkingDetails({
+  label,
+  onToggle,
+  children,
+}: {
+  label: string;
+  onToggle?: (e: SyntheticEvent<HTMLDetailsElement>) => void;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDetailsElement | null>(null);
+  const fold = () => {
+    if (ref.current !== null) ref.current.open = false;
+  };
+  const toggled = (e: SyntheticEvent<HTMLDetailsElement>) => {
+    onToggle?.(e);
+    const details = e.currentTarget;
+    if (details.open) return;
+    const header = details.closest("section")?.querySelector(":scope > header");
+    if (header === null || header === undefined) return;
+    const above = details.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+    if (above < 0) (scrollerOf(details) ?? window).scrollBy({ top: above });
+  };
+  return (
+    <details ref={ref} className="group" onToggle={toggled}>
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden lg:sticky lg:top-[57px] lg:z-[5] lg:bg-card">
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
+        {label}
+      </summary>
+      {children}
+      <button
+        type="button"
+        onClick={fold}
+        className="mt-1 inline-flex items-center gap-1 text-sm text-muted hover:text-text"
+      >
+        <ChevronUp size={14} aria-hidden="true" />
+        Fold the thinking
+      </button>
     </details>
   );
 }

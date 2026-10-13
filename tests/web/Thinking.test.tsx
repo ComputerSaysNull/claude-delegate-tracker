@@ -223,3 +223,93 @@ describe("a turn's thinking", () => {
     expect(screen.queryByText(/^Thought for/)).toBeNull();
   });
 });
+
+// A long thinking text folds again without scrolling back to its top: a button at its end,
+// and on a wide screen its line stays in sight while it is open. The text itself never folds
+// on a click, so it can be selected and copied.
+describe("folding a long thinking text", () => {
+  it("folds a finished turn's thinking from a button after its text", async () => {
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { thinking: { chars: 17, complete: true } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 17 characters").closest("details")!;
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
+    const text = await screen.findByText(TEXT);
+    const button = screen.getByRole("button", { name: "Fold the thinking" });
+    expect(text.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(button);
+    expect(fold.open).toBe(false);
+  });
+
+  it("folds an open turn's thinking from a button after its text", () => {
+    const reasoning = "y".repeat(300);
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { closed: false, partial: { reasoning, answer: "" } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
+    fold.open = true;
+    const text = screen.getByText(reasoning);
+    const button = screen.getByRole("button", { name: "Fold the thinking" });
+    expect(text.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(button);
+    expect(fold.open).toBe(false);
+  });
+
+  // Folded while its line was stuck under the header, the text above the reader collapses;
+  // the page then scrolls so the fold's line sits just under the header, where it was.
+  it("brings a fold that was scrolled past back to just under the header once folded", () => {
+    const scrollBy = vi.fn();
+    vi.stubGlobal("scrollBy", scrollBy);
+    const reasoning = "z".repeat(300);
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { closed: false, partial: { reasoning, answer: "" } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
+    const header = fold.closest("section")!.querySelector(":scope > header")!;
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({ bottom: 57 } as DOMRect);
+    vi.spyOn(fold, "getBoundingClientRect").mockReturnValue({ top: -400 } as DOMRect);
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).not.toHaveBeenCalled();
+    fold.open = false;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).toHaveBeenCalledWith({ top: -457 });
+  });
+
+  it("leaves the page where it is when the folded line is already in sight", () => {
+    const scrollBy = vi.fn();
+    vi.stubGlobal("scrollBy", scrollBy);
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { closed: false, partial: { reasoning: "w".repeat(300), answer: "" } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
+    const header = fold.closest("section")!.querySelector(":scope > header")!;
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({ bottom: 57 } as DOMRect);
+    vi.spyOn(fold, "getBoundingClientRect").mockReturnValue({ top: 300 } as DOMRect);
+    fold.open = false;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the fold's line in sight under the header while it is open, on a wide screen", () => {
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { thinking: { chars: 17, complete: true } })] })}
+      />,
+    );
+    const classes = screen.getByText("Thinking · 17 characters").closest("summary")!.className.split(/\s+/);
+    expect(classes).toContain("lg:sticky");
+    expect(classes.some((c) => c.startsWith("lg:top-"))).toBe(true);
+    expect(classes).toContain("lg:bg-card");
+  });
+});
+
