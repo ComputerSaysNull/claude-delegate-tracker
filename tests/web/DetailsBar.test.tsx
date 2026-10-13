@@ -319,6 +319,26 @@ describe("DetailsBar", () => {
 });
 
 describe("the bar, after review", () => {
+  // Every label sits in one column of one width, so Turns and Time left read like Tool calls:
+  // the value right after the label, never pushed to the bar's far edge.
+  it("puts Turns and Time left in the same label column as the other figures", () => {
+    const v = view({
+      row: row({ turns: "2 of 4", left: "3m", workspace: "repo" }),
+      turns: [turn(1), turn(2, { clock: { elapsed: 20, of: 100 } })],
+    });
+    render(<StreamViewBody view={v} />);
+    const aside = screen.getByRole("complementary", { name: "Details" });
+    const columns = (label: string | RegExp) => {
+      const holder = within(aside).getByText(label).parentElement!;
+      expect(holder.className).not.toMatch(/\bjustify-between\b/);
+      return holder.className.split(/\s+/).find((c) => c.startsWith("grid-cols-"));
+    };
+    const toolCalls = columns("Tool calls");
+    expect(toolCalls).toBeDefined();
+    expect(toolCalls).not.toMatch(/auto/);
+    for (const label of ["Repo", "Turns", "Time left"]) expect(columns(label)).toBe(toolCalls);
+  });
+
   it("spans the Turns block across the bar's width", () => {
     const v = view({ row: row({ turns: "2 of 4" }) });
     render(<StreamViewBody view={v} />);
