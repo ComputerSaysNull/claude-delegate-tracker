@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #68 — 2026-10-13 — feat: fold a long thinking text without scrolling back to its top
+
+### Added
+
+- **A long thinking text folds again from where you are reading.** Only its first line
+  folded it, so a long one meant scrolling back up through all of it. A "Fold the thinking"
+  button now follows the text, and on a wide screen the fold's line stays in sight under the
+  header while it is open. Clicking the text itself still does nothing, so it can be
+  selected and copied.
+
 ## #67 — 2026-10-13 — feat: offer Jump to latest on a finished delegation too
 
 ### Changed
