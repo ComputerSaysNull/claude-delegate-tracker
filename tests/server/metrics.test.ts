@@ -4,6 +4,8 @@ import {
   figuresFrom,
   parseMetrics,
   MetricsPoller,
+  prefillRate,
+  METRIC_NAMES,
   type MetricsDeps,
   type Reading,
   type Sample,
@@ -14,7 +16,7 @@ const T0 = 1_700_000_000_000;
 const reading = (atMs: number, sample: Sample): Reading => ({ atMs, sample });
 
 describe("parseMetrics", () => {
-  it("keeps each of the eleven allowlisted names with their values", () => {
+  it("keeps each of the twelve allowlisted names with their values", () => {
     const result = parseMetrics(
       [
         '# HELP vllm:num_requests_running Requests currently running.',
@@ -27,8 +29,9 @@ describe("parseMetrics", () => {
         'vllm:num_preemptions_total{engine="0"} 3',
         'vllm:spec_decode_num_draft_tokens_total{engine="0"} 5000',
         'vllm:spec_decode_num_accepted_tokens_total{engine="0"} 4000',
-        'vllm:prompt_tokens_total{engine="0"} 2000',
-        'vllm:prompt_tokens_cached_total{engine="0"} 1500',
+        'vllm:request_prefill_time_seconds_sum{engine="0"} 100',
+        'vllm:request_prefill_time_seconds_count{engine="0"} 10',
+        'vllm:request_prefill_kv_computed_tokens_sum{engine="0"} 1000',
       ].join("\n"),
     );
     expect(result["vllm:num_requests_running"]).toBe(1);
@@ -40,23 +43,26 @@ describe("parseMetrics", () => {
     expect(result["vllm:num_preemptions_total"]).toBe(3);
     expect(result["vllm:spec_decode_num_draft_tokens_total"]).toBe(5000);
     expect(result["vllm:spec_decode_num_accepted_tokens_total"]).toBe(4000);
-    expect(result["vllm:prompt_tokens_total"]).toBe(2000);
-    expect(result["vllm:prompt_tokens_cached_total"]).toBe(1500);
+    expect(result["vllm:request_prefill_time_seconds_sum"]).toBe(100);
+    expect(result["vllm:request_prefill_time_seconds_count"]).toBe(10);
+    expect(result["vllm:request_prefill_kv_computed_tokens_sum"]).toBe(1000);
   });
 
-  it("parses the four MTP and prefill names from a labelled exposition with exponent values", () => {
+  it("parses the MTP and prefill histogram names from a labelled exposition with exponent values", () => {
     const result = parseMetrics(
       [
         'vllm:spec_decode_num_draft_tokens_total{engine="0",model_name="m"} 6.3804e+06',
         'vllm:spec_decode_num_accepted_tokens_total{engine="0",model_name="m"} 3.1e+06',
-        'vllm:prompt_tokens_total{engine="0",model_name="m"} 2.0e+06',
-        'vllm:prompt_tokens_cached_total{engine="0",model_name="m"} 1.5e+06',
+        'vllm:request_prefill_time_seconds_sum{engine="0",model_name="m"} 2.135e+02',
+        'vllm:request_prefill_time_seconds_count{engine="0",model_name="m"} 1.1e+01',
+        'vllm:request_prefill_kv_computed_tokens_sum{engine="0",model_name="m"} 3.2027e+04',
       ].join("\n"),
     );
     expect(result["vllm:spec_decode_num_draft_tokens_total"]).toBe(6_380_400);
     expect(result["vllm:spec_decode_num_accepted_tokens_total"]).toBe(3_100_000);
-    expect(result["vllm:prompt_tokens_total"]).toBe(2_000_000);
-    expect(result["vllm:prompt_tokens_cached_total"]).toBe(1_500_000);
+    expect(result["vllm:request_prefill_time_seconds_sum"]).toBe(213.5);
+    expect(result["vllm:request_prefill_time_seconds_count"]).toBe(11);
+    expect(result["vllm:request_prefill_kv_computed_tokens_sum"]).toBe(32027);
   });
 
   it("ignores any other name, including look-alikes", () => {
@@ -147,6 +153,16 @@ describe("parseMetrics", () => {
     expect(json).not.toContain("mysecretmodel");
     expect(json).not.toContain("model_name");
     expect(json).not.toContain("engine");
+  });
+});
+
+describe("METRIC_NAMES", () => {
+  it("contains the three prefill histogram names and not the two prompt names", () => {
+    expect(METRIC_NAMES).toContain("vllm:request_prefill_time_seconds_sum");
+    expect(METRIC_NAMES).toContain("vllm:request_prefill_time_seconds_count");
+    expect(METRIC_NAMES).toContain("vllm:request_prefill_kv_computed_tokens_sum");
+    expect(METRIC_NAMES).not.toContain("vllm:prompt_tokens_total");
+    expect(METRIC_NAMES).not.toContain("vllm:prompt_tokens_cached_total");
   });
 });
 
@@ -323,70 +339,49 @@ describe("figuresFrom", () => {
     expect(f.mtpAcceptancePercent).toBeNull();
   });
 
-  it("prefill speed subtracts cached tokens from prompt tokens", () => {
-    const prev = reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
-    const cur = reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 });
-    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBe(100.0);
+  it("prefill speed is the histogram rate", () => {
+    const prev = reading(T0, {
+      "vllm:request_prefill_time_seconds_count": 10,
+      "vllm:request_prefill_time_seconds_sum": 100,
+      "vllm:request_prefill_kv_computed_tokens_sum": 1000,
+    });
+    const cur = reading(T0 + 10_000, {
+      "vllm:request_prefill_time_seconds_count": 11,
+      "vllm:request_prefill_time_seconds_sum": 121.35,
+      "vllm:request_prefill_kv_computed_tokens_sum": 32027,
+    });
+    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBe(1453.3);
   });
 
-  it("a window with no prefill work is a measured 0, not null", () => {
-    const prev = reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
-    const cur = reading(T0 + 10_000, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 });
-    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBe(0);
-  });
-
-  it("prefill speed is null on a first reading", () => {
-    const f = figuresFrom("ok", null, reading(T0, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 }));
-    expect(f.prefillTokensPerSecond).toBeNull();
-  });
-
-  it("prefill speed is null when a counter is missing", () => {
-    const f = figuresFrom(
-      "ok",
-      reading(T0, { "vllm:prompt_tokens_total": 1000 }),
-      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000 }),
-    );
-    expect(f.prefillTokensPerSecond).toBeNull();
-  });
-
-  it("prefill speed is null when time did not advance", () => {
-    const f = figuresFrom(
-      "ok",
-      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
-      reading(T0, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 1800 }),
-    );
-    expect(f.prefillTokensPerSecond).toBeNull();
-  });
-
-  it("prefill speed is null, never negative, when cached grew more than prompt", () => {
-    const f = figuresFrom(
-      "ok",
-      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
-      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 1100, "vllm:prompt_tokens_cached_total": 1000 }),
-    );
-    expect(f.prefillTokensPerSecond).toBeNull();
-  });
-
-  it("prefill speed is null when prompt or cached went down", () => {
-    const promptDown = figuresFrom(
-      "ok",
-      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
-      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 900, "vllm:prompt_tokens_cached_total": 1800 }),
-    );
-    expect(promptDown.prefillTokensPerSecond).toBeNull();
-    const cachedDown = figuresFrom(
-      "ok",
-      reading(T0, { "vllm:prompt_tokens_total": 1000, "vllm:prompt_tokens_cached_total": 800 }),
-      reading(T0 + 10_000, { "vllm:prompt_tokens_total": 3000, "vllm:prompt_tokens_cached_total": 700 }),
-    );
-    expect(cachedDown.prefillTokensPerSecond).toBeNull();
+  it("prefill speed is null when no prompt finished", () => {
+    const prev = reading(T0, {
+      "vllm:request_prefill_time_seconds_count": 10,
+      "vllm:request_prefill_time_seconds_sum": 100,
+      "vllm:request_prefill_kv_computed_tokens_sum": 1000,
+    });
+    const cur = reading(T0 + 10_000, {
+      "vllm:request_prefill_time_seconds_count": 10,
+      "vllm:request_prefill_time_seconds_sum": 100,
+      "vllm:request_prefill_kv_computed_tokens_sum": 1000,
+    });
+    expect(figuresFrom("ok", prev, cur).prefillTokensPerSecond).toBeNull();
   });
 
   it("MTP acceptance and prefill speed are null when the status is not ok", () => {
     const f = figuresFrom(
       "unreachable",
-      reading(T0, { "vllm:spec_decode_num_accepted_tokens_total": 1000, "vllm:prompt_tokens_total": 1000 }),
-      reading(T0 + 10_000, { "vllm:spec_decode_num_accepted_tokens_total": 1900, "vllm:prompt_tokens_total": 3000 }),
+      reading(T0, {
+        "vllm:spec_decode_num_accepted_tokens_total": 1000,
+        "vllm:request_prefill_time_seconds_count": 10,
+        "vllm:request_prefill_time_seconds_sum": 100,
+        "vllm:request_prefill_kv_computed_tokens_sum": 1000,
+      }),
+      reading(T0 + 10_000, {
+        "vllm:spec_decode_num_accepted_tokens_total": 1900,
+        "vllm:request_prefill_time_seconds_count": 11,
+        "vllm:request_prefill_time_seconds_sum": 121.35,
+        "vllm:request_prefill_kv_computed_tokens_sum": 32027,
+      }),
     );
     expect(f.mtpAcceptancePercent).toBeNull();
     expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
@@ -411,6 +406,68 @@ describe("figuresFrom", () => {
     expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBe(new Date(T0).toISOString());
+  });
+});
+
+describe("prefillRate", () => {
+  const time = "vllm:request_prefill_time_seconds_sum";
+  const count = "vllm:request_prefill_time_seconds_count";
+  const kv = "vllm:request_prefill_kv_computed_tokens_sum";
+  const prev = reading(T0, { [time]: 100, [count]: 10, [kv]: 1000 });
+  const cur = reading(T0 + 10_000, { [time]: 121.35, [count]: 11, [kv]: 32027 });
+
+  it("is Δkv ÷ Δtime, one decimal", () => {
+    expect(prefillRate(prev, cur)).toEqual({ tokensPerSecond: 1453.3, reset: false });
+  });
+
+  it("ignores the prompt token counters, which are no longer read", () => {
+    const moved = reading(T0 + 10_000, {
+      [time]: 100,
+      [count]: 10,
+      [kv]: 1000,
+      "vllm:prompt_tokens_total": 3000,
+      "vllm:prompt_tokens_cached_total": 1800,
+    } as Sample);
+    expect(prefillRate(prev, moved)).toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("a Δcount of 0 is null, not 0", () => {
+    const same = reading(T0 + 10_000, { [time]: 121.35, [count]: 10, [kv]: 32027 });
+    expect(prefillRate(prev, same)).toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("a count that went down is null and resets", () => {
+    const down = reading(T0 + 10_000, { [time]: 121.35, [count]: 9, [kv]: 32027 });
+    expect(prefillRate(prev, down)).toEqual({ tokensPerSecond: null, reset: true });
+  });
+
+  it("a kv sum that went down with the count up is null and resets", () => {
+    const down = reading(T0 + 10_000, { [time]: 121.35, [count]: 11, [kv]: 900 });
+    expect(prefillRate(prev, down)).toEqual({ tokensPerSecond: null, reset: true });
+  });
+
+  it("is null and reset false when the time sum is missing from cur", () => {
+    expect(prefillRate(prev, reading(T0 + 10_000, { [count]: 11, [kv]: 32027 })))
+      .toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("is null and reset false when the count is missing from cur", () => {
+    expect(prefillRate(prev, reading(T0 + 10_000, { [time]: 121.35, [kv]: 32027 })))
+      .toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("is null and reset false when the kv sum is missing from cur", () => {
+    expect(prefillRate(prev, reading(T0 + 10_000, { [time]: 121.35, [count]: 11 })))
+      .toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("is null and reset false when prev is null", () => {
+    expect(prefillRate(null, cur)).toEqual({ tokensPerSecond: null, reset: false });
+  });
+
+  it("is null when Δtime is 0", () => {
+    expect(prefillRate(prev, reading(T0 + 10_000, { [time]: 100, [count]: 11, [kv]: 32027 })))
+      .toEqual({ tokensPerSecond: null, reset: false });
   });
 });
 
@@ -519,6 +576,15 @@ function makePoller(over: Partial<MetricsDeps> = {}) {
   };
 }
 
+function bodyFor(gen: number, count: number, time: number, kv: number): string {
+  return [
+    `vllm:generation_tokens_total{engine="0"} ${gen}`,
+    `vllm:request_prefill_time_seconds_count{engine="0"} ${count}`,
+    `vllm:request_prefill_time_seconds_sum{engine="0"} ${time}`,
+    `vllm:request_prefill_kv_computed_tokens_sum{engine="0"} ${kv}`,
+  ].join("\n");
+}
+
 describe("MetricsPoller", () => {
   it("with url null reports not configured and never fetches", () => {
     const p = makePoller({ url: null });
@@ -623,9 +689,9 @@ describe("MetricsPoller", () => {
     // The first tick has no previous fast reading, so it is nulls; every later tick carries
     // the rate over that 1 s pair.
     expect(decode).toHaveLength(25);
-    expect(decode[0]).toEqual({ tokensPerSecond: null, windowSeconds: null });
+    expect(decode[0]).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
     for (const d of decode.slice(1)) {
-      expect(d).toEqual({ tokensPerSecond: 40.0, windowSeconds: 1 });
+      expect(d).toEqual({ tokensPerSecond: 40.0, windowSeconds: 1, prefillTokensPerSecond: null });
     }
     // A full reading is taken only when intervalSeconds (10) have passed since the last one.
     expect(onChangeFires).toBe(3);
@@ -645,13 +711,13 @@ describe("MetricsPoller", () => {
     p.advance(1000);
     p.body('vllm:generation_tokens_total{engine="0"} 1040');
     await p.poller.tick();
-    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1 });
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: null });
     const before = decode.length;
     p.advance(1000);
     p.fail(new Error("boom"));
     await p.poller.tick();
     expect(decode.length).toBe(before + 1);
-    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
   });
 
   it("a counter that went down sends nulls to onDecode", async () => {
@@ -665,7 +731,7 @@ describe("MetricsPoller", () => {
     p.advance(1000);
     p.body('vllm:generation_tokens_total{engine="0"} 800');
     await p.poller.tick();
-    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null });
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
   });
 
   it("a fast tick that is not due does not change figures", async () => {
@@ -679,5 +745,66 @@ describe("MetricsPoller", () => {
     p.body('vllm:generation_tokens_total{engine="0"} 1040');
     await p.poller.tick();
     expect(p.poller.figures()).toEqual(before);
+  });
+
+  it("a prompt finishing between ticks carries its prefill rate on that tick and holds it", async () => {
+    const p = makePoller();
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.body(bodyFor(1000, 10, 100, 1000));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0)); // tick 0: no finished prompt yet
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
+    p.advance(1000);
+    p.body(bodyFor(1040, 11, 102, 4000));
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: 1500 });
+    // The next tick, unchanged, repeats the held rate before any full reading is due.
+    p.advance(1000);
+    p.body(bodyFor(1080, 11, 102, 4000));
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: 1500 });
+  });
+
+  it("a count going down clears the held prefill rate and it stays null", async () => {
+    const p = makePoller();
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.body(bodyFor(1000, 10, 100, 1000));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    p.advance(1000);
+    p.body(bodyFor(1040, 11, 102, 4000));
+    await p.poller.tick();
+    expect(decode.at(-1)!.prefillTokensPerSecond).toBe(1500);
+    p.advance(1000);
+    p.body(bodyFor(1080, 9, 121.35, 32027));
+    await p.poller.tick();
+    expect(decode.at(-1)!.prefillTokensPerSecond).toBeNull();
+    // The tick after, unchanged, still carries null.
+    p.advance(1000);
+    p.body(bodyFor(1120, 9, 121.35, 32027));
+    await p.poller.tick();
+    expect(decode.at(-1)!.prefillTokensPerSecond).toBeNull();
+  });
+
+  it("a failed fetch carries a null prefill rate even when one was held", async () => {
+    const p = makePoller();
+    const decode: DecodeNow[] = [];
+    p.poller.onDecode((d) => decode.push(d));
+    p.body(bodyFor(1000, 10, 100, 1000));
+    p.poller.start(10, 1);
+    p.poller.stop();
+    await new Promise((r) => setTimeout(r, 0));
+    p.advance(1000);
+    p.body(bodyFor(1040, 11, 102, 4000));
+    await p.poller.tick();
+    expect(decode.at(-1)!.prefillTokensPerSecond).toBe(1500);
+    p.advance(1000);
+    p.fail(new Error("boom"));
+    await p.poller.tick();
+    expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
   });
 });

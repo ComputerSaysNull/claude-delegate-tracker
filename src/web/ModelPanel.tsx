@@ -106,12 +106,14 @@ function ModelFiguresBody({
   const unitClass = "text-[13px] text-muted";
   const captionClass = "text-xs text-muted";
   // The live decode event, when one has arrived and the model is ok, replaces the figure
-  // from the last full reading; the sparkline stays on the full cadence.
+  // from the last full reading; the sparkline stays on the full cadence. The same event also
+  // carries the speed of the last finished prompt, which the panel keeps until the next one.
   const live = decode !== null && decode !== undefined && model.status === "ok";
   const decodeValue = live ? decode.tokensPerSecond : model.decodeTokensPerSecond;
-  const chart = (key: string, label: string, fixed?: [number, number]) =>
+  const prefillValue = live ? decode.prefillTokensPerSecond : model.prefillTokensPerSecond;
+  const chart = (key: string, label: string, fixed?: [number, number], dots?: boolean) =>
     history === undefined ? undefined : (
-      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} />
+      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} />
     );
   return (
     <>
@@ -123,10 +125,10 @@ function ModelFiguresBody({
           chart={chart("decodeTokensPerSecond", "Decode speed")}
         />
         <Figure
-          label="Prefill speed"
-          value={num(model.prefillTokensPerSecond)}
+          label="Prefill speed · last prompt"
+          value={num(prefillValue)}
           unit={<span className={unitClass}>tok/s</span>}
-          chart={chart("prefillTokensPerSecond", "Prefill speed")}
+          chart={chart("prefillTokensPerSecond", "Prefill speed", undefined, true)}
         />
         <Figure
           label="Requests"

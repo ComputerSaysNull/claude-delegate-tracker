@@ -11,7 +11,7 @@ vi.mock("../../src/web/useLiveList.ts", () => ({
   useLiveList: () => ({
     list: null,
     connected: true,
-    decode: { tokensPerSecond: 77.7, windowSeconds: 1 },
+    decode: { tokensPerSecond: 77.7, windowSeconds: 1, prefillTokensPerSecond: null },
     health: { checkedAt: null, banners: [], transcriptFolder: { configured: true, readable: true } },
     cluster: {
       model: { status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 41.2, decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null, prefillTokensPerSecond: null, readAt: null },

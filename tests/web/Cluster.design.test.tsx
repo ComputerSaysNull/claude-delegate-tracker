@@ -41,7 +41,7 @@ describe("the model server card", () => {
     expect(grid.closest("section")!.className).toMatch(/(^|\s)@container\b/);
     expect(grid.className).toMatch(/(^|\s)@2xl:grid-cols-3\b/);
     const labels = within(grid).getAllByRole("listitem").map((cell) => cell.firstElementChild!.textContent);
-    expect(labels).toEqual(["Decode speed", "Prefill speed", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance"]);
+    expect(labels).toEqual(["Decode speed", "Prefill speed · last prompt", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance"]);
   });
 
   it("writes each figure large in Plex Mono, with its unit beside it", () => {
