@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #64 — 2026-10-13 — feat: a shorter cluster band, with the Delegation and History tabs in the header
+
+### Changed
+
+- **The cluster band takes about a third less height**, so the list and the open delegation
+  get more of the screen. Each model server figure stacked its label, number and chart, and
+  each node stacked its name, rings and figures, with the two nodes side by side. Now a
+  figure's chart sits beside its number, and each node is one line (name, smaller rings,
+  then memory, power, disk and network), the two nodes one under the other.
+- **Decode speed no longer says "over 1s" under it.** With the speed read every second the
+  line never changed; when readings stop, the card's status line already says since when.
+- **The Delegation and History tabs sit in the header beside the title.** They had a row of
+  their own at the top of the main column.
+
 ## #63 — 2026-10-13 — fix: draw a node's temperature rings in the full colour of its use rings
 
 ### Fixed

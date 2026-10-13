@@ -173,6 +173,32 @@ export default function App() {
       <header className="hidden lg:flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line px-4 py-3 lg:px-6">
         <CircleDot size={20} className="text-accent" aria-hidden="true" />
         <h1 className="text-[17px] font-semibold">Delegation tracker</h1>
+        {/* The Delegation / History switch sits beside the title on a wide screen; a phone uses
+            the bottom bar. */}
+        <nav aria-label="Views" className="ml-2 flex gap-1">
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              go({ ...address, section: "list", selected: lastSelected }, true);
+            }}
+            aria-current={address.section === "list" ? "page" : undefined}
+            className={`rounded-md px-3 py-1.5 text-sm ${address.section === "list" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
+          >
+            Delegation
+          </a>
+          <a
+            href="/history"
+            onClick={(e) => {
+              e.preventDefault();
+              go({ ...address, section: "history", selected: null }, true);
+            }}
+            aria-current={address.section === "history" ? "page" : undefined}
+            className={`rounded-md px-3 py-1.5 text-sm ${address.section === "history" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
+          >
+            History
+          </a>
+        </nav>
         <div className="flex-1" />
         <NotifyButton />
         <span
@@ -233,10 +259,10 @@ export default function App() {
         className={`${address.section === "cluster" && selected === null ? "flex" : "hidden"} lg:flex flex-wrap gap-3 border-b border-line px-4 py-3.5 lg:px-6`}
       >
         <h1 className="w-full text-2xl font-bold lg:hidden">Cluster</h1>
-        <div className="min-w-0 flex-[3_1_560px]">
+        <div className="min-w-0 flex-[5_1_560px]">
           <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} decode={decode} />
         </div>
-        <div className="min-w-0 flex-[2_1_420px]">
+        <div className="min-w-0 flex-[4_1_520px]">
           <NodePanel nodes={cluster?.nodes ?? null} limits={cluster?.limits} />
         </div>
       </section>
@@ -257,37 +283,12 @@ export default function App() {
         <main
           className={`${selected !== null || address.section === "history" ? "flex" : "hidden lg:flex"} min-w-0 flex-col px-4 pb-4 lg:flex-[999_1_560px] lg:overflow-y-auto lg:px-6`}
         >
-          {/* The Delegation / History tab switch, on a wide screen; a phone uses the bottom bar. */}
-          <div className="hidden lg:flex flex-wrap items-center gap-3 pb-4">
-            <div className="flex gap-1">
-              <a
-                href="/"
-                onClick={(e) => {
-                  e.preventDefault();
-                  go({ ...address, section: "list", selected: lastSelected }, true);
-                }}
-                aria-current={address.section === "list" ? "page" : undefined}
-                className={`rounded-md px-3 py-1.5 text-sm ${address.section === "list" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
-              >
-                Delegation
-              </a>
-              <a
-                href="/history"
-                onClick={(e) => {
-                  e.preventDefault();
-                  go({ ...address, section: "history", selected: null }, true);
-                }}
-                aria-current={address.section === "history" ? "page" : undefined}
-                className={`rounded-md px-3 py-1.5 text-sm ${address.section === "history" ? "bg-line font-semibold text-text" : "text-muted hover:bg-line/50"}`}
-              >
-                History
-              </a>
-            </div>
-          </div>
           {address.section === "history" ? (
-            <HistoryPage />
+            <div className="lg:pt-4">
+              <HistoryPage />
+            </div>
           ) : selected === null ? (
-            <p className="text-muted">Choose a delegation on the left to follow it.</p>
+            <p className="text-muted lg:pt-4">Choose a delegation on the left to follow it.</p>
           ) : (
             <StreamPage key={selected} name={selected} onClose={() => go({ ...address, selected: null }, true)} />
           )}

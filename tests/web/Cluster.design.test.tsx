@@ -34,11 +34,12 @@ function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
 }
 
 describe("the model server card", () => {
-  it("lays its six figures out side by side, each under its own label", () => {
+  // The columns follow the card's own width, not the screen's: the card shares a row.
+  it("lays its six figures out three across on a wide card, each under its own label", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const grid = screen.getByRole("list", { name: "Model server figures" });
-    expect(grid.className).toMatch(/\bgrid-cols-2\b/);
-    expect(grid.className).toMatch(/\bmd:grid-cols-3\b/);
+    expect(grid.closest("section")!.className).toMatch(/(^|\s)@container\b/);
+    expect(grid.className).toMatch(/(^|\s)@2xl:grid-cols-3\b/);
     const labels = within(grid).getAllByRole("listitem").map((cell) => cell.firstElementChild!.textContent);
     expect(labels).toEqual(["Decode speed", "Prefill speed", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance"]);
   });
@@ -76,10 +77,10 @@ describe("the model server card", () => {
 });
 
 describe("the nodes card", () => {
-  it("puts the nodes side by side", () => {
+  it("puts the nodes one under the other", () => {
     render(<NodePanel nodes={[node("node-a"), node("node-b")]} limits={LIMITS} />);
     const nodes = screen.getByRole("list", { name: "Nodes" });
-    expect(nodes.className).toMatch(/\bsm:grid-cols-2\b/);
+    expect(nodes.className).not.toMatch(/grid-cols-[2-9]/);
     expect(within(nodes).getAllByRole("listitem")).toHaveLength(2);
   });
 

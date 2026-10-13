@@ -163,7 +163,7 @@ Rules for every figure (the node figures follow them too):
 
 - A counter that went down means its source restarted (the engine, or the node for `/proc/stat`): drop that window and show no rate.
 - The first reading has nothing to compare with: no rate yet.
-- Show how long a window a rate was measured over. If nothing was read for hours, that window is hours long, and the rate says little about now.
+- A rate is measured over the time since the previous reading. The page does not name that window: every rate is read again on its own poll, and when readings stop the card's status line says since when.
 - A figure that is missing (not reported, or no rate yet) shows `—`. A figure reported as 0 shows 0.
 
 Rules for the model server only:
@@ -205,7 +205,7 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 
 ### The cluster at a glance
 
-- The model server's four figures (decode speed, requests running and waiting, KV-cache use, prefix-cache hits) sit side by side, each large under its label, with a small chart under each that has a history; the range switch sits in that card's header. The nodes sit side by side, without charts. Each chart leaves room above and below its values, so a flat stretch at 0 shows; KV-cache use is on a fixed 0–100 scale. The charts sit at the bottom of their columns, so they line up.
+- The model server's figures sit in a grid, three across on a wide card, each under its label: the number large, and beside it on the same line the small chart of a figure that has a history; the range switch sits in that card's header. Each chart leaves room above and below its values, so a flat stretch at 0 shows; KV-cache use is on a fixed 0–100 scale. The nodes sit one under the other, without charts, each on one line: its name, its four rings, then memory, GPU power, disk and network, which drop below the rings when the card is too narrow.
 - Each node's CPU and GPU use is a donut with the number in the middle, its ring green under the load warning threshold, amber from it and red from the hot one, in a light shade of that colour. A CPU or GPU temperature sits inside a full ring of a donut's size, the ring green, amber or red by the heat thresholds and as strong as a donut's filled part, so the four figures read as equals. Use and temperature are whole numbers ("15%", "77°C"). No line names the window CPU use was measured over. A node shows GPU use, GPU temperature, CPU use, CPU temperature, in that order: the GPU does the model's work. The thresholds are settings, sent with the figures; a missing figure is an empty ring or `—`, never 0. The nodes card has one "as of" line, the newest healthy read; a node shows its own line only when it is unreachable or its host key is refused.
 - On a phone the cluster figures run in one strip above the list (decode speed, requests running, KV-cache use, the hottest temperature) that links to the Cluster section; the strip is left out when there are no figures.
 
@@ -273,7 +273,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### History
 
-- On a wide screen a Delegation / History switch tops the main column; History takes the delegation's place there, and the list and the cluster figures stay.
+- On a wide screen a Delegation / History switch sits in the header beside the title; History takes the delegation's place in the main column, and the list and the cluster figures stay.
 - A range of 7, 30 or 90 of the viewer's local days, 30 to start. A run counts on the day it started; a run with no start time is left out.
 - Five totals: delegations; done, the share that finished ok; did not finish, split into stopped, limits (timed out or cut off) and failed; tokens processed, input plus output; cache reuse, cached input over all input of the runs that report both. A total no run reports reads "—".
 - Delegations per day stacked by outcome, and tokens per day stacked as input from cache, new input and output, each a column per day. Outcomes have their own softer chart colours, amber apart from red, checked for colour blindness. Hovering or focusing a day opens one card: the day, each series with its value, and the total.
