@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #65 — 2026-10-13 — fix: line up Turns and Time left with the other figures in the details bar
+
+### Fixed
+
+- **In the details bar, the turns and the time left sat at the far right edge**, while every
+  other figure sat right after its label. Their rows spread label and value apart, and each
+  group of figures sized its own label column. Every row now shares one label column, so
+  each value starts on the same line.
+
 ## #64 — 2026-10-13 — feat: a shorter cluster band, with the Delegation and History tabs in the header
 
 ### Changed

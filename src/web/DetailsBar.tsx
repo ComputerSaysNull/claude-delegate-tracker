@@ -41,6 +41,10 @@ export function useDetailsFolded(): [boolean, () => void] {
   return [folded, toggle];
 }
 
+// One label column of one width for every row in the bar, so each value starts on the same
+// line: the figures, the turns and the time left alike.
+const LABEL_COLUMN = "grid grid-cols-[6.5rem_1fr] gap-x-3";
+
 // The bar's content, shared by the lg aside and the phone's fold-open details.
 export function DetailsFigures({ view }: { view: StreamView }) {
   const row = view.row;
@@ -68,7 +72,7 @@ export function DetailsFigures({ view }: { view: StreamView }) {
 
   return (
     <div className="flex flex-col gap-4">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+      <dl className={`${LABEL_COLUMN} gap-y-1.5 text-sm`}>
         <Row label="Repo" value={row.workspace} />
         <Row label="Kind" value={row.kind} />
         <Row label="Model" value={row.model} />
@@ -92,7 +96,7 @@ export function DetailsFigures({ view }: { view: StreamView }) {
         <p className="text-sm font-mono tabular-nums text-warn">{view.waiting}</p>
       )}
 
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
+      <dl className={`${LABEL_COLUMN} gap-y-1.5 text-sm`}>
         <Row label="Tool calls" value={String(toolCalls)} />
         {failedCalls > 0 && <Row label="Failed" value={String(failedCalls)} />}
         {closedTurns.length > 0 && <Row label="Retries" value={String(retries)} />}
@@ -137,7 +141,7 @@ function TurnBar({ row }: { row: ListRow }) {
   if (turnsMatch === null) return null;
   return (
     <div className="w-full flex flex-col gap-1.5">
-      <div className="flex justify-between text-sm">
+      <div className={`${LABEL_COLUMN} text-sm`}>
         <span className="text-muted">Turns</span>
         <span className="font-mono tabular-nums">{row.turns}</span>
       </div>
@@ -170,7 +174,7 @@ function TurnBar({ row }: { row: ListRow }) {
 function TimeBar({ clock, left }: { clock: { elapsed: number; of: number }; left: string | null }) {
   return (
     <div className="w-full flex flex-col gap-1.5">
-      <div className="flex justify-between text-sm">
+      <div className={`${LABEL_COLUMN} text-sm`}>
         <span className="text-muted">Time left</span>
         {left !== null && <span className="font-mono tabular-nums">{left} left</span>}
       </div>
