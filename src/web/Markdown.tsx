@@ -12,7 +12,7 @@ const COMPONENTS: Components = {
 };
 
 const LOOK = [
-  "flex min-w-0 flex-col gap-2",
+  "flex min-w-0 flex-col gap-2 text-sm",
   "[&_h1]:text-lg [&_h1]:font-semibold [&_h2]:font-semibold [&_h3]:font-semibold",
   "[&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5",
   "[&_a]:underline [&_code]:font-mono [&_code]:text-[0.9em]",
