@@ -183,7 +183,9 @@ describe("the conversation", () => {
     expect(end.firstElementChild!.textContent).toBe("Finished in 4m02s · 2 of 8 turns · 71% cached");
   });
 
-  it("offers no jump back once the run has ended, even when scrolled up", () => {
+  // A finished run is read from the top as often as a running one, so the way back to its
+  // end is offered too.
+  it("offers the jump back once the run has ended too, when scrolled up", () => {
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     Object.defineProperty(window, "scrollY", { value: 0, configurable: true });
     Object.defineProperty(window, "innerHeight", { value: 800, configurable: true });
@@ -192,7 +194,9 @@ describe("the conversation", () => {
     act(() => {
       window.dispatchEvent(new Event("scroll"));
     });
-    expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+    scrollTo.mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
+    expect(scrollTo).toHaveBeenCalled();
     scrollTo.mockRestore();
   });
 

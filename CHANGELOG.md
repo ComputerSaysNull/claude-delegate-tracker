@@ -9,6 +9,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #67 — 2026-10-13 — feat: offer Jump to latest on a finished delegation too
+
+### Changed
+
+- **"Jump to latest" also shows on a finished delegation**, once the reader scrolls up. It
+  was offered only while a run was going, so reading a long finished run meant scrolling all
+  the way back down by hand.
+
 ## #66 — 2026-10-13 — feat: smaller delegation titles in the list and smaller conversation text
 
 ### Changed
