@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { ModelPanel } from "../../src/web/ModelPanel.tsx";
 import { localTime } from "../../src/web/time.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
@@ -52,12 +52,12 @@ describe("ModelPanel", () => {
     expect(screen.getByText(`${(92).toLocaleString()}%`)).toBeTruthy();
   });
 
-  it("names the window on the decode line", () => {
+  it("shows decode speed without a line naming its window", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} />);
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
     expect(decodeCell.textContent).toContain((80.5).toLocaleString());
     expect(decodeCell.textContent).toContain("tok/s");
-    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
+    expect(decodeCell.textContent).not.toMatch(/over/);
   });
 
   it("omits the preemptions row when it is null and shows it when set", () => {
@@ -120,17 +120,31 @@ describe("ModelPanel", () => {
     expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
   });
 
-  // The figures above the charts differ in height (decode speed has its window line), so each
-  // chart is pushed to the bottom of its column, and the charts line up.
-  it("pushes every chart to the bottom of its column, so the charts line up", () => {
+  // The chart sits beside its number rather than under it, so a figure takes one line.
+  it("puts each chart on the same line as its number", () => {
     const history: Series = {
       at: [0, 1000],
       values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
     };
-    render(<ModelPanel model={figures({ decodeWindowSeconds: 10 })} history={history} windowSeconds={3600} />);
-    for (const name of [/^Decode speed over/, /^Prefill speed over/, /^Requests over/, /^KV-cache use over/]) {
-      const holder = screen.getByRole("img", { name }).parentElement!;
-      expect(holder.className.split(/\s+/)).toContain("mt-auto");
+    render(
+      <ModelPanel
+        model={figures({ decodeTokensPerSecond: 80.5, prefillTokensPerSecond: 120.5, running: 3, kvCachePercent: 7.4 })}
+        history={history}
+        windowSeconds={3600}
+      />,
+    );
+    const cases: [RegExp, string][] = [
+      [/^Decode speed over/, (80.5).toLocaleString()],
+      [/^Prefill speed over/, (120.5).toLocaleString()],
+      [/^Requests over/, (3).toLocaleString()],
+      [/^KV-cache use over/, `${(7.4).toLocaleString()}%`],
+    ];
+    for (const [name, value] of cases) {
+      const line = screen.getByRole("img", { name }).parentElement!.parentElement!;
+      const classes = line.className.split(/\s+/);
+      expect(classes).toContain("flex");
+      expect(classes).not.toContain("flex-col");
+      expect(within(line).getByText(value)).toBeTruthy();
     }
   });
 
@@ -166,7 +180,7 @@ describe("ModelPanel", () => {
     expect(screen.getByText("0")).toBeTruthy();
   });
 
-  it("shows the live decode value and its window once a decode event has arrived, over the model's own", () => {
+  it("shows the live decode value once a decode event has arrived, over the model's own", () => {
     render(
       <ModelPanel
         model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
@@ -176,18 +190,16 @@ describe("ModelPanel", () => {
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
     expect(decodeCell.textContent).toContain((61.4).toLocaleString());
     expect(decodeCell.textContent).toContain("tok/s");
-    expect(decodeCell.textContent).toContain("over 1s");
     expect(decodeCell.textContent).not.toContain((80.5).toLocaleString());
   });
 
-  it("shows the model's own decode figure and window when no decode event has arrived", () => {
+  it("shows the model's own decode figure when no decode event has arrived", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} decode={null} />);
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
     expect(decodeCell.textContent).toContain((80.5).toLocaleString());
-    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
   });
 
-  it("shows the model's own decode figure and window when the model status is not ok, even with a decode event", () => {
+  it("shows the model's own decode figure when the model status is not ok, even with a decode event", () => {
     render(
       <ModelPanel
         model={figures({ status: "unreachable", readAt: "2026-10-03T12:00:00.000Z", decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
@@ -196,7 +208,6 @@ describe("ModelPanel", () => {
     );
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
     expect(decodeCell.textContent).toContain((80.5).toLocaleString());
-    expect(decodeCell.textContent).toContain(`over ${(10).toLocaleString()}s`);
     expect(decodeCell.textContent).not.toContain((61.4).toLocaleString());
   });
 });

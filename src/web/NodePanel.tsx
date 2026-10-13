@@ -60,8 +60,8 @@ function Donut({
   const filled = pct === null ? 0 : (Math.min(100, Math.max(0, pct)) / 100) * RING_C;
   const label = pct === null ? `${caption} use unknown` : `${caption} use ${pct.toLocaleString()} percent`;
   return (
-    <div className="flex flex-col items-center gap-1">
-      <svg width="64" height="64" viewBox="0 0 54 54" role="img" aria-label={label}>
+    <div className="flex flex-col items-center gap-0.5">
+      <svg width="48" height="48" viewBox="0 0 54 54" role="img" aria-label={label}>
         <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6"
           className={pct === null ? "text-line" : `${ringClass} opacity-25`} />
         {pct !== null && (
@@ -104,9 +104,9 @@ function NodeBlock({
     const lvl = limits === undefined ? null : level(degrees, warn, hot);
     const color = lvl === null ? "text-muted" : LEVEL_TEXT[lvl];
     return (
-      <div className="flex flex-col items-center gap-1">
+      <div className="flex flex-col items-center gap-0.5">
         <span aria-label={`${node.name} ${caption} temperature`} className={color}>
-          <svg width="64" height="64" viewBox="0 0 54 54" aria-hidden="true">
+          <svg width="48" height="48" viewBox="0 0 54 54" aria-hidden="true">
             {degrees === null ? (
               <circle cx="27" cy="27" r="22" fill="none" stroke="currentColor" strokeWidth="6" className="text-line" />
             ) : (
@@ -121,7 +121,7 @@ function NodeBlock({
       </div>
     );
   };
-  // The figures list under the donuts: a label then a value, `—` for a missing figure.
+  // The figures list beside the donuts: a label then a value, `—` for a missing figure.
   const memPercent = node.memUsedPercent === null ? "—" : `${Math.round(node.memUsedPercent)}%`;
   const memFree = node.memAvailableBytes === null ? "—" : bytes(node.memAvailableBytes);
   const memory = node.memUsedPercent === null && node.memAvailableBytes === null
@@ -136,9 +136,11 @@ function NodeBlock({
   const netTx = node.netTxBps === null ? "—" : `${bytes(node.netTxBps)}/s`;
   const network = `in ${netRx} · out ${netTx}`;
   return (
-    <li>
-      <h3 className="font-semibold">{node.name}</h3>
-      <div className="mt-2 flex items-center gap-3">
+    // One line per node: its name, the four rings, then the figures, which drop below the
+    // rings when the card is too narrow for them.
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <h3 className="min-w-[4.5rem] font-semibold">{node.name}</h3>
+      <div className="flex items-center gap-2">
         {/* The GPU does the model's work, so its use and heat lead, then the CPU's. A
             temperature sits like a donut: the figure on top, its caption below. */}
         <Donut caption="GPU" value={node.gpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
@@ -146,18 +148,18 @@ function NodeBlock({
         <Donut caption="CPU" value={node.cpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
         {temp("CPU", node.cpuTempC)}
       </div>
-      <dl aria-label={`${node.name} figures`} className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+      <dl aria-label={`${node.name} figures`} className="grid min-w-0 flex-1 basis-64 grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
         <dt className="text-muted">Memory</dt>
-        <dd className="font-mono text-right">{memory}</dd>
+        <dd className="font-mono">{memory}</dd>
         <dt className="text-muted">GPU power</dt>
-        <dd className="font-mono text-right">{gpuPower}</dd>
+        <dd className="font-mono">{gpuPower}</dd>
         <dt className="text-muted">Disk</dt>
-        <dd className="font-mono text-right">{disk}</dd>
+        <dd className="font-mono">{disk}</dd>
         <dt className="text-muted">Network</dt>
-        <dd className="font-mono text-right">{network}</dd>
+        <dd className="font-mono">{network}</dd>
       </dl>
       {node.status !== "ok" && (
-        <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
+        <p className={`w-full text-sm ${status.color}`}>{status.text}</p>
       )}
     </li>
   );
@@ -181,7 +183,7 @@ export function NodePanel({
           return newest;
         }, null);
   return (
-    <section className="rounded-xl border border-line bg-card p-4">
+    <section className="h-full rounded-xl border border-line bg-card p-3">
       <div className="flex items-baseline gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Nodes</h2>
         {newestReadAt !== null && (
@@ -193,7 +195,7 @@ export function NodePanel({
       ) : nodes.length === 0 ? (
         <p className="mt-2 text-muted">No nodes configured (NODES is not set)</p>
       ) : (
-        <ul aria-label="Nodes" className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <ul aria-label="Nodes" className="mt-2 grid grid-cols-1 gap-2">
           {nodes.map((node) => (
             <NodeBlock key={node.name} node={node} limits={limits} />
           ))}

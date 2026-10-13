@@ -59,7 +59,7 @@ export function ModelPanel({
 }) {
   const status = model === null ? null : statusLine(model);
   return (
-    <section className="rounded-xl border border-line bg-card p-4">
+    <section className="@container h-full rounded-xl border border-line bg-card p-3">
       <div className="flex items-baseline gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Model server</h2>
         {status !== null && <span className={`text-xs ${status.color}`}>{status.text}</span>}
@@ -71,6 +71,23 @@ export function ModelPanel({
         <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} decode={decode} />
       )}
     </section>
+  );
+}
+
+// One figure: its label, then on one line the number with its unit or caption, and its chart
+// beside it when it has a history, so the card stays short.
+function Figure({ label, value, unit, chart }: { label: string; value: string; unit: ReactNode; chart?: ReactNode }) {
+  return (
+    <li className="flex min-w-0 flex-col gap-0.5">
+      <span className="text-[13px] text-muted">{label}</span>
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex shrink-0 items-baseline gap-1.5">
+          <span className="font-mono tabular-nums text-2xl font-medium">{value}</span>
+          {unit}
+        </div>
+        {chart !== undefined && <div className="min-w-0 flex-1">{chart}</div>}
+      </div>
+    </li>
   );
 }
 
@@ -86,76 +103,60 @@ function ModelFiguresBody({
   decode?: DecodeNow | null;
 }) {
   const span = windowSeconds ?? 3600;
-  const valueClass = "font-mono tabular-nums text-2xl font-medium";
+  const unitClass = "text-[13px] text-muted";
+  const captionClass = "text-xs text-muted";
   // The live decode event, when one has arrived and the model is ok, replaces the figure
   // from the last full reading; the sparkline stays on the full cadence.
   const live = decode !== null && decode !== undefined && model.status === "ok";
   const decodeValue = live ? decode.tokensPerSecond : model.decodeTokensPerSecond;
-  const decodeWindow = live ? decode.windowSeconds : model.decodeWindowSeconds;
+  const chart = (key: string, label: string, fixed?: [number, number]) =>
+    history === undefined ? undefined : (
+      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} />
+    );
   return (
     <>
-      <ul aria-label="Model server figures" className="mt-3 grid grid-cols-2 gap-4 md:grid-cols-3">
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">Decode speed</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{num(decodeValue)}</span>
-            <span className="text-[13px] text-muted">tok/s</span>
-          </div>
-          {decodeWindow !== null && (
-            <span className="text-xs text-muted">
-              <span className="font-mono tabular-nums">over {decodeWindow.toLocaleString()}s</span>
-            </span>
-          )}
-          {history !== undefined && (
-            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "decodeTokensPerSecond")} label={`Decode speed over the ${windowLabel(span)}`} /></div>
-          )}
-        </li>
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">Prefill speed</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{num(model.prefillTokensPerSecond)}</span>
-            <span className="text-[13px] text-muted">tok/s</span>
-          </div>
-          {history !== undefined && (
-            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "prefillTokensPerSecond")} label={`Prefill speed over the ${windowLabel(span)}`} /></div>
-          )}
-        </li>
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">Requests</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{num(model.running)}</span>
-            <span className="text-[13px] text-muted">running</span>
-            <span className="text-[13px] text-muted">
-              <span className="font-mono tabular-nums">{num(model.waiting)}</span> waiting
-            </span>
-          </div>
-          {history !== undefined && (
-            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "running")} label={`Requests over the ${windowLabel(span)}`} /></div>
-          )}
-        </li>
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">KV-cache use</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{percent(model.kvCachePercent)}</span>
-          </div>
-          {history !== undefined && (
-            <div className="mt-auto pt-1"><Sparkline data={toUplotData(history, "kvCachePercent")} label={`KV-cache use over the ${windowLabel(span)}`} fixed={[0, 100]} /></div>
-          )}
-        </li>
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">Prefix-cache hits</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{percent(model.prefixHitPercent)}</span>
-          </div>
-          <span className="text-xs text-muted">since the engine started</span>
-        </li>
-        <li className="flex min-w-0 flex-col gap-1">
-          <span className="text-[13px] text-muted">MTP acceptance</span>
-          <div className="flex items-baseline gap-1.5">
-            <span className={valueClass}>{percent(model.mtpAcceptancePercent)}</span>
-          </div>
-          <span className="text-xs text-muted">drafted tokens accepted</span>
-        </li>
+      <ul aria-label="Model server figures" className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
+        <Figure
+          label="Decode speed"
+          value={num(decodeValue)}
+          unit={<span className={unitClass}>tok/s</span>}
+          chart={chart("decodeTokensPerSecond", "Decode speed")}
+        />
+        <Figure
+          label="Prefill speed"
+          value={num(model.prefillTokensPerSecond)}
+          unit={<span className={unitClass}>tok/s</span>}
+          chart={chart("prefillTokensPerSecond", "Prefill speed")}
+        />
+        <Figure
+          label="Requests"
+          value={num(model.running)}
+          unit={
+            <>
+              <span className={unitClass}>running</span>
+              <span className={unitClass}>
+                <span className="font-mono tabular-nums">{num(model.waiting)}</span> waiting
+              </span>
+            </>
+          }
+          chart={chart("running", "Requests")}
+        />
+        <Figure
+          label="KV-cache use"
+          value={percent(model.kvCachePercent)}
+          unit={null}
+          chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
+        />
+        <Figure
+          label="Prefix-cache hits"
+          value={percent(model.prefixHitPercent)}
+          unit={<span className={captionClass}>since the engine started</span>}
+        />
+        <Figure
+          label="MTP acceptance"
+          value={percent(model.mtpAcceptancePercent)}
+          unit={<span className={captionClass}>drafted tokens accepted</span>}
+        />
       </ul>
       {model.preemptions !== null && (
         <p className="mt-2 text-xs text-muted">

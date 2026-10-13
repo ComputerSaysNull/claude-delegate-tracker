@@ -57,7 +57,7 @@ describe("the cluster band", () => {
     render(<App />);
     const figures = screen.getByRole("list", { name: "Model server figures" });
     expect(figures.textContent).toContain("77.7");
-    expect(figures.textContent).toContain("over 1s");
+    expect(figures.textContent).not.toMatch(/over/);
     expect(figures.textContent).not.toContain("41.2");
   });
 

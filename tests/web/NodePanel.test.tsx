@@ -109,6 +109,24 @@ describe("NodePanel", () => {
     }
   });
 
+  // A node takes one line, so two nodes sit one under the other and the card stays short.
+  it("puts each node on one line: its name, the four rings, then its figures", () => {
+    render(<NodePanel nodes={[figures({ name: "n1", cpuPercent: 12, gpuPercent: 86, cpuTempC: 52, gpuTempC: 74 })]} />);
+    const node = screen.getByRole("listitem");
+    const classes = node.className.split(/\s+/);
+    expect(classes).toContain("flex");
+    expect(classes).not.toContain("flex-col");
+    const order = [
+      screen.getByText("n1"),
+      screen.getByRole("img", { name: "GPU use 86 percent" }),
+      screen.getByLabelText("n1 CPU temperature"),
+      screen.getByLabelText("n1 figures"),
+    ];
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+  });
+
   it("shows CPU use without a line naming its window", () => {
     render(<NodePanel nodes={[figures({ cpuPercent: 61.5, cpuWindowSeconds: 5 })]} />);
     expect(screen.getByText("62%")).toBeTruthy();

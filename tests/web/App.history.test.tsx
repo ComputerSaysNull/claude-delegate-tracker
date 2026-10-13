@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-// The History tab: on a wide screen a Delegation / History switch at the top of the main
-// column, on a phone a third link in the bottom bar.
+// The History tab: on a wide screen a Delegation / History switch in the header, beside the
+// title, on a phone a third link in the bottom bar.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import type { ListResponse } from "../../src/server/poller.ts";
@@ -41,11 +41,12 @@ describe("the History tab", () => {
   afterEach(cleanup);
 
   const main = () => screen.getByRole("main");
+  const header = () => screen.getByRole("banner");
 
   it("switches the main column between the delegation and History, and the address with it", () => {
     render(<App />);
-    const delegation = within(main()).getByRole("link", { name: "Delegation" });
-    const history = within(main()).getByRole("link", { name: "History" });
+    const delegation = within(header()).getByRole("link", { name: "Delegation" });
+    const history = within(header()).getByRole("link", { name: "History" });
     expect(delegation.getAttribute("aria-current")).toBe("page");
     expect(within(main()).queryByRole("region", { name: "History" })).toBeNull();
 
@@ -60,11 +61,16 @@ describe("the History tab", () => {
     expect(within(main()).queryByRole("region", { name: "History" })).toBeNull();
   });
 
-  it("keeps the switch to a wide screen", () => {
+  it("keeps the switch to a wide screen, in the header beside the title", () => {
     render(<App />);
-    const bar = within(main()).getByRole("link", { name: "Delegation" }).parentElement!.parentElement!;
+    const bar = header();
     expect(bar.className).toMatch(/(^|\s)hidden\b/);
     expect(bar.className).toMatch(/\blg:flex\b/);
+    const title = within(bar).getByRole("heading", { name: "Delegation tracker" });
+    const tabs = within(bar).getByRole("navigation", { name: "Views" });
+    expect(title.compareDocumentPosition(tabs) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(main()).queryByRole("link", { name: "Delegation" })).toBeNull();
+    expect(within(main()).queryByRole("link", { name: "History" })).toBeNull();
   });
 
   it("opens History from a third link in the phone's bottom bar, and shows the main column there", () => {
@@ -90,9 +96,9 @@ describe("the History tab", () => {
     render(<App />);
     fireEvent.click(screen.getByRole("link", { name: "First delegation" }));
     expect(window.location.pathname).toBe("/s/s1");
-    fireEvent.click(within(main()).getByRole("link", { name: "History" }));
+    fireEvent.click(within(header()).getByRole("link", { name: "History" }));
     expect(window.location.pathname).toBe("/history");
-    fireEvent.click(within(main()).getByRole("link", { name: "Delegation" }));
+    fireEvent.click(within(header()).getByRole("link", { name: "Delegation" }));
     expect(window.location.pathname).toBe("/s/s1");
   });
 });
