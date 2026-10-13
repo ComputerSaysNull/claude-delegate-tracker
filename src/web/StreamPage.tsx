@@ -98,9 +98,6 @@ export function StreamViewBody({ view }: { view: StreamView }) {
     if (following) toBottom(scrollerOf(root.current));
   }, [view, following]);
 
-  // Only while the run is going: one stopped mid-turn never closes that turn, which keeps the
-  // clock and heartbeat it had. The open turn, the only one with a clock, is always the last.
-  const going = row.state === "live" || row.state === "asking" || row.state === "queued" || row.state === "quiet";
 
   return (
     <section ref={root} className="flex flex-col gap-4">
@@ -216,7 +213,8 @@ export function StreamViewBody({ view }: { view: StreamView }) {
         )}
       </div>
 
-      {going && !following && (
+      {/* Whenever the reader has scrolled away from the end, running or finished. */}
+      {!following && (
         <button
           type="button"
           // Following again scrolls to the newest text, in the pane or the window.
