@@ -1,4 +1,4 @@
-<!-- BUDGET: 400 -->
+<!-- BUDGET: 410 -->
 
 # Architecture
 
@@ -178,13 +178,16 @@ The node figures come over SSH, with nothing installed on the nodes (ADR-0003). 
 |---|---|---|
 | CPU use (%) | `/proc/stat` | 100 × (1 − Δidle ÷ Δall) between two readings, over all CPUs |
 | CPU temperature | `/sys/class/thermal/thermal_zone*/temp` (or `/sys/class/hwmon`) | the hottest CPU sensor |
-| GPU use (%) and GPU temperature | `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits` | as reported |
+| GPU use (%), GPU temperature, GPU power (W) | `nvidia-smi --query-gpu=utilization.gpu,temperature.gpu --format=csv,noheader,nounits`; the same for `power.draw` | as reported |
+| Memory used (%) and free | `MemTotal` and `MemAvailable` in `/proc/meminfo` | 100 × (total − available) ÷ total; free = available |
+| Disk used (%), read and write per second | `df -B1 --output=size,used /`; the NVMe lines of `/proc/diskstats` | used ÷ size; Δsectors × 512 between two readings |
+| Network in and out per second | `/proc/net/dev`, with each interface's state from `/sys/class/net/*/operstate` | Δbytes between two readings, summed, leaving out state `unknown` (loopback and tunnels, whose traffic already passes a real port) and names starting `docker`, `br-` or `veth`. RDMA traffic between the nodes bypasses these counters (measured) |
 
 - The key can run nothing else. A dedicated key, used only by the tracker, is listed in each node's `authorized_keys` as `restrict,command="<the stats command>"`. `restrict` turns off forwarding, the pty and `~/.ssh/rc`, including restrictions added in later OpenSSH versions. Whoever holds the key can read those numbers, and cannot open a shell.
 - Each node's host key is pinned. The Node `ssh2` library accepts any host key unless it is given a `hostVerifier`, so the backend checks each node against the file `NODE_KNOWN_HOSTS` names, and refuses a mismatch with a health banner. A fake node could not steal the key that way, but it could feed the panel invented figures.
 - Use a Node SSH library that keeps the connection open, rather than starting `ssh` for each poll. One login per poll would add load and fill the nodes' auth logs.
-- Which thermal zones and `nvidia-smi` fields are read is settled by measuring the nodes, not assumed. Measured: every zone is of type `acpitz` and none is named for the CPU, so the hottest zone is shown as "CPU"; `nvidia-smi` gives numbers, and `[N/A]` would show `—`. Memory figures are not shown. Sensors are shown with plain names ("CPU", "GPU"); raw zone and chip names are never shown.
-- The command prints three sections, `==stat`, `==thermal` and `==gpu`, so one missing section blanks only its own figures.
+- Which thermal zones and `nvidia-smi` fields are read is settled by measuring the nodes, not assumed. Measured: every zone is of type `acpitz` and none is named for the CPU, so the hottest zone is shown as "CPU"; `nvidia-smi` gives numbers, and `[N/A]` would show `—`. Sensors are shown with plain names ("CPU", "GPU"); raw zone and chip names are never shown.
+- The command prints the sections `==stat`, `==thermal`, `==gpu`, `==mem`, `==power`, `==disk`, `==net` and `==link`, so one missing section blanks only its own figures, which show `—`, never 0.
 - A node refused for its host key says so on its panel; one that can't be reached keeps the time of its last good reading. Each node fails alone.
 
 ## Figures over time

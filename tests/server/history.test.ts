@@ -33,6 +33,14 @@ const node = (name: string, over: Partial<NodeFigures> = {}): NodeFigures => ({
   gpuPercent: 20,
   gpuTempC: 50,
   readAt: new Date(T0).toISOString(),
+  memUsedPercent: null,
+  memAvailableBytes: null,
+  gpuPowerW: null,
+  diskUsedPercent: null,
+  diskReadBps: null,
+  diskWriteBps: null,
+  netRxBps: null,
+  netTxBps: null,
   ...over,
 });
 

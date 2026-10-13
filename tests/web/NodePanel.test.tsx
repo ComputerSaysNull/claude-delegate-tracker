@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { NodePanel } from "../../src/web/NodePanel.tsx";
 import { localTime } from "../../src/web/time.ts";
 import type { NodeFigures } from "../../src/server/nodes.ts";
@@ -14,6 +14,14 @@ function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
     cpuTempC: null,
     gpuPercent: null,
     gpuTempC: null,
+    memUsedPercent: null,
+    memAvailableBytes: null,
+    gpuPowerW: null,
+    diskUsedPercent: null,
+    diskReadBps: null,
+    diskWriteBps: null,
+    netRxBps: null,
+    netTxBps: null,
     readAt: null,
     ...overrides,
   };
@@ -27,7 +35,12 @@ describe("NodePanel", () => {
   it("shows a dash for every null figure, and never 0 or null", () => {
     render(<NodePanel nodes={[figures()]} />);
     // CPU use, CPU temperature, GPU use and GPU temperature: four figures, four dashes.
-    expect(screen.getAllByText("—").length).toBe(4);
+    for (const label of ["CPU use unknown", "GPU use unknown"]) {
+      expect(screen.getByRole("img", { name: label }).textContent).toContain("—");
+    }
+    for (const caption of ["CPU", "GPU"]) {
+      expect(screen.getByLabelText(`node-1 ${caption} temperature`).textContent).toContain("—");
+    }
     expect(screen.queryByText(/^0/)).toBeNull();
     expect(screen.queryByText(/null/)).toBeNull();
   });
@@ -185,5 +198,51 @@ describe("NodePanel", () => {
   it("shows the no-nodes line for an empty array", () => {
     render(<NodePanel nodes={[]} />);
     expect(screen.getByText("No nodes configured (NODES is not set)")).toBeTruthy();
+  });
+
+  describe("the figures list", () => {
+    it("lists memory, GPU power, disk and network figures under each node", () => {
+      render(<NodePanel nodes={[figures({
+        name: "node-1",
+        memUsedPercent: 95.3,
+        memAvailableBytes: 5.7 * 1024 ** 3,
+        gpuPowerW: 36.43,
+        diskUsedPercent: 10.6,
+        diskReadBps: 0,
+        diskWriteBps: 1.2 * 1024 ** 2,
+        netRxBps: 12 * 1024 ** 2,
+        netTxBps: 3.4 * 1024 ** 2,
+      })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      // Memory, GPU power, Disk, Network — in that order, label then value.
+      const order = ["Memory", "GPU power", "Disk", "Network"].map((label) =>
+        within(dl).getByText(label)
+      );
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      const value = (label: string) => within(dl).getByText(label).nextElementSibling!;
+      expect(value("Memory").textContent).toBe("95% used · 5.7 GB free");
+      expect(value("GPU power").textContent).toBe("36 W");
+      expect(value("Disk").textContent).toBe("11% used · read 0 B/s · write 1.2 MB/s");
+      expect(value("Network").textContent).toBe("in 12.0 MB/s · out 3.4 MB/s");
+    });
+
+    it("shows a measured zero rate as 0 B/s, not a dash", () => {
+      render(<NodePanel nodes={[figures({ diskReadBps: 0 })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const disk = within(dl).getByText("Disk").nextElementSibling!;
+      expect(disk.textContent).toMatch(/read 0 B\/s/);
+      expect(disk.textContent).not.toMatch(/read —/);
+    });
+
+    it("shows a dash for every null new figure, never a digit", () => {
+      render(<NodePanel nodes={[figures()]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const text = dl.textContent!;
+      expect(text).toContain("—");
+      expect(text.match(/—/g)!.length).toBeGreaterThanOrEqual(4);
+      expect(text).not.toMatch(/\d/);
+    });
   });
 });

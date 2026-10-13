@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #60 — 2026-10-12 — feat: show each node's memory, GPU power, disk and network
+
+### Added
+
+- **Each node lists its memory, GPU power, disk and network** under its donuts. A node
+  short on memory or busy on disk looked idle, because only CPU, GPU and temperature were
+  read. The nodes' stats command now also prints `/proc/meminfo`, the GPU's power draw, `df`
+  and the NVMe counters, `/proc/net/dev` and each interface's state; rates are worked out
+  between two polls like CPU use. Network leaves out loopback and tunnels (their traffic
+  already passes a real port) and container interfaces. A missing figure shows `—`.
+
 ## #59 — 2026-10-12 — feat: prefetched file chips show the lines read, at one width
 
 ### Added

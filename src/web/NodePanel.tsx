@@ -3,6 +3,7 @@ import type { NodeFigures } from "../server/nodes.ts";
 import type { Limits } from "../server/settings.ts";
 import { LEVEL_TEXT, level } from "./load.ts";
 import { localTime } from "./time.ts";
+import { bytes } from "./format.ts";
 
 const SLATE = "text-muted";
 const AMBER = "text-warn";
@@ -120,6 +121,20 @@ function NodeBlock({
       </div>
     );
   };
+  // The figures list under the donuts: a label then a value, `—` for a missing figure.
+  const memPercent = node.memUsedPercent === null ? "—" : `${Math.round(node.memUsedPercent)}%`;
+  const memFree = node.memAvailableBytes === null ? "—" : bytes(node.memAvailableBytes);
+  const memory = node.memUsedPercent === null && node.memAvailableBytes === null
+    ? "—"
+    : `${memPercent} used · ${memFree} free`;
+  const gpuPower = node.gpuPowerW === null ? "—" : `${Math.round(node.gpuPowerW)} W`;
+  const diskPercent = node.diskUsedPercent === null ? "—" : `${Math.round(node.diskUsedPercent)}%`;
+  const diskRead = node.diskReadBps === null ? "—" : `${bytes(node.diskReadBps)}/s`;
+  const diskWrite = node.diskWriteBps === null ? "—" : `${bytes(node.diskWriteBps)}/s`;
+  const disk = `${diskPercent} used · read ${diskRead} · write ${diskWrite}`;
+  const netRx = node.netRxBps === null ? "—" : `${bytes(node.netRxBps)}/s`;
+  const netTx = node.netTxBps === null ? "—" : `${bytes(node.netTxBps)}/s`;
+  const network = `in ${netRx} · out ${netTx}`;
   return (
     <li>
       <h3 className="font-semibold">{node.name}</h3>
@@ -131,6 +146,16 @@ function NodeBlock({
         <Donut caption="CPU" value={node.cpuPercent} warn={limits?.loadWarn ?? 0} hot={limits?.loadHot ?? 0} limits={limits} />
         {temp("CPU", node.cpuTempC)}
       </div>
+      <dl aria-label={`${node.name} figures`} className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+        <dt className="text-muted">Memory</dt>
+        <dd className="font-mono text-right">{memory}</dd>
+        <dt className="text-muted">GPU power</dt>
+        <dd className="font-mono text-right">{gpuPower}</dd>
+        <dt className="text-muted">Disk</dt>
+        <dd className="font-mono text-right">{disk}</dd>
+        <dt className="text-muted">Network</dt>
+        <dd className="font-mono text-right">{network}</dd>
+      </dl>
       {node.status !== "ok" && (
         <p className={`mt-2 text-sm ${status.color}`}>{status.text}</p>
       )}

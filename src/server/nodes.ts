@@ -10,16 +10,27 @@ export interface NodeTarget {
   port: number;
 }
 
-// One run of the stats command. The command prints three sections:
+// One run of the stats command. The command prints sections:
 //   ==stat     the first line of /proc/stat (`cpu  user nice system idle iowait irq softirq steal …`)
 //   ==thermal  one `<type> <millidegrees>` line per thermal zone
 //   ==gpu      `<utilization %>, <temperature °C>` from nvidia-smi
+//   ==mem      `MemTotal:` and `MemAvailable:` lines, in kB
+//   ==power    the GPU power draw, one line in watts
+//   ==disk     the df line, then one line per block device
+//   ==net      one line per interface: 8 rx fields then 8 tx fields
+//   ==link     one line per interface with its state
 export interface StatsReading {
   atMs: number;
   cpu: { idle: number; total: number } | null; // idle = idle + iowait; total = user..steal
   cpuTempC: number | null;   // the hottest zone, one decimal
   gpuPercent: number | null;
   gpuTempC: number | null;
+  memTotalBytes: number | null;     // `==mem` MemTotal, in bytes
+  memAvailableBytes: number | null; // `==mem` MemAvailable, in bytes
+  gpuPowerW: number | null;         // `==power`, in watts
+  disk: { sizeBytes: number; usedBytes: number } | null;         // the df line
+  diskIo: { readSectors: number; writtenSectors: number } | null; // summed per device
+  net: { rxBytes: number; txBytes: number } | null;               // summed, tunnels left out
 }
 
 export type NodeStatus = "ok" | "unreachable" | "host key refused";
@@ -32,6 +43,14 @@ export interface NodeFigures {
   cpuTempC: number | null;
   gpuPercent: number | null;
   gpuTempC: number | null;
+  memUsedPercent: number | null;    // 100 × (total − available) ÷ total, one decimal
+  memAvailableBytes: number | null; // `==mem` MemAvailable, in bytes
+  gpuPowerW: number | null;         // `==power`, in watts
+  diskUsedPercent: number | null;   // 100 × used ÷ size, one decimal
+  diskReadBps: number | null;       // Δsectors × 512 ÷ Δs, whole bytes/s
+  diskWriteBps: number | null;      // Δsectors × 512 ÷ Δs, whole bytes/s
+  netRxBps: number | null;          // Δbytes ÷ Δs, whole bytes/s
+  netTxBps: number | null;          // Δbytes ÷ Δs, whole bytes/s
   readAt: string | null;            // ISO time of the newest good reading, kept while not ok
 }
 
@@ -55,7 +74,22 @@ export function parseStats(text: string, atMs: number): StatsReading {
   const cpu = cpuFrom(sections.get("stat"));
   const cpuTempC = thermalFrom(sections.get("thermal"));
   const gpu = gpuFrom(sections.get("gpu"));
-  return { atMs, cpu, cpuTempC, gpuPercent: gpu.percent, gpuTempC: gpu.temp };
+  const mem = memFrom(sections.get("mem"));
+  const gpuPowerW = powerFrom(sections.get("power"));
+  const disk = diskFrom(sections.get("disk"));
+  const diskIo = diskIoFrom(sections.get("disk"));
+  const net = netFrom(sections.get("net"), sections.get("link"));
+  return {
+    atMs, cpu, cpuTempC,
+    gpuPercent: gpu.percent,
+    gpuTempC: gpu.temp,
+    memTotalBytes: mem.totalBytes,
+    memAvailableBytes: mem.availableBytes,
+    gpuPowerW,
+    disk,
+    diskIo,
+    net,
+  };
 }
 
 // The aggregate `cpu ` line: idle = idle + iowait; total = user..steal. Missing, too few
@@ -107,17 +141,120 @@ function gpuFrom(lines: string[] | undefined): { percent: number | null; temp: n
   return { percent: null, temp: null };
 }
 
+// The `MemTotal:` and `MemAvailable:` lines, in kB, × 1024 to bytes. A missing or non-numeric
+// line leaves that figure null.
+function memFrom(lines: string[] | undefined): { totalBytes: number | null; availableBytes: number | null } {
+  const out: { totalBytes: number | null; availableBytes: number | null } = { totalBytes: null, availableBytes: null };
+  if (lines === undefined) return out;
+  for (const line of lines) {
+    if (line === "") continue;
+    const parts = line.split(/\s+/);
+    if (parts[0] === "MemTotal:") {
+      const kb = Number(parts[1]);
+      if (Number.isFinite(kb)) out.totalBytes = kb * 1024;
+    } else if (parts[0] === "MemAvailable:") {
+      const kb = Number(parts[1]);
+      if (Number.isFinite(kb)) out.availableBytes = kb * 1024;
+    }
+  }
+  return out;
+}
+
+// The first non-empty power line as a number; `[N/A]` or a missing section gives null.
+function powerFrom(lines: string[] | undefined): number | null {
+  if (lines === undefined) return null;
+  for (const line of lines) {
+    if (line === "") continue;
+    const n = Number(line);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+// The df line: exactly two numeric fields, size then used. Otherwise null.
+function diskFrom(lines: string[] | undefined): { sizeBytes: number; usedBytes: number } | null {
+  if (lines === undefined) return null;
+  for (const line of lines) {
+    if (line === "") continue;
+    const fields = line.split(/\s+/);
+    if (fields.length !== 2) continue;
+    const sizeBytes = Number(fields[0]);
+    const usedBytes = Number(fields[1]);
+    if (Number.isFinite(sizeBytes) && Number.isFinite(usedBytes)) {
+      return { sizeBytes, usedBytes };
+    }
+  }
+  return null;
+}
+
+// Summed sectors over the per-device disk lines (at least 10 fields, a device name in the
+// 3rd): read sectors the 6th field (index 5), written the 10th (index 9). No such line
+// gives null.
+function diskIoFrom(lines: string[] | undefined): { readSectors: number; writtenSectors: number } | null {
+  if (lines === undefined) return null;
+  let readSectors = 0;
+  let writtenSectors = 0;
+  let found = false;
+  for (const line of lines) {
+    if (line === "") continue;
+    const fields = line.split(/\s+/);
+    if (fields.length < 10) continue;
+    const read = Number(fields[5]);
+    const written = Number(fields[9]);
+    if (!Number.isFinite(read) || !Number.isFinite(written)) continue;
+    readSectors += read;
+    writtenSectors += written;
+    found = true;
+  }
+  return found ? { readSectors, writtenSectors } : null;
+}
+
+// Summed rx/tx over the net lines, leaving out interfaces whose link state is `unknown`
+// (loopback and tunnels, whose traffic already passes a real port) and any name starting
+// `docker`, `br-` or `veth`. A missing link section means we cannot tell tunnels apart, so
+// net is null; no interface left gives null too.
+function netFrom(net: string[] | undefined, link: string[] | undefined): { rxBytes: number; txBytes: number } | null {
+  if (net === undefined || link === undefined) return null;
+  const states = new Map<string, string>();
+  for (const line of link) {
+    if (line === "") continue;
+    const parts = line.split(/\s+/);
+    if (parts.length < 2) continue;
+    states.set(parts[0], parts[1]);
+  }
+  let rxBytes = 0;
+  let txBytes = 0;
+  let found = false;
+  for (const line of net) {
+    if (line === "") continue;
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const name = line.slice(0, colon).trim();
+    if (states.get(name) === "unknown") continue;
+    if (name.startsWith("docker") || name.startsWith("br-") || name.startsWith("veth")) continue;
+    const fields = line.slice(colon + 1).trim().split(/\s+/).map(Number);
+    if (fields.length < 9) continue;
+    const rx = fields[0];
+    const tx = fields[8];
+    if (!Number.isFinite(rx) || !Number.isFinite(tx)) continue;
+    rxBytes += rx;
+    txBytes += tx;
+    found = true;
+  }
+  return found ? { rxBytes, txBytes } : null;
+}
+
 // Figures from the previous and current good readings. A first reading, or counters that
 // went down (the node rebooted), give no CPU use. When status is not "ok", every figure is
 // null but readAt keeps the last good reading's time.
 export function nodeFiguresFrom(name: string, status: NodeStatus, prev: StatsReading | null,
                                 cur: StatsReading | null): NodeFigures {
   if (cur === null) {
-    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, readAt: null };
+    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt: null };
   }
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
-    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, readAt };
+    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt };
   }
   let cpuPercent: number | null = null;
   let cpuWindowSeconds: number | null = null;
@@ -129,12 +266,49 @@ export function nodeFiguresFrom(name: string, status: NodeStatus, prev: StatsRea
       cpuWindowSeconds = Math.round((cur.atMs - prev.atMs) / 1000);
     }
   }
+  // Gauges read from the current reading alone; null when the source is missing or empty.
+  let memUsedPercent: number | null = null;
+  if (cur.memTotalBytes !== null && cur.memAvailableBytes !== null && cur.memTotalBytes > 0) {
+    memUsedPercent = Math.round(((cur.memTotalBytes - cur.memAvailableBytes) / cur.memTotalBytes) * 1000) / 10;
+  }
+  let diskUsedPercent: number | null = null;
+  if (cur.disk !== null && cur.disk.sizeBytes > 0) {
+    diskUsedPercent = Math.round((cur.disk.usedBytes / cur.disk.sizeBytes) * 1000) / 10;
+  }
+  // Rates need a previous reading, the same counters in both, time that advanced, and a
+  // counter that did not go down (the node rebooted). Each pair is judged on its own.
+  let diskReadBps: number | null = null;
+  let diskWriteBps: number | null = null;
+  if (prev !== null && prev.diskIo !== null && cur.diskIo !== null && cur.atMs > prev.atMs) {
+    const seconds = (cur.atMs - prev.atMs) / 1000;
+    const deltaRead = cur.diskIo.readSectors - prev.diskIo.readSectors;
+    if (deltaRead >= 0) diskReadBps = Math.round((deltaRead * 512) / seconds);
+    const deltaWritten = cur.diskIo.writtenSectors - prev.diskIo.writtenSectors;
+    if (deltaWritten >= 0) diskWriteBps = Math.round((deltaWritten * 512) / seconds);
+  }
+  let netRxBps: number | null = null;
+  let netTxBps: number | null = null;
+  if (prev !== null && prev.net !== null && cur.net !== null && cur.atMs > prev.atMs) {
+    const seconds = (cur.atMs - prev.atMs) / 1000;
+    const deltaRx = cur.net.rxBytes - prev.net.rxBytes;
+    if (deltaRx >= 0) netRxBps = Math.round(deltaRx / seconds);
+    const deltaTx = cur.net.txBytes - prev.net.txBytes;
+    if (deltaTx >= 0) netTxBps = Math.round(deltaTx / seconds);
+  }
   return {
     name, status,
     cpuPercent, cpuWindowSeconds,
     cpuTempC: cur.cpuTempC,
     gpuPercent: cur.gpuPercent,
     gpuTempC: cur.gpuTempC,
+    memUsedPercent,
+    memAvailableBytes: cur.memAvailableBytes,
+    gpuPowerW: cur.gpuPowerW,
+    diskUsedPercent,
+    diskReadBps,
+    diskWriteBps,
+    netRxBps,
+    netTxBps,
     readAt,
   };
 }
