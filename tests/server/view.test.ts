@@ -810,9 +810,62 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null },
-      { path: "/w/proj/only-path.py", size: "310 B", skipped: null },
-      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist." },
+      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null },
+      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null },
+      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null },
+    ]);
+  });
+
+  it("carries a read range when both start_line and end_line are present", () => {
+    const v = viewOf([
+      start({
+        files_read: [
+          { path: "/w/proj/backoff.py", start_line: 596, end_line: 630 },
+        ],
+      }),
+    ]);
+    expect(v.files).toEqual([
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 } },
+    ]);
+    const single = viewOf([start({ files_read: [{ path: "/w/a", start_line: 7, end_line: 7 }] })]);
+    expect(single.files[0].lines).toEqual({ start: 7, end: 7 });
+  });
+
+  it("leaves lines null for a whole-file entry with neither bound", () => {
+    const v = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py" }] })]);
+    expect(v.files).toEqual([
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null },
+    ]);
+  });
+
+  it("leaves lines null when only one bound is present", () => {
+    const startOnly = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py", start_line: 596 }] })]);
+    expect(startOnly.files[0].lines).toBeNull();
+    const endOnly = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py", end_line: 630 }] })]);
+    expect(endOnly.files[0].lines).toBeNull();
+  });
+
+  it("leaves lines null for a bound that is zero, fractional, a string, or an end before the start", () => {
+    const zero = viewOf([start({ files_read: [{ path: "/w/a", start_line: 0, end_line: 5 }] })]);
+    expect(zero.files[0].lines).toBeNull();
+    const backwards = viewOf([start({ files_read: [{ path: "/w/a", start_line: 10, end_line: 5 }] })]);
+    expect(backwards.files[0].lines).toBeNull();
+    const fractional = viewOf([start({ files_read: [{ path: "/w/a", start_line: 596.5, end_line: 630 }] })]);
+    expect(fractional.files[0].lines).toBeNull();
+    const strings = viewOf([start({ files_read: [{ path: "/w/a", start_line: "596", end_line: "630" }] })]);
+    expect(strings.files[0].lines).toBeNull();
+  });
+
+  it("leaves lines null for a skipped file even when it carries the bounds", () => {
+    const v = viewOf([
+      start({
+        files_skipped: [
+          { path: "/w/proj/.env", reason: "not allowed", kind: "refused", start_line: 596, end_line: 630 },
+        ],
+      }),
+    ]);
+    expect(v.files).toEqual([
+      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null },
     ]);
   });
 });

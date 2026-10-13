@@ -8,6 +8,7 @@ export interface FileView {
   path: string;                 // `given` when present, else `path`
   size: string | null;          // from `bytes`, e.g. "1.2 KB"; null when absent
   skipped: string | null;       // a skipped file's `reason`; null for a file that was read
+  lines: { start: number; end: number } | null; // a file read as a line range; null otherwise
 }
 
 export interface CallView {
@@ -421,15 +422,24 @@ function answerOf(evt: Record<string, unknown> | null): TurnView["answer"] {
   return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true, by };
 }
 
-function fileView(e: unknown): FileView | null {
+function fileView(e: unknown, skipped = false): FileView | null {
   if (typeof e !== "object" || e === null || Array.isArray(e)) return null;
   const rec = e as Record<string, unknown>;
   const path = typeof rec.given === "string" ? rec.given : (typeof rec.path === "string" ? rec.path : null);
   if (path === null) return null;
+  let lines: FileView["lines"] = null;
+  if (!skipped) {
+    const start = rec.start_line;
+    const end = rec.end_line;
+    if (typeof start === "number" && typeof end === "number" &&
+        Number.isInteger(start) && Number.isInteger(end) &&
+        start >= 1 && end >= 1 && end >= start) lines = { start, end };
+  }
   return {
     path,
     size: typeof rec.bytes === "number" ? sizeOf(rec.bytes) : null,
     skipped: typeof rec.reason === "string" ? rec.reason : null,
+    lines,
   };
 }
 
@@ -439,7 +449,7 @@ function filesOf(start: Record<string, unknown> | null): FileView[] {
   const read = Array.isArray(start.files_read) ? start.files_read : [];
   const skipped = Array.isArray(start.files_skipped) ? start.files_skipped : [];
   for (const e of read) { const f = fileView(e); if (f !== null) out.push(f); }
-  for (const e of skipped) { const f = fileView(e); if (f !== null) out.push(f); }
+  for (const e of skipped) { const f = fileView(e, true); if (f !== null) out.push(f); }
   return out;
 }
 

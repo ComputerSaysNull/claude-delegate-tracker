@@ -164,15 +164,16 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                   {view.files.map((file) => (
                     <span
                       key={file.path}
-                      className={`inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
+                      className={`inline-flex w-[22rem] max-w-full items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
                         file.skipped !== null ? "border-warn/60 text-warn" : ""
                       }`}
                     >
                       <File size={12} aria-hidden="true" />
-                      <span className="min-w-0 max-w-[22rem]">
+                      <span className="min-w-0 flex-1">
                         <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{insideRepo(file.path, row.workspace)}</span>
                       </span>
                       {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
+                      {file.lines !== null && <span className="whitespace-nowrap"> · lines {file.lines.start}–{file.lines.end}</span>}
                       {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
                     </span>
                   ))}

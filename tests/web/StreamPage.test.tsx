@@ -321,11 +321,40 @@ describe("long values on a phone", () => {
   });
 
   it("a file path is clamped to two lines, with the full path on hover and focus", () => {
-    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null, lines: null }] })} />);
     const summary = screen.getByText(LONG);
     expect(summary.className).toMatch(/\bline-clamp-2\b/);
     expect(summary.className).toMatch(/\bbreak-all\b/);
     expect(summary.getAttribute("title")).toBe(LONG);
     expect(summary.getAttribute("tabindex")).toBe("0");
+  });
+
+  it("shows the read range after a ranged file's path", () => {
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: { start: 596, end: 630 } }] })} />);
+    expect(screen.getByText(/lines 596–630/)).toBeTruthy();
+  });
+
+  it("shows no range text on a whole file's chip", () => {
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: null }] })} />);
+    expect(screen.queryByText(/lines \d/)).toBeNull();
+  });
+
+  it("gives every chip the same fixed width classes, for a short path and a long path alike", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          files: [
+            { path: "/w/short.py", size: null, skipped: null, lines: null },
+            { path: LONG, size: null, skipped: null, lines: null },
+          ],
+        })}
+      />,
+    );
+    for (const p of ["/w/short.py", LONG]) {
+      const chip = screen.getByText(p).closest('[class*="max-w-full"]');
+      expect(chip).not.toBeNull();
+      expect(chip!.className).toContain("w-[22rem]");
+      expect(chip!.className).toContain("max-w-full");
+    }
   });
 });

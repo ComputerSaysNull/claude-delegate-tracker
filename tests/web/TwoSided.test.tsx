@@ -222,7 +222,7 @@ describe("the two sides", () => {
     render(
       <StreamViewBody
         view={view({
-          files: [{ path: "deploy/settings.py", size: "6.8 KB", skipped: null }],
+          files: [{ path: "deploy/settings.py", size: "6.8 KB", skipped: null, lines: null }],
         })}
       />,
     );
