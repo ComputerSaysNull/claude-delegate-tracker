@@ -464,7 +464,9 @@ function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; lab
 
 // A thinking fold. A long text folds again without scrolling back to its top: on a wide
 // screen the fold's line stays in sight under the 57px header while it is open, and a button
-// after the text folds it. A click on the text itself never folds it, so it can be selected.
+// after the text folds it. Folded once its top was scrolled past, the page scrolls back so
+// the fold's line sits just under the header, where the reader last saw it. A click on the
+// text itself never folds it, so it can be selected.
 function ThinkingDetails({
   label,
   onToggle,
@@ -476,14 +478,19 @@ function ThinkingDetails({
 }) {
   const ref = useRef<HTMLDetailsElement | null>(null);
   const fold = () => {
-    const details = ref.current;
-    if (details === null) return;
-    details.open = false;
-    // Folded from below, the fold's line may now sit above the screen: bring it back.
-    if (typeof details.scrollIntoView === "function") details.scrollIntoView({ block: "nearest" });
+    if (ref.current !== null) ref.current.open = false;
+  };
+  const toggled = (e: SyntheticEvent<HTMLDetailsElement>) => {
+    onToggle?.(e);
+    const details = e.currentTarget;
+    if (details.open) return;
+    const header = details.closest("section")?.querySelector(":scope > header");
+    if (header === null || header === undefined) return;
+    const above = details.getBoundingClientRect().top - header.getBoundingClientRect().bottom;
+    if (above < 0) (scrollerOf(details) ?? window).scrollBy({ top: above });
   };
   return (
-    <details ref={ref} className="group" onToggle={onToggle}>
+    <details ref={ref} className="group" onToggle={toggled}>
       <summary className="flex cursor-pointer list-none items-center gap-1 text-sm text-muted [&::-webkit-details-marker]:hidden lg:sticky lg:top-[57px] lg:z-[5] lg:bg-card">
         <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
         {label}

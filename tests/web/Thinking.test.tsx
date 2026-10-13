@@ -260,6 +260,46 @@ describe("folding a long thinking text", () => {
     expect(fold.open).toBe(false);
   });
 
+  // Folded while its line was stuck under the header, the text above the reader collapses;
+  // the page then scrolls so the fold's line sits just under the header, where it was.
+  it("brings a fold that was scrolled past back to just under the header once folded", () => {
+    const scrollBy = vi.fn();
+    vi.stubGlobal("scrollBy", scrollBy);
+    const reasoning = "z".repeat(300);
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { closed: false, partial: { reasoning, answer: "" } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
+    const header = fold.closest("section")!.querySelector(":scope > header")!;
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({ bottom: 57 } as DOMRect);
+    vi.spyOn(fold, "getBoundingClientRect").mockReturnValue({ top: -400 } as DOMRect);
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).not.toHaveBeenCalled();
+    fold.open = false;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).toHaveBeenCalledWith({ top: -457 });
+  });
+
+  it("leaves the page where it is when the folded line is already in sight", () => {
+    const scrollBy = vi.fn();
+    vi.stubGlobal("scrollBy", scrollBy);
+    render(
+      <StreamViewBody
+        view={view({ turns: [turn(1, { closed: false, partial: { reasoning: "w".repeat(300), answer: "" } })] })}
+      />,
+    );
+    const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
+    const header = fold.closest("section")!.querySelector(":scope > header")!;
+    vi.spyOn(header, "getBoundingClientRect").mockReturnValue({ bottom: 57 } as DOMRect);
+    vi.spyOn(fold, "getBoundingClientRect").mockReturnValue({ top: 300 } as DOMRect);
+    fold.open = false;
+    fireEvent(fold, new Event("toggle"));
+    expect(scrollBy).not.toHaveBeenCalled();
+  });
+
   it("keeps the fold's line in sight under the header while it is open, on a wide screen", () => {
     render(
       <StreamViewBody
