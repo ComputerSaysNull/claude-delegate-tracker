@@ -13,7 +13,7 @@ const T0 = Date.parse("2026-10-04T10:00:00.000Z");
 function model(atMs: number, running: number | null): ModelFigures {
   return {
     status: "ok", running, waiting: 0, kvCachePercent: 1.5, decodeTokensPerSecond: 40,
-    decodeWindowSeconds: 10, prefixHitPercent: 90, preemptions: null, mtpAcceptancePercent: null,
+    decodeWindowSeconds: 10, prefixHitPercent: 90, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
     prefillTokensPerSecond: null, readAt: new Date(atMs).toISOString(),
   };
 }

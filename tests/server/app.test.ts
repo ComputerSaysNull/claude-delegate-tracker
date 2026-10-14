@@ -32,7 +32,7 @@ const HEALTH: Health = {
 
 const MODEL: ModelFigures = {
   status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 80,
-  decodeWindowSeconds: 10, prefixHitPercent: 92, preemptions: null, mtpAcceptancePercent: null,
+  decodeWindowSeconds: 10, prefixHitPercent: 92, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
   prefillTokensPerSecond: null, readAt: "2026-10-03T12:00:00.000Z",
 };
 

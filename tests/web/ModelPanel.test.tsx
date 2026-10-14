@@ -25,6 +25,7 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     prefixHitPercent: null,
     preemptions: null,
     mtpAcceptancePercent: null,
+    mtpAcceptanceSinceStartPercent: null,
     prefillTokensPerSecond: null,
     readAt: null,
     ...overrides,
@@ -162,8 +163,48 @@ describe("ModelPanel", () => {
 
   it("shows MTP acceptance as a percent with its caption", () => {
     render(<ModelPanel model={figures({ mtpAcceptancePercent: 47.5 })} />);
-    expect(screen.getByText(`${(47.5).toLocaleString()}%`)).toBeTruthy();
-    expect(screen.getByText("drafted tokens accepted")).toBeTruthy();
+    const mtpCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
+    expect(mtpCell.textContent).toContain(`${(47.5).toLocaleString()}%`);
+    expect(mtpCell.textContent).toContain("now");
+  });
+
+  it("shows the MTP acceptance now figure then the since-start figure", () => {
+    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 47 })} />);
+    const mtpCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
+    const text = mtpCell.textContent!;
+    const nowPct = `${(52).toLocaleString()}%`;
+    const sincePct = `${(47).toLocaleString()}%`;
+    expect(text).toContain(nowPct);
+    expect(text).toContain("now");
+    expect(text).toContain(sincePct);
+    expect(text).toContain("since start");
+    expect(text.indexOf(nowPct)).toBeLessThan(text.indexOf("now"));
+    expect(text.indexOf("now")).toBeLessThan(text.indexOf(sincePct));
+    expect(text.indexOf(sincePct)).toBeLessThan(text.indexOf("since start"));
+  });
+
+  it("shows a dash for the MTP now figure before the since-start figure when it is null", () => {
+    render(<ModelPanel model={figures({ mtpAcceptanceSinceStartPercent: 47 })} />);
+    const mtpCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
+    const text = mtpCell.textContent!;
+    const sincePct = `${(47).toLocaleString()}%`;
+    expect(text).toContain("—");
+    expect(text).toContain("now");
+    expect(text).toContain(sincePct);
+    expect(text).toContain("since start");
+    expect(text.indexOf("—")).toBeLessThan(text.indexOf("now"));
+  });
+
+  it("shows a dash for the MTP since-start figure after the now figure when it is null", () => {
+    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52 })} />);
+    const mtpCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
+    const text = mtpCell.textContent!;
+    const nowPct = `${(52).toLocaleString()}%`;
+    expect(text).toContain(nowPct);
+    expect(text).toContain("—");
+    expect(text).toContain("since start");
+    expect(text.indexOf("now")).toBeLessThan(text.indexOf("—"));
+    expect(text.indexOf("—")).toBeLessThan(text.indexOf("since start"));
   });
 
   it("shows a dash for Prefill speed and MTP acceptance when null", () => {

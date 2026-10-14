@@ -36,6 +36,7 @@ export interface ModelFigures {
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
   mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the window, one decimal; null when no drafts
+  mtpAcceptanceSinceStartPercent: number | null; // 100 × accepted ÷ draft totals since the model server started, one decimal; null when no drafts
   prefillTokensPerSecond: number | null; // Δ(prompt − cached) ÷ seconds between readings, one decimal
   preemptions: number | null;          // the counter, only when above 0
   readAt: string | null;               // ISO time of the newest successful reading, kept while unreachable
@@ -126,6 +127,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt: null,
     };
   }
@@ -134,6 +136,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     return {
       status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
+      mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt,
     };
   }
@@ -161,6 +164,12 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
 
   const draftCur = s["vllm:spec_decode_num_draft_tokens_total"];
   const acceptedCur = s["vllm:spec_decode_num_accepted_tokens_total"];
+
+  // Since the engine started, from the latest scrape alone: accepted ÷ draft totals.
+  let mtpAcceptanceSinceStartPercent: number | null = null;
+  if (draftCur !== undefined && acceptedCur !== undefined && draftCur > 0) {
+    mtpAcceptanceSinceStartPercent = Math.round((acceptedCur / draftCur) * 1000) / 10;
+  }
 
   let mtpAcceptancePercent: number | null = null;
   if (prev !== null && draftCur !== undefined && acceptedCur !== undefined) {
@@ -203,6 +212,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
       ? Math.round((hits / queries) * 1000) / 10
       : null,
     mtpAcceptancePercent,
+    mtpAcceptanceSinceStartPercent,
     prefillTokensPerSecond,
     preemptions: preempt !== undefined && preempt > 0 ? preempt : null,
     readAt,

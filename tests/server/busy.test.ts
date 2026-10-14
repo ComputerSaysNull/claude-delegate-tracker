@@ -19,7 +19,7 @@ function figures(over: Partial<ModelFigures> = {}): ModelFigures {
   return {
     status: "ok", running: 1, waiting: 0, kvCachePercent: null,
     decodeTokensPerSecond: null, decodeWindowSeconds: null, prefixHitPercent: null,
-    preemptions: null, mtpAcceptancePercent: null, prefillTokensPerSecond: null, readAt: null,
+    preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null, prefillTokensPerSecond: null, readAt: null,
     ...over,
   };
 }
