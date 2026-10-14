@@ -27,8 +27,8 @@ const CLUSTER_FULL = {
     prefillTokensPerSecond: null, readAt: null,
   },
   nodes: [
-    { name: "node-a", status: "ok", cpuPercent: 12, cpuWindowSeconds: 5, cpuTempC: 52, gpuPercent: 86, gpuTempC: 74, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt: null },
-    { name: "node-b", status: "ok", cpuPercent: 9, cpuWindowSeconds: 5, cpuTempC: 49, gpuPercent: 64, gpuTempC: 66, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt: null },
+    { name: "node-a", status: "ok", cpuPercent: 12, cpuWindowSeconds: 5, cpuTempC: 52, gpuPercent: 86, gpuTempC: 74, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null, linkTxBps: null, linkDropsRising: null, readAt: null },
+    { name: "node-b", status: "ok", cpuPercent: 9, cpuWindowSeconds: 5, cpuTempC: 49, gpuPercent: 64, gpuTempC: 66, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null, linkTxBps: null, linkDropsRising: null, readAt: null },
   ],
   limits: { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 },
 };

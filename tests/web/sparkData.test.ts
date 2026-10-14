@@ -122,6 +122,13 @@ describe("pointFromNode", () => {
     diskWriteBps: null,
     netRxBps: null,
     netTxBps: null,
+    linkPortsUp: null,
+    linkPortsSeenUp: null,
+    linkDown: null,
+    linkGbps: null,
+    linkRxBps: null,
+    linkTxBps: null,
+    linkDropsRising: null,
     readAt: "2024-01-15T13:45:00.000Z",
     ...overrides,
   });

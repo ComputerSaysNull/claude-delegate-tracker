@@ -22,6 +22,13 @@ function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
     diskWriteBps: null,
     netRxBps: null,
     netTxBps: null,
+    linkPortsUp: null,
+    linkPortsSeenUp: null,
+    linkDown: null,
+    linkGbps: null,
+    linkRxBps: null,
+    linkTxBps: null,
+    linkDropsRising: null,
     readAt: null,
     ...overrides,
   };
@@ -275,6 +282,91 @@ describe("NodePanel", () => {
       expect(text).toContain("—");
       expect(text.match(/—/g)!.length).toBeGreaterThanOrEqual(4);
       expect(text).not.toMatch(/\d/);
+    });
+
+    // The Link row sits after Network and reads the ports, the rate and the byte rates the
+    // same way the Network row reads its own.
+    it("lists the link row after network, with ports up, the rate and byte rates", () => {
+      render(<NodePanel nodes={[figures({
+        name: "node-1",
+        linkPortsUp: 2,
+        linkPortsSeenUp: 2,
+        linkGbps: 200,
+        linkRxBps: 12 * 1024 ** 2,
+        linkTxBps: 3.4 * 1024 ** 2,
+      })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const order = ["Memory", "GPU power", "Disk", "Network", "Link"].map((label) =>
+        within(dl).getByText(label)
+      );
+      for (let i = 1; i < order.length; i++) {
+        expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      }
+      const value = (label: string) => within(dl).getByText(label).nextElementSibling!;
+      expect(value("Link").textContent).toBe("2 of 2 up · 200 Gb/s · 12.0 MB/s in · 3.4 MB/s out");
+    });
+
+    it("shows 0 up instead of 0 of 0 up when no link port has been seen", () => {
+      render(<NodePanel nodes={[figures({ linkPortsUp: 0, linkPortsSeenUp: 0 })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const link = within(dl).getByText("Link").nextElementSibling!;
+      expect(link.textContent).toMatch(/^0 up/);
+      expect(link.textContent).not.toContain("0 of 0");
+    });
+
+    it("shows a dash for the link row when no link port is up", () => {
+      render(<NodePanel nodes={[figures({ linkPortsUp: null })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const link = within(dl).getByText("Link").nextElementSibling!;
+      expect(link.textContent).toBe("—");
+    });
+
+    it("appends drops rising, in the warning colour, when linkDropsRising is true", () => {
+      render(<NodePanel nodes={[figures({
+        name: "node-1",
+        linkPortsUp: 2,
+        linkPortsSeenUp: 2,
+        linkGbps: 200,
+        linkRxBps: 12 * 1024 ** 2,
+        linkTxBps: 3.4 * 1024 ** 2,
+        linkDropsRising: true,
+      })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const link = within(dl).getByText("Link").nextElementSibling!;
+      expect(link.textContent).toMatch(/drops rising$/);
+      const warn = link.querySelector(".text-warn");
+      expect(warn).not.toBeNull();
+      expect(warn!.textContent).toContain("drops");
+    });
+
+    it("says nothing about drops when linkDropsRising is false", () => {
+      render(<NodePanel nodes={[figures({
+        name: "node-1",
+        linkPortsUp: 2,
+        linkPortsSeenUp: 2,
+        linkGbps: 200,
+        linkRxBps: 12 * 1024 ** 2,
+        linkTxBps: 3.4 * 1024 ** 2,
+        linkDropsRising: false,
+      })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const link = within(dl).getByText("Link").nextElementSibling!;
+      expect(link.textContent).not.toContain("drops");
+    });
+
+    it("shows a dash for a null link rate and rates, never 0 or null", () => {
+      render(<NodePanel nodes={[figures({
+        linkPortsUp: 2,
+        linkPortsSeenUp: 2,
+        linkGbps: null,
+        linkRxBps: null,
+        linkTxBps: null,
+      })]} />);
+      const dl = screen.getByLabelText("node-1 figures");
+      const link = within(dl).getByText("Link").nextElementSibling!;
+      expect(link.textContent).toBe("2 of 2 up · — · — · —");
+      expect(link.textContent).not.toMatch(/\bnull\b/);
+      expect(link.textContent).not.toMatch(/\b0\b/);
     });
   });
 });

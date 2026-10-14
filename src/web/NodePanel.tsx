@@ -135,6 +135,19 @@ function NodeBlock({
   const netRx = node.netRxBps === null ? "—" : `${bytes(node.netRxBps)}/s`;
   const netTx = node.netTxBps === null ? "—" : `${bytes(node.netTxBps)}/s`;
   const network = `in ${netRx} · out ${netTx}`;
+  // The link between the nodes, read from RDMA counters the kernel's do not see. The whole row
+  // is `—` when the node gives no link figures; otherwise the up count leads, then the rate and
+  // the byte rates, each null part shown as `—` in its place.
+  const link = (() => {
+    if (node.linkPortsUp === null) return null;
+    const up = node.linkPortsSeenUp === 0
+      ? `${node.linkPortsUp} up`
+      : `${node.linkPortsUp} of ${node.linkPortsSeenUp} up`;
+    const rate = node.linkGbps === null ? "—" : `${node.linkGbps} Gb/s`;
+    const rx = node.linkRxBps === null ? "—" : `${bytes(node.linkRxBps)}/s in`;
+    const tx = node.linkTxBps === null ? "—" : `${bytes(node.linkTxBps)}/s out`;
+    return `${up} · ${rate} · ${rx} · ${tx}`;
+  })();
   return (
     // One line per node: its name, the four rings, then the figures, which drop below the
     // rings when the card is too narrow for them.
@@ -157,6 +170,19 @@ function NodeBlock({
         <dd className="font-mono">{disk}</dd>
         <dt className="text-muted">Network</dt>
         <dd className="font-mono">{network}</dd>
+        <dt className="text-muted">Link</dt>
+        <dd className="font-mono">
+          {link === null ? (
+            "—"
+          ) : (
+            <>
+              {link}
+              {node.linkDropsRising === true && (
+                <span className={AMBER}> · drops rising</span>
+              )}
+            </>
+          )}
+        </dd>
       </dl>
       {node.status !== "ok" && (
         <p className={`w-full text-sm ${status.color}`}>{status.text}</p>

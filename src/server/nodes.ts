@@ -19,6 +19,18 @@ export interface NodeTarget {
 //   ==disk     the df line, then one line per block device
 //   ==net      one line per interface: 8 rx fields then 8 tx fields
 //   ==link     one line per interface with its state
+//   ==rdma     the RDMA device→interface mapping, then per-port state/rate/counter lines
+// One RDMA port on the nodes' interconnect that maps to a network interface. Counters the node
+// did not report are null; `errors` is the sum of the error counters that are present.
+export interface RdmaPort {
+  id: string;            // "<dev>/<n>"
+  up: boolean;           // state is ACTIVE; false when the state line is missing
+  gbps: number | null;   // from rate
+  rxWords: number | null;
+  txWords: number | null;
+  errors: number | null; // sum of port_rcv_errors, port_xmit_discards, link_downed, out_of_buffer
+}
+
 export interface StatsReading {
   atMs: number;
   cpu: { idle: number; total: number } | null; // idle = idle + iowait; total = user..steal
@@ -31,6 +43,7 @@ export interface StatsReading {
   disk: { sizeBytes: number; usedBytes: number } | null;         // the df line
   diskIo: { readSectors: number; writtenSectors: number } | null; // summed per device
   net: { rxBytes: number; txBytes: number } | null;               // summed, tunnels left out
+  rdma: RdmaPort[] | null;                                        // RDMA ports mapped to interfaces
 }
 
 export type NodeStatus = "ok" | "unreachable" | "host key refused";
@@ -51,6 +64,13 @@ export interface NodeFigures {
   diskWriteBps: number | null;      // Δsectors × 512 ÷ Δs, whole bytes/s
   netRxBps: number | null;          // Δbytes ÷ Δs, whole bytes/s
   netTxBps: number | null;          // Δbytes ÷ Δs, whole bytes/s
+  linkPortsUp: number | null;       // link ports up in this reading
+  linkPortsSeenUp: number | null;   // link ports seen up in any reading since the tracker started
+  linkDown: boolean | null;         // a port seen up earlier is not up now, or no link port is up
+  linkGbps: number | null;          // the highest rate among the ports that are up; null when none is up
+  linkRxBps: number | null;         // Σ over up ports of Δrx words × 4 ÷ Δs, whole bytes/s
+  linkTxBps: number | null;         // same for tx
+  linkDropsRising: boolean | null;  // the errors sum over all link ports rose since the previous reading
   readAt: string | null;            // ISO time of the newest good reading, kept while not ok
 }
 
@@ -79,6 +99,7 @@ export function parseStats(text: string, atMs: number): StatsReading {
   const disk = diskFrom(sections.get("disk"));
   const diskIo = diskIoFrom(sections.get("disk"));
   const net = netFrom(sections.get("net"), sections.get("link"));
+  const rdma = rdmaFrom(sections.get("rdma"));
   return {
     atMs, cpu, cpuTempC,
     gpuPercent: gpu.percent,
@@ -89,6 +110,7 @@ export function parseStats(text: string, atMs: number): StatsReading {
     disk,
     diskIo,
     net,
+    rdma,
   };
 }
 
@@ -244,17 +266,79 @@ function netFrom(net: string[] | undefined, link: string[] | undefined): { rxByt
   return found ? { rxBytes, txBytes } : null;
 }
 
+// The RDMA ports that map to a network interface. The first kind of line maps a device to its
+// interface; a port (`<dev>/<n>`) is a link port only when its device has that line. A section
+// with no such mapping, or with none of its ports mapping, gives null. Lines that do not parse
+// and unknown files inside the section are ignored.
+function rdmaFrom(lines: string[] | undefined): RdmaPort[] | null {
+  if (lines === undefined) return null;
+  const prefix = "/sys/class/infiniband/";
+  const netMark = "/device/net/";
+  const ifaces = new Map<string, string>();
+  for (const line of lines) {
+    if (line === "") continue;
+    const net = line.indexOf(netMark);
+    if (line.startsWith(prefix) && net !== -1) {
+      const dev = line.slice(prefix.length, net);
+      if (dev !== "") ifaces.set(dev, line.slice(net + netMark.length));
+    }
+  }
+  if (ifaces.size === 0) return null;
+  const ports = new Map<string, RdmaPort>();
+  for (const line of lines) {
+    if (line === "") continue;
+    const colon = line.indexOf(":");
+    if (colon === -1) continue;
+    const path = line.slice(0, colon);
+    if (!path.startsWith(prefix)) continue;
+    const value = line.slice(colon + 1);
+    if (value.trim() === "") continue; // an empty value is unknown; Number("") would read it as 0
+    const parts = path.split("/");
+    // ["", "sys", "class", "infiniband", dev, "ports", n, ...file]
+    if (parts.length < 8 || parts[5] !== "ports") continue;
+    const dev = parts[4];
+    const n = Number(parts[6]);
+    if (!Number.isInteger(n)) continue;
+    if (!ifaces.has(dev)) continue;
+    const file = parts.slice(7).join("/");
+    const id = `${dev}/${n}`;
+    let port = ports.get(id);
+    if (port === undefined) {
+      port = { id, up: false, gbps: null, rxWords: null, txWords: null, errors: null };
+      ports.set(id, port);
+    }
+    if (file === "state") {
+      const sep = value.indexOf(": ");
+      port.up = sep !== -1 && value.slice(sep + 2) === "ACTIVE";
+    } else if (file === "rate") {
+      const gbps = Number(value.split(/\s+/)[0]);
+      if (Number.isFinite(gbps)) port.gbps = gbps;
+    } else if (file === "counters/port_rcv_data") {
+      const words = Number(value);
+      if (Number.isFinite(words)) port.rxWords = words;
+    } else if (file === "counters/port_xmit_data") {
+      const words = Number(value);
+      if (Number.isFinite(words)) port.txWords = words;
+    } else if (file === "counters/port_rcv_errors" || file === "counters/port_xmit_discards"
+               || file === "counters/link_downed" || file === "hw_counters/out_of_buffer") {
+      const errors = Number(value);
+      if (Number.isFinite(errors)) port.errors = (port.errors ?? 0) + errors;
+    }
+  }
+  return ports.size === 0 ? null : [...ports.values()];
+}
+
 // Figures from the previous and current good readings. A first reading, or counters that
 // went down (the node rebooted), give no CPU use. When status is not "ok", every figure is
 // null but readAt keeps the last good reading's time.
 export function nodeFiguresFrom(name: string, status: NodeStatus, prev: StatsReading | null,
-                                cur: StatsReading | null): NodeFigures {
+                                cur: StatsReading | null, seenUp: ReadonlySet<string> = new Set()): NodeFigures {
   if (cur === null) {
-    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt: null };
+    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null, linkTxBps: null, linkDropsRising: null, readAt: null };
   }
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
-    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, readAt };
+    return { name, status, cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null, linkTxBps: null, linkDropsRising: null, readAt };
   }
   let cpuPercent: number | null = null;
   let cpuWindowSeconds: number | null = null;
@@ -295,6 +379,71 @@ export function nodeFiguresFrom(name: string, status: NodeStatus, prev: StatsRea
     const deltaTx = cur.net.txBytes - prev.net.txBytes;
     if (deltaTx >= 0) netTxBps = Math.round(deltaTx / seconds);
   }
+  // Link figures: all seven null when the current reading has no RDMA ports mapped to interfaces.
+  let linkPortsUp: number | null = null;
+  let linkPortsSeenUp: number | null = null;
+  let linkDown: boolean | null = null;
+  let linkGbps: number | null = null;
+  let linkRxBps: number | null = null;
+  let linkTxBps: number | null = null;
+  let linkDropsRising: boolean | null = null;
+  if (cur.rdma !== null) {
+    const up = cur.rdma.filter((p) => p.up);
+    linkPortsUp = up.length;
+    const upIds = new Set(up.map((p) => p.id));
+    const seen = new Set(seenUp);
+    for (const id of upIds) seen.add(id);
+    linkPortsSeenUp = seen.size;
+    linkDown = [...seenUp].some((id) => !upIds.has(id)) || (cur.rdma.length > 0 && up.length === 0);
+    for (const p of up) {
+      if (p.gbps !== null && (linkGbps === null || p.gbps > linkGbps)) linkGbps = p.gbps;
+    }
+    // Rates need the same up ports in both readings with both word counts; a counter that went
+    // down (the node rebooted) makes that direction null, judged on its own.
+    if (prev !== null && prev.rdma !== null && cur.atMs > prev.atMs) {
+      const seconds = (cur.atMs - prev.atMs) / 1000;
+      const prevById = new Map(prev.rdma.map((p) => [p.id, p]));
+      let rxDelta = 0;
+      let txDelta = 0;
+      let counted = false;
+      let rxReset = false;
+      let txReset = false;
+      for (const p of cur.rdma) {
+        if (!p.up) continue;
+        const q = prevById.get(p.id);
+        if (q === undefined || !q.up) continue;
+        if (p.rxWords === null || p.txWords === null || q.rxWords === null || q.txWords === null) continue;
+        counted = true;
+        const drx = p.rxWords - q.rxWords;
+        if (drx < 0) rxReset = true;
+        else rxDelta += drx;
+        const dtx = p.txWords - q.txWords;
+        if (dtx < 0) txReset = true;
+        else txDelta += dtx;
+      }
+      if (counted && !rxReset) linkRxBps = Math.round((rxDelta * 4) / seconds);
+      if (counted && !txReset) linkTxBps = Math.round((txDelta * 4) / seconds);
+    }
+    // Drops rising over the ports present in both with errors in both; a reset (any value down)
+    // makes it null, as does a missing sum.
+    if (prev !== null && prev.rdma !== null) {
+      const prevById = new Map(prev.rdma.map((p) => [p.id, p]));
+      let prevSum = 0;
+      let curSum = 0;
+      let compared = false;
+      let reset = false;
+      for (const p of cur.rdma) {
+        const q = prevById.get(p.id);
+        if (q === undefined) continue;
+        if (p.errors === null || q.errors === null) continue;
+        compared = true;
+        prevSum += q.errors;
+        curSum += p.errors;
+        if (p.errors < q.errors) reset = true;
+      }
+      if (compared && !reset) linkDropsRising = curSum > prevSum;
+    }
+  }
   return {
     name, status,
     cpuPercent, cpuWindowSeconds,
@@ -309,6 +458,13 @@ export function nodeFiguresFrom(name: string, status: NodeStatus, prev: StatsRea
     diskWriteBps,
     netRxBps,
     netTxBps,
+    linkPortsUp,
+    linkPortsSeenUp,
+    linkDown,
+    linkGbps,
+    linkRxBps,
+    linkTxBps,
+    linkDropsRising,
     readAt,
   };
 }
@@ -491,6 +647,7 @@ interface NodeState {
   prev: StatsReading | null;
   last: StatsReading | null;
   status: NodeStatus;
+  seenUp: Set<string>;
 }
 
 // Polls every node at once, on an interval counted from the end of the previous poll.
@@ -516,13 +673,16 @@ export class NodesPoller {
       const result = results[i];
       let state = this.nodeStates.get(target.name);
       if (state === undefined) {
-        state = { prev: null, last: null, status: "unreachable" };
+        state = { prev: null, last: null, status: "unreachable", seenUp: new Set() };
       }
       if (result.status === "fulfilled") {
         const reading = parseStats(result.value, now.getTime());
         state.prev = state.last;
         state.last = reading;
         state.status = "ok";
+        for (const port of reading.rdma ?? []) {
+          if (port.up) state.seenUp.add(port.id);
+        }
       } else if (result.reason instanceof HostKeyRefused) {
         state.status = "host key refused";
       } else {
@@ -532,7 +692,7 @@ export class NodesPoller {
     });
     const current = this.deps.targets.map((t) => {
       const state = this.nodeStates.get(t.name);
-      return nodeFiguresFrom(t.name, state?.status ?? "unreachable", state?.prev ?? null, state?.last ?? null);
+      return nodeFiguresFrom(t.name, state?.status ?? "unreachable", state?.prev ?? null, state?.last ?? null, state?.seenUp ?? new Set());
     });
     if (JSON.stringify(current) === JSON.stringify(this.current)) return;
     this.current = current;

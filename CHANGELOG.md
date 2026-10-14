@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #71 — 2026-10-14 — feat: show the link between the nodes in the Nodes panel, with a banner when it goes down
+
+### Added
+
+- **Each node shows the link to the other node**: ports up, speed, traffic in and out, and
+  "drops rising" when its error counters grow. The model runs across both nodes, so a link
+  that is down or dropping packets stalls every delegation, and nothing showed it. The
+  traffic between the nodes goes over RDMA, which the kernel's interface counters do not
+  see, so the nodes now also print their RDMA port counters, and the tracker reads those.
+- **A banner says when the link goes down**: when a port that was up since the tracker
+  started is no longer up, or no link port is up. A port that was never up, such as an
+  unplugged one, never raises it.
+
 ## #70 — 2026-10-13 — fix: show prefill speed as the real speed of the last finished prompt
 
 ### Fixed

@@ -13,6 +13,8 @@ function figures(overrides: Partial<NodeFigures> = {}): NodeFigures {
     name: "node-a", status: "ok", cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null,
     gpuPercent: null, gpuTempC: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null,
     diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null,
+    linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null,
+    linkTxBps: null, linkDropsRising: null,
     readAt: null, ...overrides,
   };
 }
