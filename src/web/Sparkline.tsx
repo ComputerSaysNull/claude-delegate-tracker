@@ -40,14 +40,22 @@ export function Sparkline({
   label,
   fixed,
   dots,
+  span,
 }: {
   data: [number[], (number | null)[]];
   label: string;
   fixed?: [number, number];
   dots?: boolean;
+  span?: number; // seconds the time axis covers, back from the newest point; omitted: the data's own
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<uPlot | null>(null);
+  // Read through a ref so a new span reaches the chart already drawn: its range runs on setData.
+  // Declared before the chart's effect, so the span is current by the time that one runs.
+  const spanRef = useRef(span);
+  useEffect(() => {
+    spanRef.current = span;
+  }, [span]);
 
   // Create, update and (when too little data) destroy the chart. The chart is reused across
   // data changes via setData; a missing figure is a gap (spanGaps: false), never joined.
@@ -75,6 +83,12 @@ export function Sparkline({
           legend: { show: false },
           cursor: { show: false },
           scales: {
+            // A short history fills only the right-hand part of the chosen span, so switching
+            // spans changes the picture even before the history covers the longer one.
+            x: {
+              range: (_u: uPlot, min: number, max: number): [number, number] =>
+                spanRef.current === undefined ? [min, max] : [max - spanRef.current, max],
+            },
             y: {
               // Leave room above and below the values; see sparkRange.
               range: (_u: uPlot, min: number, max: number) => sparkRange(min, max, fixed),

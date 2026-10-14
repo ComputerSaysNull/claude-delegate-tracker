@@ -179,6 +179,23 @@ describe("Sparkline", () => {
     expect(screen.getByRole("img")).toBeTruthy();
   });
 
+  it("spans the given time back from the newest point, and follows a new span without a new chart", async () => {
+    const { rerender } = render(<Sparkline data={[[100, 200], [10, 20]]} label="x" span={900} />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const range = (charts[0].options as { scales: { x: { range: (u: unknown, min: number, max: number) => [number, number] } } }).scales.x.range;
+    expect(range(null, 100, 200)).toEqual([-700, 200]);
+    rerender(<Sparkline data={[[100, 200], [10, 20]]} label="x" span={3600} />);
+    expect(charts.length).toBe(1);
+    expect(range(null, 100, 200)).toEqual([-3400, 200]);
+  });
+
+  it("spans only its data when no span is given", async () => {
+    render(<Sparkline data={[[100, 200], [10, 20]]} label="x" />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const range = (charts[0].options as { scales: { x: { range: (u: unknown, min: number, max: number) => [number, number] } } }).scales.x.range;
+    expect(range(null, 100, 200)).toEqual([100, 200]);
+  });
+
   it("updates via setData when the data changes", async () => {
     const { rerender } = render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
     await waitFor(() => expect(charts.length).toBe(1));

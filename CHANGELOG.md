@@ -9,6 +9,22 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #72 — 2026-10-14 — fix: Model server charts span the chosen range and hold still, and its rows fill the card
+
+### Fixed
+
+- **Switching between 15 min and 1 hour changes the charts again.** Each chart's time axis
+  spanned the data it had, not the chosen range, so with less than 15 minutes of history
+  (the history is kept in memory, so a restart empties it) both ranges drew the same
+  picture. The axis now spans the chosen range back from the newest point.
+- **The decode and prefill charts no longer shift as the numbers change.** A speed that
+  landed on a whole number ("41" instead of "41.7") was narrower, and the chart beside it
+  moved and widened. Speeds now always carry one decimal, and the two numbers keep a
+  minimum width.
+- **The Model server card's rows fill its height.** Side by side with the Nodes card, which
+  grew taller with the Link row, the rows sat at the top and left the bottom empty; they now
+  spread over the card.
+
 ## #71 — 2026-10-14 — feat: show the link between the nodes in the Nodes panel, with a banner when it goes down
 
 ### Added

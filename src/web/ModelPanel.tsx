@@ -13,6 +13,11 @@ function num(n: number | null): string {
   return n === null ? "—" : n.toLocaleString();
 }
 
+// A speed always carries one decimal, so a whole number ("41.0") is as wide as any other.
+function rate(n: number | null): string {
+  return n === null ? "—" : n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 function percent(n: number | null): string {
   return n === null ? "—" : `${n.toLocaleString()}%`;
 }
@@ -59,7 +64,7 @@ export function ModelPanel({
 }) {
   const status = model === null ? null : statusLine(model);
   return (
-    <section className="@container h-full rounded-xl border border-line bg-card p-3">
+    <section className="@container flex h-full flex-col rounded-xl border border-line bg-card p-3">
       <div className="flex items-baseline gap-3">
         <h2 className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Model server</h2>
         {status !== null && <span className={`text-xs ${status.color}`}>{status.text}</span>}
@@ -75,14 +80,20 @@ export function ModelPanel({
 }
 
 // One figure: its label, then on one line the number with its unit or caption, and its chart
-// beside it when it has a history, so the card stays short.
-function Figure({ label, value, unit, chart }: { label: string; value: string; unit: ReactNode; chart?: ReactNode }) {
+// beside it when it has a history, so the card stays short. `minChars` keeps a number that
+// changes every second at a fixed width, so its chart does not move as the digits change.
+function Figure({ label, value, unit, chart, minChars }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number }) {
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
       <span className="text-[13px] text-muted">{label}</span>
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex shrink-0 items-baseline gap-1.5">
-          <span className="font-mono tabular-nums text-2xl font-medium">{value}</span>
+          <span
+            className="font-mono tabular-nums text-2xl font-medium"
+            style={minChars === undefined ? undefined : { minWidth: `${minChars}ch` }}
+          >
+            {value}
+          </span>
           {unit}
         </div>
         {chart !== undefined && <div className="min-w-0 flex-1">{chart}</div>}
@@ -113,20 +124,22 @@ function ModelFiguresBody({
   const prefillValue = live ? decode.prefillTokensPerSecond : model.prefillTokensPerSecond;
   const chart = (key: string, label: string, fixed?: [number, number], dots?: boolean) =>
     history === undefined ? undefined : (
-      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} />
+      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} span={span} />
     );
   return (
     <>
-      <ul aria-label="Model server figures" className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
+      <ul aria-label="Model server figures" className="mt-2 grid flex-1 grid-cols-1 content-evenly gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
         <Figure
           label="Decode speed"
-          value={num(decodeValue)}
+          value={rate(decodeValue)}
+          minChars={4}
           unit={<span className={unitClass}>tok/s</span>}
           chart={chart("decodeTokensPerSecond", "Decode speed")}
         />
         <Figure
           label="Prefill speed · last prompt"
-          value={num(prefillValue)}
+          value={rate(prefillValue)}
+          minChars={7}
           unit={<span className={unitClass}>tok/s</span>}
           chart={chart("prefillTokensPerSecond", "Prefill speed", undefined, true)}
         />

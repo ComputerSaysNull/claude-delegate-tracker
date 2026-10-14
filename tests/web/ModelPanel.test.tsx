@@ -9,12 +9,13 @@ import type { Series } from "../../src/server/history.ts";
 // The chart itself is Sparkline's to test; here only the range each chart is given matters.
 vi.mock("../../src/web/Sparkline.tsx", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/web/Sparkline.tsx")>()),
-  Sparkline: ({ label, fixed, dots }: { label: string; fixed?: [number, number]; dots?: boolean }) => (
+  Sparkline: ({ label, fixed, dots, span }: { label: string; fixed?: [number, number]; dots?: boolean; span?: number }) => (
     <div
       role="img"
       aria-label={label}
       data-fixed={fixed === undefined ? "" : fixed.join(",")}
       data-dots={dots === undefined ? "" : String(dots)}
+      data-span={span === undefined ? "" : String(span)}
     />
   ),
 }));
@@ -310,5 +311,42 @@ describe("ModelPanel", () => {
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
     expect(decodeCell.textContent).toContain((80.5).toLocaleString());
     expect(decodeCell.textContent).not.toContain((61.4).toLocaleString());
+  });
+});
+
+// A chart beside a number must not move when the number does, its time axis must follow the
+// range switch, and the card's rows spread over the height the Nodes card gives it.
+describe("ModelPanel steady charts", () => {
+  afterEach(cleanup);
+  const twoPoints: Series = {
+    at: [0, 10_000],
+    values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
+  };
+  const valueOf = (label: string) =>
+    screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === label)!.querySelector(".text-2xl") as HTMLElement;
+
+  it("shows decode and prefill speeds with one decimal, even on a whole number", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 41, prefillTokensPerSecond: 1465 })} />);
+    expect(valueOf("Decode speed").textContent).toBe((41).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+    expect(valueOf("Prefill speed · last prompt").textContent).toBe((1465).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+  });
+
+  it("gives the decode and prefill numbers a minimum width in digits", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 9.5, prefillTokensPerSecond: 980.2 })} />);
+    expect(valueOf("Decode speed").style.minWidth).toBe("4ch");
+    expect(valueOf("Prefill speed · last prompt").style.minWidth).toBe("7ch");
+  });
+
+  it("hands every chart the chosen range as its time span", () => {
+    render(<ModelPanel model={figures()} history={twoPoints} windowSeconds={900} />);
+    for (const img of screen.getAllByRole("img")) expect(img.getAttribute("data-span")).toBe("900");
+  });
+
+  it("spreads the figure rows over the card's height", () => {
+    render(<ModelPanel model={figures()} />);
+    const list = screen.getByRole("list", { name: "Model server figures" });
+    expect(list.className).toMatch(/\bflex-1\b/);
+    expect(list.className).toMatch(/\bcontent-evenly\b/);
+    expect(list.closest("section")!.className).toMatch(/\bflex\b.*\bflex-col\b|\bflex-col\b.*\bflex\b/);
   });
 });
