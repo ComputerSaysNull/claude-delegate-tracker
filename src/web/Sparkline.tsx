@@ -1,6 +1,7 @@
 // A single-line sparkline of one key's history. uPlot renders into a full-width h-8 div;
 // with fewer than two points the div is left empty (no chart). uPlot is loaded only when a
-// chart is drawn: it reads the screen as soon as it is imported.
+// chart is drawn: it reads the screen as soon as it is imported. With `dots`, each value is
+// drawn as a point, for a series whose values are single events between gaps.
 import { useEffect, useRef } from "react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -28,14 +29,22 @@ export function sparkRange(
   return [min - span * 0.1, top + span * 0.1];
 }
 
+function valueSeries(stroke: string, dots: boolean) {
+  return dots
+    ? { spanGaps: false, stroke, points: { show: true, size: 6, fill: stroke } }
+    : { spanGaps: false, stroke };
+}
+
 export function Sparkline({
   data,
   label,
   fixed,
+  dots,
 }: {
   data: [number[], (number | null)[]];
   label: string;
   fixed?: [number, number];
+  dots?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<uPlot | null>(null);
@@ -72,7 +81,9 @@ export function Sparkline({
             },
           },
           // uPlot draws on a canvas, which cannot read a CSS variable: take the token's value.
-          series: [{}, { spanGaps: false, stroke: getComputedStyle(el).getPropertyValue("--muted").trim() || "currentColor" }],
+          // With dots, each value is drawn as a point filled in the line's colour, so a single
+          // event still shows (uPlot's default fill is the background, a hollow ring).
+          series: [{}, valueSeries(getComputedStyle(el).getPropertyValue("--muted").trim() || "currentColor", dots === true)],
         },
         data,
         el,
@@ -81,7 +92,7 @@ export function Sparkline({
     return () => {
       cancelled = true;
     };
-  }, [data, fixed]);
+  }, [data, fixed, dots]);
 
   // Follow the container's width: the chart is drawn at the width it had when created, so a
   // phone turned sideways or a resized window would otherwise leave it too wide or too narrow.

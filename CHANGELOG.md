@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #70 — 2026-10-13 — fix: show prefill speed as the real speed of the last finished prompt
+
+### Fixed
+
+- **Prefill speed shows how fast prompts were actually prefilled.** It read ~3,000–4,000
+  tok/s for one poll window and 0 for the others, while a prompt really prefilled at about
+  1,400 tok/s over 20–30 s. The cause: the model server adds a prompt's tokens to its prompt
+  counters all at once, at the prompt's first output token, so a rate over a window counted
+  one prompt's whole prefill as if it happened in that window. The figure now divides the
+  computed tokens by the prefill seconds the model server records per request, which it adds
+  when the request finishes. It is checked every second, the panel keeps the last value
+  under the title "Prefill speed · last prompt", and the chart shows each finished prompt as
+  a dot. A window with no finished prompt is no longer shown as 0.
+
 ## #69 — 2026-10-13 — feat: show MTP acceptance since the model server started beside the current figure
 
 ### Added

@@ -11,8 +11,9 @@ export const METRIC_NAMES = [
   "vllm:num_preemptions_total",
   "vllm:spec_decode_num_draft_tokens_total",
   "vllm:spec_decode_num_accepted_tokens_total",
-  "vllm:prompt_tokens_total",
-  "vllm:prompt_tokens_cached_total",
+  "vllm:request_prefill_time_seconds_sum",
+  "vllm:request_prefill_time_seconds_count",
+  "vllm:request_prefill_kv_computed_tokens_sum",
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
@@ -37,7 +38,7 @@ export interface ModelFigures {
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
   mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the window, one decimal; null when no drafts
   mtpAcceptanceSinceStartPercent: number | null; // 100 × accepted ÷ draft totals since the model server started, one decimal; null when no drafts
-  prefillTokensPerSecond: number | null; // Δ(prompt − cached) ÷ seconds between readings, one decimal
+  prefillTokensPerSecond: number | null; // Δ computed tokens ÷ Δ prefill seconds of the prompts that finished in the window, one decimal; null when none did
   preemptions: number | null;          // the counter, only when above 0
   readAt: string | null;               // ISO time of the newest successful reading, kept while unreachable
 }
@@ -119,6 +120,33 @@ export function parseMetrics(text: string): Sample {
   return sample;
 }
 
+// The speed of the prompts that finished between two readings: Δ computed tokens ÷ Δ prefill
+// seconds, one decimal. The model server adds a prompt's tokens to these only when the request
+// finishes, so a no-finished-prompt window is null, not 0. `reset` is true when any of the three
+// counters went down (the server restarted).
+export function prefillRate(prev: Reading | null, cur: Reading | null): { tokensPerSecond: number | null; reset: boolean } {
+  if (prev === null || cur === null) return { tokensPerSecond: null, reset: false };
+  const time = "vllm:request_prefill_time_seconds_sum";
+  const count = "vllm:request_prefill_time_seconds_count";
+  const kv = "vllm:request_prefill_kv_computed_tokens_sum";
+  const timePrev = prev.sample[time];
+  const countPrev = prev.sample[count];
+  const kvPrev = prev.sample[kv];
+  const timeCur = cur.sample[time];
+  const countCur = cur.sample[count];
+  const kvCur = cur.sample[kv];
+  if (timePrev === undefined || countPrev === undefined || kvPrev === undefined ||
+      timeCur === undefined || countCur === undefined || kvCur === undefined) {
+    return { tokensPerSecond: null, reset: false };
+  }
+  const reset = timeCur < timePrev || countCur < countPrev || kvCur < kvPrev;
+  let tokensPerSecond: number | null = null;
+  if (countCur > countPrev && kvCur >= kvPrev && timeCur > timePrev) {
+    tokensPerSecond = Math.round(((kvCur - kvPrev) / (timeCur - timePrev)) * 10) / 10;
+  }
+  return { tokensPerSecond, reset };
+}
+
 // Figures from the previous and current successful readings. `cur` null means no reading yet.
 // A counter that went down (the engine restarted) gives no rate for that window; so does
 // a first reading.
@@ -184,22 +212,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     }
   }
 
-  const promptCur = s["vllm:prompt_tokens_total"];
-  const cachedCur = s["vllm:prompt_tokens_cached_total"];
-
-  let prefillTokensPerSecond: number | null = null;
-  if (prev !== null && promptCur !== undefined && cachedCur !== undefined) {
-    const promptPrev = prev.sample["vllm:prompt_tokens_total"];
-    const cachedPrev = prev.sample["vllm:prompt_tokens_cached_total"];
-    if (promptPrev !== undefined && cachedPrev !== undefined && cur.atMs > prev.atMs) {
-      const deltaPrompt = promptCur - promptPrev;
-      const deltaCached = cachedCur - cachedPrev;
-      if (deltaPrompt >= 0 && deltaCached >= 0 && deltaPrompt >= deltaCached) {
-        const deltaSeconds = (cur.atMs - prev.atMs) / 1000;
-        prefillTokensPerSecond = Math.round(((deltaPrompt - deltaCached) / deltaSeconds) * 10) / 10;
-      }
-    }
-  }
+  const prefillTokensPerSecond = prefillRate(prev, cur).tokensPerSecond;
 
   return {
     status,
@@ -222,6 +235,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
 export interface DecodeNow {
   tokensPerSecond: number | null;
   windowSeconds: number | null;
+  prefillTokensPerSecond: number | null; // the speed of the last finished prompt, held until the next one; null until one finishes or after a reset
 }
 
 export interface MetricsDeps {
@@ -241,6 +255,7 @@ export class MetricsPoller {
   private last: Reading | null = null;
   private fastPrev: Reading | null = null;
   private fastLast: Reading | null = null;
+  private heldPrefill: number | null = null;
   private lastFullAt: number | null = null;
   private intervalSeconds = 1;
   private refreshSeconds = 1;
@@ -351,7 +366,8 @@ export class MetricsPoller {
   }
 
   // The decode rate over the fast pair: Δ generation_tokens_total ÷ Δs, one decimal, the window
-  // whole; nulls on a first reading, a missing counter, no time or a counter that went down.
+  // whole, plus the held prefill speed; nulls on a first reading, a missing counter, no time or
+  // a counter that went down.
   private sendDecode(): void {
     let tokensPerSecond: number | null = null;
     let windowSeconds: number | null = null;
@@ -369,11 +385,14 @@ export class MetricsPoller {
         }
       }
     }
-    for (const listener of this.decodeListeners) listener({ tokensPerSecond, windowSeconds });
+    const p = prefillRate(this.fastPrev, this.fastLast);
+    if (p.reset) this.heldPrefill = null;
+    else if (p.tokensPerSecond !== null) this.heldPrefill = p.tokensPerSecond;
+    for (const listener of this.decodeListeners) listener({ tokensPerSecond, windowSeconds, prefillTokensPerSecond: this.heldPrefill });
   }
 
   private sendDecodeNulls(): void {
-    for (const listener of this.decodeListeners) listener({ tokensPerSecond: null, windowSeconds: null });
+    for (const listener of this.decodeListeners) listener({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
   }
 
   private apply(status: ModelStatus): void {

@@ -160,7 +160,7 @@ describe("cluster figures", () => {
     const unsubscribe = vi.fn();
     const app = makeApp({ subscribeDecode: (l) => { listener = l; return unsubscribe; } });
     const res = await app.request("/api/updates", goodHost);
-    const d: DecodeNow = { tokensPerSecond: 40.0, windowSeconds: 1 };
+    const d: DecodeNow = { tokensPerSecond: 40.0, windowSeconds: 1, prefillTokensPerSecond: 1453.3 };
     listener!(d);
     const text = await readUntil(res, "event: decode");
     expect(text).toContain(`event: decode\ndata: ${JSON.stringify(d)}`);

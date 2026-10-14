@@ -9,8 +9,13 @@ import type { Series } from "../../src/server/history.ts";
 // The chart itself is Sparkline's to test; here only the range each chart is given matters.
 vi.mock("../../src/web/Sparkline.tsx", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/web/Sparkline.tsx")>()),
-  Sparkline: ({ label, fixed }: { label: string; fixed?: [number, number] }) => (
-    <div role="img" aria-label={label} data-fixed={fixed === undefined ? "" : fixed.join(",")} />
+  Sparkline: ({ label, fixed, dots }: { label: string; fixed?: [number, number]; dots?: boolean }) => (
+    <div
+      role="img"
+      aria-label={label}
+      data-fixed={fixed === undefined ? "" : fixed.join(",")}
+      data-dots={dots === undefined ? "" : String(dots)}
+    />
   ),
 }));
 
@@ -152,12 +157,12 @@ describe("ModelPanel", () => {
   it("shows Prefill speed right after Decode speed, with its tok/s unit", () => {
     render(<ModelPanel model={figures({ prefillTokensPerSecond: 120.5 })} />);
     const cells = screen.getAllByRole("listitem");
-    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed")!;
+    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
     expect(prefillCell.textContent).toContain((120.5).toLocaleString());
     expect(prefillCell.textContent).toContain("tok/s");
     const labels = cells.map((cell) => cell.firstElementChild!.textContent);
     expect(labels).toEqual([
-      "Decode speed", "Prefill speed", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance",
+      "Decode speed", "Prefill speed · last prompt", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance",
     ]);
   });
 
@@ -210,22 +215,77 @@ describe("ModelPanel", () => {
   it("shows a dash for Prefill speed and MTP acceptance when null", () => {
     render(<ModelPanel model={figures()} />);
     const cells = screen.getAllByRole("listitem");
-    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed")!;
+    const prefillCell = cells.find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
     expect(prefillCell.textContent).toContain("—");
     const mtpCell = cells.find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
     expect(mtpCell.textContent).toContain("—");
   });
 
-  it("shows 0 for a prefill of 0, not a dash", () => {
-    render(<ModelPanel model={figures({ prefillTokensPerSecond: 0 })} />);
-    expect(screen.getByText("0")).toBeTruthy();
+  it("shows the live prefill speed from the decode event, with last prompt in its title", () => {
+    render(
+      <ModelPanel
+        model={figures({ prefillTokensPerSecond: null })}
+        decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
+      />,
+    );
+    const prefillCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
+    // "last prompt" sits in the title, so only the unit stands beside the number and the chart
+    // keeps the same width as Decode speed's.
+    expect(prefillCell.textContent).toBe(`Prefill speed · last prompt${(1453.3).toLocaleString()}tok/s`);
+  });
+
+  it("shows the model's own prefill figure when no decode event has arrived", () => {
+    render(<ModelPanel model={figures({ prefillTokensPerSecond: 1200 })} />);
+    const prefillCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
+    expect(prefillCell.textContent).toContain((1200).toLocaleString());
+  });
+
+  it("shows the model's own prefill figure when the model status is not ok, even with a decode event", () => {
+    render(
+      <ModelPanel
+        model={figures({ status: "unreachable", readAt: "2026-10-03T12:00:00.000Z", prefillTokensPerSecond: 1200 })}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
+      />,
+    );
+    const prefillCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
+    expect(prefillCell.textContent).toContain((1200).toLocaleString());
+    expect(prefillCell.textContent).not.toContain((1453.3).toLocaleString());
+  });
+
+  it("shows a dash for prefill when both the model and the live decode have none", () => {
+    render(
+      <ModelPanel
+        model={figures({ prefillTokensPerSecond: null })}
+        decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: null }}
+      />,
+    );
+    const prefillCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Prefill speed · last prompt")!;
+    expect(prefillCell.textContent).toContain("—");
+  });
+
+  it("passes dots only to the Prefill speed chart", () => {
+    const history: Series = {
+      at: [0, 1000],
+      values: {
+        running: [0, 0],
+        waiting: [0, 0],
+        kvCachePercent: [0, 0],
+        decodeTokensPerSecond: [0, 0],
+        prefillTokensPerSecond: [0, 0],
+      },
+    };
+    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
+    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-dots")).toBe("true");
+    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-dots")).toBe("");
+    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-dots")).toBe("");
+    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-dots")).toBe("");
   });
 
   it("shows the live decode value once a decode event has arrived, over the model's own", () => {
     render(
       <ModelPanel
         model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
-        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: null }}
       />,
     );
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;
@@ -244,7 +304,7 @@ describe("ModelPanel", () => {
     render(
       <ModelPanel
         model={figures({ status: "unreachable", readAt: "2026-10-03T12:00:00.000Z", decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })}
-        decode={{ tokensPerSecond: 61.4, windowSeconds: 1 }}
+        decode={{ tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: null }}
       />,
     );
     const decodeCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "Decode speed")!;

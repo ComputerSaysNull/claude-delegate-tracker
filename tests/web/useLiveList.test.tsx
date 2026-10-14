@@ -44,10 +44,10 @@ describe("useLiveList", () => {
     expect(result.current.decode).toBeNull();
     const source = FakeEventSource.made[0];
     expect(source).toBeDefined();
-    const first: DecodeNow = { tokensPerSecond: 40.0, windowSeconds: 1 };
+    const first: DecodeNow = { tokensPerSecond: 40.0, windowSeconds: 1, prefillTokensPerSecond: null };
     act(() => source.fire("decode", JSON.stringify(first)));
     expect(result.current.decode).toEqual(first);
-    const second: DecodeNow = { tokensPerSecond: 61.4, windowSeconds: 1 };
+    const second: DecodeNow = { tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: null };
     act(() => source.fire("decode", JSON.stringify(second)));
     expect(result.current.decode).toEqual(second);
   });

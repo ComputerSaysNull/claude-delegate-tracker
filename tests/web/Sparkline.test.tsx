@@ -141,6 +141,23 @@ describe("Sparkline", () => {
     expect(lineSeries(charts[0].options).some((s) => s.spanGaps === false)).toBe(true);
   });
 
+  it("draws a visible, filled 6px point on the value series when dots is set", async () => {
+    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" dots />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const value = (charts[0].options as { series: { spanGaps?: boolean; stroke?: string; points?: { show: boolean; size: number; fill?: string } }[] }).series[1];
+    // uPlot fills a point with the page background by default, so a lone point reads as a
+    // hollow ring; filled with the line's own colour it reads as a measurement.
+    expect(value.points).toEqual({ show: true, size: 6, fill: value.stroke });
+    expect(value.spanGaps).toBe(false);
+  });
+
+  it("gives the value series no points key when dots is not set", async () => {
+    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const value = (charts[0].options as { series: { spanGaps?: boolean; points?: { show: boolean; size: number } }[] }).series[1];
+    expect("points" in value).toBe(false);
+  });
+
   it("passes a y range function that pads a zero-only series", async () => {
     render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
     await waitFor(() => expect(charts.length).toBe(1));

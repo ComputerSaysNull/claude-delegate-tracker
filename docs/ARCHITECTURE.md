@@ -157,7 +157,7 @@ Read only these names. Ignore every other metric: some carry deployment details 
 | `vllm:prefix_cache_hits_total`, `vllm:prefix_cache_queries_total` | counters (tokens) | prefix-cache hit rate since the engine started = hits ÷ queries |
 | `vllm:num_preemptions_total` | counter | preemptions (shown when above 0) |
 | `vllm:spec_decode_num_draft_tokens_total`, `vllm:spec_decode_num_accepted_tokens_total` | counters (tokens) | MTP acceptance = Δaccepted ÷ Δdraft between two scrapes, × 100 %; `—` when no drafts. Since-start acceptance = accepted ÷ draft totals from the latest scrape alone, × 100 %; `—` when the draft total is 0 or a counter is missing. The panel shows both, now then since start |
-| `vllm:prompt_tokens_total`, `vllm:prompt_tokens_cached_total` | counters (tokens) | prefill speed = Δ(prompt − cached) ÷ seconds between them (cache hits are not prefill work); a window with no prefill is a measured 0 |
+| `vllm:request_prefill_time_seconds_sum`, `vllm:request_prefill_time_seconds_count`, `vllm:request_prefill_kv_computed_tokens_sum` | histogram sums and count | prefill speed = Δ computed tokens ÷ Δ prefill seconds of the prompts that finished between two scrapes; the model server adds a prompt to these only when its request finishes (its prompt counters jump once, at the first token, so they cannot give a rate); `—` when none finished, never 0 |
 
 Rules for every figure (the node figures follow them too):
 
@@ -171,7 +171,7 @@ Rules for the model server only:
 - Its counters count tokens, not requests.
 - A `/metrics` that answers `404` means "not available", not "idle".
 - These are one engine's figures, not a fleet's. A name that appears more than once (a second engine) is left out rather than summed.
-- Decode speed is refreshed every `DECODE_REFRESH_SECONDS` over the last pair of scrapes, as its own `decode` event; the full figures, their history and busy time keep the `METRICS_POLL_SECONDS` cadence.
+- Decode speed is refreshed every `DECODE_REFRESH_SECONDS` over the last pair of scrapes, as its own `decode` event; the full figures, their history and busy time keep the `METRICS_POLL_SECONDS` cadence. The same event carries the speed of the last finished prompt, which the panel keeps, titled "Prefill speed · last prompt", until the next one finishes; its chart draws each finished prompt as a dot.
 
 ## The nodes
 
