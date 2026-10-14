@@ -29,6 +29,8 @@ function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
     name, status: "ok", cpuPercent: 12, cpuWindowSeconds: 5, cpuTempC: 52, gpuPercent: 86, gpuTempC: 74,
     memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null,
     diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null,
+    linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null,
+    linkTxBps: null, linkDropsRising: null,
     readAt: null, ...overrides,
   };
 }

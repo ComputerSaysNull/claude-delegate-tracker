@@ -67,6 +67,12 @@ export function buildHealth(input: HealthInput, now: Date): Health {
       banners.push({ level: "error", text: `Node ${node.name} was refused: its host key does not match the pinned one.` });
     }
   }
+  for (const node of nodes) {
+    if (node.linkDown === true) {
+      const ports = node.linkPortsSeenUp === 0 ? "no port has come up" : `${node.linkPortsUp} of ${node.linkPortsSeenUp} ports up`;
+      banners.push({ level: "error", text: `Node ${node.name}: the link between the nodes is down (${ports}).` });
+    }
+  }
 
   if (model.status === "unreachable") {
     banners.push({ level: "warning", text: "The model server can't be reached." });

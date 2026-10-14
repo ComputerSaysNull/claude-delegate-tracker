@@ -33,6 +33,13 @@ function figures(over: Partial<NodeFigures> = {}): NodeFigures {
     diskWriteBps: null,
     netRxBps: null,
     netTxBps: null,
+    linkPortsUp: null,
+    linkPortsSeenUp: null,
+    linkDown: null,
+    linkGbps: null,
+    linkRxBps: null,
+    linkTxBps: null,
+    linkDropsRising: null,
     readAt: null,
     ...over,
   };

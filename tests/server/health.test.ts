@@ -82,6 +82,13 @@ function node(over: Partial<NodeFigures> = {}): NodeFigures {
     diskWriteBps: null,
     netRxBps: null,
     netTxBps: null,
+    linkPortsUp: null,
+    linkPortsSeenUp: null,
+    linkDown: null,
+    linkGbps: null,
+    linkRxBps: null,
+    linkTxBps: null,
+    linkDropsRising: null,
     ...over,
   };
 }
@@ -152,6 +159,41 @@ describe("buildHealth", () => {
     const h = buildHealth(input({ nodes: [node({ name: "beta", status: "host key refused" })] }), NOW);
     expect(texts(h)).toContain("Node beta was refused: its host key does not match the pinned one.");
     expect(h.banners.find((b) => b.text.includes("Node beta was refused"))?.level).toBe("error");
+  });
+
+  it("a node whose link ports have never been up says so, not 0 of 0", () => {
+    const h = buildHealth(input({ nodes: [node({ name: "alpha", linkDown: true, linkPortsUp: 0, linkPortsSeenUp: 0 })] }), NOW);
+    const b = h.banners.find((b) => b.text.includes("the link between the nodes is down"));
+    expect(b?.text).toBe("Node alpha: the link between the nodes is down (no port has come up).");
+  });
+
+  it("a node with the link down reports an error banner naming it", () => {
+    const h = buildHealth(input({ nodes: [node({ name: "alpha", linkDown: true, linkPortsUp: 1, linkPortsSeenUp: 2 })] }), NOW);
+    const b = h.banners.find((b) => b.text.includes("the link between the nodes is down"));
+    expect(b?.text).toBe("Node alpha: the link between the nodes is down (1 of 2 ports up).");
+    expect(b?.level).toBe("error");
+  });
+
+  it("a node with the link up gives no link banner", () => {
+    const h = buildHealth(input({ nodes: [node({ name: "alpha", linkDown: false, linkPortsUp: 2, linkPortsSeenUp: 2 })] }), NOW);
+    expect(h.banners.some((b) => b.text.includes("the link between the nodes is down"))).toBe(false);
+  });
+
+  it("a node with linkDown null gives no link banner", () => {
+    const h = buildHealth(input({ nodes: [node({ name: "alpha" })] }), NOW);
+    expect(h.banners.some((b) => b.text.includes("the link between the nodes is down"))).toBe(false);
+  });
+
+  it("the link-down banner sits with the errors, after the host-key one", () => {
+    const h = buildHealth(input({
+      nodes: [
+        node({ name: "beta", status: "host key refused" }),
+        node({ name: "alpha", linkDown: true, linkPortsUp: 1, linkPortsSeenUp: 2 }),
+      ],
+    }), NOW);
+    const errors = h.banners.filter((b) => b.level === "error").map((b) => b.text);
+    expect(errors.indexOf("Node alpha: the link between the nodes is down (1 of 2 ports up)."))
+      .toBeGreaterThan(errors.indexOf("Node beta was refused: its host key does not match the pinned one."));
   });
 
   it("unknown formats are listed once each in first-seen order, naming KNOWN_MAJOR", () => {

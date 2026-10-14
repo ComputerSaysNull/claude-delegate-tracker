@@ -10,6 +10,7 @@ import {
   type NodeTarget,
   type NodesDeps,
   type StatsReading,
+  type RdmaPort,
 } from "../../src/server/nodes.ts";
 
 const T0 = 1_700_000_000_000;
@@ -76,6 +77,42 @@ const SPEC13_SAMPLE = [
   "lo unknown 0 0",
   "vpn0 unknown -1 0 0",
   "veth5a20998 up 10000 0 0",
+].join("\n");
+
+// plans#93: the ==rdma section, mapping RDMA devices to their interfaces and reporting per-port.
+const RDMA_SAMPLE = [
+  "==rdma",
+  "/sys/class/infiniband/rdmaA/device/net/ethA",
+  "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+  "/sys/class/infiniband/rdmaA/ports/1/rate:200 Gb/sec (4X HDR)",
+  "/sys/class/infiniband/rdmaA/ports/1/counters/port_rcv_data:1000",
+  "/sys/class/infiniband/rdmaA/ports/1/counters/port_xmit_data:2000",
+  "/sys/class/infiniband/rdmaA/ports/1/counters/port_rcv_errors:3",
+  "/sys/class/infiniband/rdmaA/ports/1/counters/port_xmit_discards:4",
+  "/sys/class/infiniband/rdmaA/ports/1/counters/link_downed:5",
+  "/sys/class/infiniband/rdmaA/ports/1/hw_counters/out_of_buffer:6",
+  "/sys/class/infiniband/rdmaB/device/net/ethB",
+  "/sys/class/infiniband/rdmaB/ports/1/state:1: DOWN",
+  "/sys/class/infiniband/rdmaB/ports/1/rate:100 Gb/sec (4X HDR)",
+  "/sys/class/infiniband/rdmaB/ports/1/counters/port_rcv_data:3000",
+  "/sys/class/infiniband/rdmaB/ports/1/counters/port_xmit_data:4000",
+].join("\n");
+
+// Two good polls: the first has both ports up, the second has rdmaB down.
+const RDMA_POLL1 = [
+  "==rdma",
+  "/sys/class/infiniband/rdmaA/device/net/ethA",
+  "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+  "/sys/class/infiniband/rdmaB/device/net/ethB",
+  "/sys/class/infiniband/rdmaB/ports/1/state:4: ACTIVE",
+].join("\n");
+
+const RDMA_POLL2 = [
+  "==rdma",
+  "/sys/class/infiniband/rdmaA/device/net/ethA",
+  "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+  "/sys/class/infiniband/rdmaB/device/net/ethB",
+  "/sys/class/infiniband/rdmaB/ports/1/state:1: DOWN",
 ].join("\n");
 
 describe("parseStats", () => {
@@ -165,6 +202,7 @@ describe("parseStats", () => {
       disk: null,
       diskIo: null,
       net: null,
+      rdma: null,
     });
   });
 
@@ -252,6 +290,91 @@ describe("parseStats", () => {
     expect(s.diskIo).toBeNull();
     expect(s.net).toBeNull();
   });
+
+  it("parses the ==rdma section into ports mapped to interfaces", () => {
+    const s = parseStats(RDMA_SAMPLE, T0);
+    expect(s.rdma).not.toBeNull();
+    expect(s.rdma).toHaveLength(2);
+    const a = s.rdma!.find((p) => p.id === "rdmaA/1")!;
+    const b = s.rdma!.find((p) => p.id === "rdmaB/1")!;
+    expect(a).toEqual({ id: "rdmaA/1", up: true, gbps: 200, rxWords: 1000, txWords: 2000, errors: 18 });
+    expect(b).toEqual({ id: "rdmaB/1", up: false, gbps: 100, rxWords: 3000, txWords: 4000, errors: null });
+  });
+
+  it("an empty value is unknown, not 0", () => {
+    const s = parseStats(
+      [
+        "==rdma",
+        "/sys/class/infiniband/rdmaA/device/net/ethA",
+        "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+        "/sys/class/infiniband/rdmaA/ports/1/rate:",
+        "/sys/class/infiniband/rdmaA/ports/1/counters/port_rcv_data:",
+        "/sys/class/infiniband/rdmaA/ports/1/counters/port_xmit_data: ",
+        "/sys/class/infiniband/rdmaA/ports/1/counters/link_downed:",
+      ].join("\n"),
+      T0,
+    );
+    expect(s.rdma).toEqual([{ id: "rdmaA/1", up: true, gbps: null, rxWords: null, txWords: null, errors: null }]);
+  });
+
+  it("ignores a port whose device has no interface line, and gives rdma null when none maps", () => {
+    const s = parseStats(
+      [
+        "==rdma",
+        "/sys/class/infiniband/rdmaA/device/net/ethA",
+        "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+        "/sys/class/infiniband/rdmaC/ports/1/state:4: ACTIVE",
+      ].join("\n"),
+      T0,
+    );
+    expect(s.rdma).not.toBeNull();
+    expect(s.rdma).toHaveLength(1);
+    expect(s.rdma![0].id).toBe("rdmaA/1");
+
+    const none = parseStats(
+      [
+        "==rdma",
+        "/sys/class/infiniband/rdmaA/device/net/ethA",
+        "/sys/class/infiniband/rdmaB/ports/1/state:4: ACTIVE",
+      ].join("\n"),
+      T0,
+    );
+    expect(none.rdma).toBeNull();
+  });
+
+  it("a port with no state line is up false, and missing counters give null figures", () => {
+    const s = parseStats(
+      [
+        "==rdma",
+        "/sys/class/infiniband/rdmaA/device/net/ethA",
+        "/sys/class/infiniband/rdmaA/ports/1/counters/port_rcv_data:1",
+      ].join("\n"),
+      T0,
+    );
+    expect(s.rdma).toHaveLength(1);
+    expect(s.rdma![0]).toEqual({ id: "rdmaA/1", up: false, gbps: null, rxWords: 1, txWords: null, errors: null });
+  });
+
+  it("ignores lines that do not parse and unknown files inside the section", () => {
+    const s = parseStats(
+      [
+        "==rdma",
+        "/sys/class/infiniband/rdmaA/device/net/ethA",
+        "/sys/class/infiniband/rdmaA/ports/1/state:4: ACTIVE",
+        "/sys/class/infiniband/rdmaA/ports/1/counters/not_a_counter:99",
+        "garbage",
+        "/sys/class/infiniband/rdmaA/ports/1/rate:200 Gb/sec (4X HDR)",
+      ].join("\n"),
+      T0,
+    );
+    expect(s.rdma).toHaveLength(1);
+    expect(s.rdma![0]).toEqual({ id: "rdmaA/1", up: true, gbps: 200, rxWords: null, txWords: null, errors: null });
+  });
+
+  it("a missing ==rdma section gives rdma null", () => {
+    const s = parseStats(FULL_SAMPLE, T0);
+    expect(s.rdma).toBeNull();
+  });
 });
 
 const reading = (
@@ -264,8 +387,12 @@ const reading = (
 ): StatsReading => ({
   atMs, cpu, cpuTempC, gpuPercent, gpuTempC,
   memTotalBytes: null, memAvailableBytes: null, gpuPowerW: null,
-  disk: null, diskIo: null, net: null,
+  disk: null, diskIo: null, net: null, rdma: null,
   ...extra,
+});
+
+const rdmaPort = (id: string, over: Partial<RdmaPort> = {}): RdmaPort => ({
+  id, up: false, gbps: null, rxWords: null, txWords: null, errors: null, ...over,
 });
 
 describe("nodeFiguresFrom", () => {
@@ -434,6 +561,195 @@ describe("nodeFiguresFrom", () => {
       expect(f.readAt).toBe(new Date(T0).toISOString());
     }
   });
+
+  it("cur.rdma null gives all seven link figures null, never 0 or false", () => {
+    const f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null));
+    expect(f.linkPortsUp).toBeNull();
+    expect(f.linkPortsSeenUp).toBeNull();
+    expect(f.linkDown).toBeNull();
+    expect(f.linkGbps).toBeNull();
+    expect(f.linkRxBps).toBeNull();
+    expect(f.linkTxBps).toBeNull();
+    expect(f.linkDropsRising).toBeNull();
+  });
+
+  it("linkPortsUp, linkPortsSeenUp and linkGbps come from the current reading's up ports", () => {
+    const f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, gbps: 100 }), rdmaPort("rdmaB/1", { up: true, gbps: 200 })],
+    }));
+    expect(f.linkPortsUp).toBe(2);
+    expect(f.linkPortsSeenUp).toBe(2);
+    expect(f.linkGbps).toBe(200);
+
+    const none = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: false, gbps: 100 }), rdmaPort("rdmaB/1", { up: false, gbps: 200 })],
+    }));
+    expect(none.linkPortsUp).toBe(0);
+    expect(none.linkPortsSeenUp).toBe(0);
+    expect(none.linkGbps).toBeNull();
+    expect(none.linkDown).toBe(true);
+  });
+
+  it("linkDown: a never-up port does not trip it, a seen-up port now down does", () => {
+    // A port seen up earlier but now down, while another is up → true.
+    let f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: false }), rdmaPort("rdmaB/1", { up: true })],
+    }), new Set(["rdmaA/1"]));
+    expect(f.linkDown).toBe(true);
+
+    // The seen-up port is still up; the never-up port down does not trip it → false.
+    f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true }), rdmaPort("rdmaB/1", { up: false })],
+    }), new Set(["rdmaA/1"]));
+    expect(f.linkDown).toBe(false);
+
+    // No link port is up at all → true, even with nothing ever seen up.
+    f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: false }), rdmaPort("rdmaB/1", { up: false })],
+    }));
+    expect(f.linkDown).toBe(true);
+  });
+
+  it("linkPortsSeenUp is the union of seenUp and the current reading's up ports", () => {
+    const f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: false }), rdmaPort("rdmaB/1", { up: true })],
+    }), new Set(["rdmaA/1", "rdmaC/1"]));
+    expect(f.linkPortsUp).toBe(1);
+    expect(f.linkPortsSeenUp).toBe(3);
+  });
+
+  it("a first reading gives no link rates or drops-rising but keeps the up figures", () => {
+    const f = nodeFiguresFrom("node-a", "ok", null, reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, gbps: 200, rxWords: 1000, txWords: 2000, errors: 3 })],
+    }));
+    expect(f.linkPortsUp).toBe(1);
+    expect(f.linkPortsSeenUp).toBe(1);
+    expect(f.linkDown).toBe(false);
+    expect(f.linkGbps).toBe(200);
+    expect(f.linkRxBps).toBeNull();
+    expect(f.linkTxBps).toBeNull();
+    expect(f.linkDropsRising).toBeNull();
+  });
+
+  it("link rx/tx bps are Δwords × 4 ÷ Δs over up ports only, whole bytes/s", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [
+        rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 }),
+        rdmaPort("rdmaB/1", { up: true, rxWords: 3000, txWords: 4000 }),
+        rdmaPort("rdmaC/1", { up: false, rxWords: 5000, txWords: 6000 }),
+      ],
+    });
+    const cur = reading(T0 + 4000, null, null, null, null, {
+      rdma: [
+        rdmaPort("rdmaA/1", { up: true, rxWords: 1100, txWords: 2100 }),
+        rdmaPort("rdmaB/1", { up: true, rxWords: 3300, txWords: 4300 }),
+        rdmaPort("rdmaC/1", { up: false, rxWords: 9000, txWords: 10_000 }),
+      ],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBe(400);
+    expect(f.linkTxBps).toBe(400);
+  });
+
+  it("a counter that went down makes that rate null, but not the other direction", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 }), rdmaPort("rdmaB/1", { up: true, rxWords: 3000, txWords: 4000 })],
+    });
+    const cur = reading(T0 + 2000, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1100, txWords: 2100 }), rdmaPort("rdmaB/1", { up: true, rxWords: 2900, txWords: 4500 })],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBeNull();
+    expect(f.linkTxBps).toBe(1200);
+  });
+
+  it("a port that was down in the earlier reading is not counted in rates", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 }), rdmaPort("rdmaB/1", { up: false, rxWords: 0, txWords: 0 })],
+    });
+    const cur = reading(T0 + 2000, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1100, txWords: 2100 }), rdmaPort("rdmaB/1", { up: true, rxWords: 5000, txWords: 6000 })],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBe(200);
+    expect(f.linkTxBps).toBe(200);
+  });
+
+  it("link rates are null when time did not advance", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 })],
+    });
+    const cur = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1100, txWords: 2100 })],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBeNull();
+    expect(f.linkTxBps).toBeNull();
+  });
+
+  it("a port up in cur but absent from prev is not counted in rates", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 })],
+    });
+    const cur = reading(T0 + 2000, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1100, txWords: 2100 }), rdmaPort("rdmaB/1", { up: true, rxWords: 5000, txWords: 6000 })],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBe(200);
+    expect(f.linkTxBps).toBe(200);
+  });
+
+  it("no up port with counters gives null rates", () => {
+    const prev = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: 1000, txWords: 2000 })],
+    });
+    const cur = reading(T0 + 2000, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, rxWords: null, txWords: null })],
+    });
+    const f = nodeFiguresFrom("node-a", "ok", prev, cur);
+    expect(f.linkRxBps).toBeNull();
+    expect(f.linkTxBps).toBeNull();
+  });
+
+  it("linkDropsRising is true on a rise, false when equal, null on a reset", () => {
+    const rise = nodeFiguresFrom("node-a", "ok",
+      reading(T0, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 3 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }),
+      reading(T0 + 1000, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 5 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }));
+    expect(rise.linkDropsRising).toBe(true);
+
+    const equal = nodeFiguresFrom("node-a", "ok",
+      reading(T0, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 3 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }),
+      reading(T0 + 1000, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 3 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }));
+    expect(equal.linkDropsRising).toBe(false);
+
+    const reset = nodeFiguresFrom("node-a", "ok",
+      reading(T0, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 5 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }),
+      reading(T0 + 1000, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 2 }), rdmaPort("rdmaB/1", { up: true, errors: 4 })] }));
+    expect(reset.linkDropsRising).toBeNull();
+  });
+
+  it("linkDropsRising is null when no port has errors in both readings", () => {
+    const f = nodeFiguresFrom("node-a", "ok",
+      reading(T0, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: null })] }),
+      reading(T0 + 1000, null, null, null, null, { rdma: [rdmaPort("rdmaA/1", { up: true, errors: 3 })] }));
+    expect(f.linkDropsRising).toBeNull();
+  });
+
+  it("status not ok gives all seven link figures null", () => {
+    const cur = reading(T0, null, null, null, null, {
+      rdma: [rdmaPort("rdmaA/1", { up: true, gbps: 200, rxWords: 1000, txWords: 2000, errors: 3 })],
+    });
+    for (const status of ["unreachable", "host key refused"] as const) {
+      const f = nodeFiguresFrom("node-a", status, null, cur);
+      expect(f.linkPortsUp).toBeNull();
+      expect(f.linkPortsSeenUp).toBeNull();
+      expect(f.linkDown).toBeNull();
+      expect(f.linkGbps).toBeNull();
+      expect(f.linkRxBps).toBeNull();
+      expect(f.linkTxBps).toBeNull();
+      expect(f.linkDropsRising).toBeNull();
+    }
+  });
 });
 
 describe("parseKnownHosts and hostKeyMatches", () => {
@@ -552,7 +868,7 @@ describe("NodesPoller", () => {
     const p = makePoller({ runner: null });
     await p.poller.poll();
     expect(p.poller.figures()).toEqual([
-      { name: "node-a", status: "unreachable", cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, readAt: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null },
+      { name: "node-a", status: "unreachable", cpuPercent: null, cpuWindowSeconds: null, cpuTempC: null, gpuPercent: null, gpuTempC: null, readAt: null, memUsedPercent: null, memAvailableBytes: null, gpuPowerW: null, diskUsedPercent: null, diskReadBps: null, diskWriteBps: null, netRxBps: null, netTxBps: null, linkPortsUp: null, linkPortsSeenUp: null, linkDown: null, linkGbps: null, linkRxBps: null, linkTxBps: null, linkDropsRising: null },
     ]);
   });
 
@@ -637,6 +953,22 @@ describe("NodesPoller", () => {
     p.body("==thermal\nacpitz 54500\n==gpu\n12, 61");
     await p.poller.poll();
     expect(fired).toBe(2);
+  });
+
+  it("a port up in the first poll and down in the second gives linkDown and a smaller up count", async () => {
+    const p = makePoller();
+    p.body(RDMA_POLL1);
+    await p.poller.poll();
+    expect(p.poller.figures()[0].status).toBe("ok");
+    expect(p.poller.figures()[0].linkPortsUp).toBe(2);
+    p.advance(5000);
+    p.body(RDMA_POLL2);
+    await p.poller.poll();
+    const f = p.poller.figures()[0];
+    expect(f.status).toBe("ok");
+    expect(f.linkPortsUp).toBe(1);
+    expect(f.linkPortsSeenUp).toBe(2);
+    expect(f.linkDown).toBe(true);
   });
 
   it("stop closes the runner", () => {
