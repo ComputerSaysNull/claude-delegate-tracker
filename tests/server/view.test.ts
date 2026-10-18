@@ -387,9 +387,9 @@ describe("a question to the caller and its answer", () => {
       { t: "turn", at: at(0), turn: 1, text: "" },
       { t: "priced", at: at(0), turn: 2 },
     ]);
-    expect(v.turns[0].question).toEqual({ questions: ["Which file should the summary quote?"] });
-    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
-    expect([v.turns[1].question, v.turns[1].answer]).toEqual([null, null]);
+    expect(v.turns[0].asks[0].question).toEqual({ questions: ["Which file should the summary quote?"] });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
+    expect(v.turns[1].asks).toEqual([]);
   });
 
   it("says when the caller left the choice to the delegation", () => {
@@ -399,7 +399,7 @@ describe("a question to the caller and its answer", () => {
       { t: "question", at: at(0), questions: ["A or B?"] },
       { t: "answer", at: at(0), text: "Proceed on your best reading.", waited_seconds: 61, best_reading: true },
     ]);
-    expect(v.turns[0].answer).toEqual({ text: "Proceed on your best reading.", waited: "1m01s", bestReading: true, by: null });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "Proceed on your best reading.", waited: "1m01s", bestReading: true, by: null });
   });
 
   it("says who answered when the answer event names a person", () => {
@@ -408,7 +408,7 @@ describe("a question to the caller and its answer", () => {
       { t: "priced", at: at(0), turn: 1 },
       { t: "answer", at: at(0), text: "quote CHANGELOG.md", waited_seconds: 5.4, by: "person" },
     ]);
-    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: "person" });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: "person" });
   });
 
   it("says who answered when the answer event names the caller", () => {
@@ -417,7 +417,7 @@ describe("a question to the caller and its answer", () => {
       { t: "priced", at: at(0), turn: 1 },
       { t: "answer", at: at(0), text: "quote CHANGELOG.md", waited_seconds: 5.4, by: "caller" },
     ]);
-    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: "caller" });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: "caller" });
   });
 
   it("leaves who answered null when the answer event has no by", () => {
@@ -426,7 +426,7 @@ describe("a question to the caller and its answer", () => {
       { t: "priced", at: at(0), turn: 1 },
       { t: "answer", at: at(0), text: "quote CHANGELOG.md", waited_seconds: 5.4 },
     ]);
-    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
   });
 
   it("leaves who answered null for an unknown by value", () => {
@@ -435,12 +435,81 @@ describe("a question to the caller and its answer", () => {
       { t: "priced", at: at(0), turn: 1 },
       { t: "answer", at: at(0), text: "quote CHANGELOG.md", waited_seconds: 5.4, by: "robot" },
     ]);
-    expect(v.turns[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
+    expect(v.turns[0].asks[0].answer).toEqual({ text: "quote CHANGELOG.md", waited: "5s", bestReading: false, by: null });
   });
 
   it("leaves out a question that lists no text", () => {
     const v = viewOf([start(), { t: "priced", at: at(0), turn: 1 }, { t: "question", at: at(0), questions: [42, "Which?"] }]);
-    expect(v.turns[0].question).toEqual({ questions: ["Which?"] });
+    expect(v.turns[0].asks[0].question).toEqual({ questions: ["Which?"] });
+  });
+});
+
+// Since format 1.11 (server v0.13.0) a run may ask more than once. These read the turn as
+// text, so they hold whatever shape a turn gives its questions: every text is there, in the
+// order of the conversation.
+describe("a delegation that asks more than once", () => {
+  const inOrder = (turn: unknown, texts: string[]) => {
+    const json = JSON.stringify(turn);
+    const places = texts.map((s) => json.indexOf(s));
+    expect(places.every((p) => p >= 0)).toBe(true);
+    expect(places).toEqual([...places].sort((a, b) => a - b));
+  };
+
+  it("keeps each question with its own answer when one turn asks twice", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: at(0), questions: ["first question?"] },
+      { t: "answer", at: at(0), text: "first answer", waited_seconds: 4, by: "caller" },
+      { t: "question", at: at(0), questions: ["second question?"] },
+      { t: "answer", at: at(0), text: "second answer", waited_seconds: 9, by: "caller" },
+    ]);
+    inOrder(v.turns[0], ["first question?", "first answer", "second question?", "second answer"]);
+  });
+
+  it("gives an answer to the oldest question still waiting", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: at(0), questions: ["first question?"] },
+      { t: "question", at: at(0), questions: ["second question?"] },
+      { t: "answer", at: at(0), text: "first answer", waited_seconds: 4, by: "caller" },
+      { t: "answer", at: at(0), text: "second answer", waited_seconds: 9, by: "caller" },
+    ]);
+    inOrder(v.turns[0], ["first question?", "first answer", "second question?", "second answer"]);
+  });
+
+  it("keeps a question and its answer in each turn that asked", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: at(0), questions: ["first question?"] },
+      { t: "answer", at: at(0), text: "first answer", waited_seconds: 4, by: "caller" },
+      { t: "turn", at: at(0), turn: 1, text: "" },
+      { t: "priced", at: at(0), turn: 2 },
+      { t: "question", at: at(0), questions: ["second question?"] },
+      { t: "answer", at: at(0), text: "second answer", waited_seconds: 9, by: "caller" },
+    ]);
+    inOrder(v.turns[0], ["first question?", "first answer"]);
+    inOrder(v.turns[1], ["second question?", "second answer"]);
+    expect(JSON.stringify(v.turns[0])).not.toContain("second");
+  });
+
+  it("leaves out a question with no text that never got an answer", () => {
+    const v = viewOf([start(), { t: "priced", at: at(0), turn: 1 }, { t: "question", at: at(0), questions: [42] }]);
+    expect(v.turns[0].asks).toEqual([]);
+  });
+
+  it("keeps each answer with its own question when one turn asks twice and both are answered", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1 },
+      { t: "question", at: at(0), questions: ["first question?"] },
+      { t: "answer", at: at(0), text: "first answer", waited_seconds: 4, by: "caller" },
+      { t: "question", at: at(0), questions: ["second question?"] },
+      { t: "answer", at: at(0), text: "second answer", waited_seconds: 9, by: "caller" },
+    ]);
+    expect(v.turns[0].asks.map((a) => a.answer?.by)).toEqual(["caller", "caller"]);
   });
 });
 

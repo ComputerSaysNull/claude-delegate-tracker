@@ -6,7 +6,7 @@
 // the hook.
 import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
-import type { StreamView, TurnView, CallView, SummaryView } from "../server/view.ts";
+import type { StreamView, TurnView, CallView, SummaryView, AnswerView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
 import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
@@ -192,9 +192,17 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                 turn={turn}
                 name={view.name}
                 model={row.model}
-                waitingFor={row.state === "asking" && turn.answer === null ? row.age : undefined}
+                waitingFor={row.state === "asking" && turn.asks[0]?.answer === null ? row.age : undefined}
               />
-              {turn.answer !== null && <CallerAnswer answer={turn.answer} workspace={row.workspace} />}
+              {turn.asks[0] !== undefined && turn.asks[0].answer !== null && (
+                <CallerAnswer answer={turn.asks[0].answer} workspace={row.workspace} />
+              )}
+              {turn.asks.slice(1).map((ask, i) => (
+                <Fragment key={i}>
+                  <QuestionMessage ask={ask} waitingFor={row.state === "asking" && ask.answer === null ? row.age : undefined} />
+                  {ask.answer !== null && <CallerAnswer answer={ask.answer} workspace={row.workspace} />}
+                </Fragment>
+              ))}
             </Fragment>
           ))}
           {view.summary !== null && view.summary.finished && (
@@ -229,7 +237,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
 }
 
 // The caller's reply to a question, on the caller's side like the task.
-function CallerAnswer({ answer, workspace }: { answer: NonNullable<TurnView["answer"]>; workspace: string | null }) {
+function CallerAnswer({ answer, workspace }: { answer: AnswerView; workspace: string | null }) {
   const from = workspace !== null ? ` from ${workspace}` : "";
   const header = answer.by === "person" ? "You answered, after "
     : answer.by === "caller" ? `Caller answered${from}, after ` : `Answer${from}, after `;
@@ -244,6 +252,57 @@ function CallerAnswer({ answer, workspace }: { answer: NonNullable<TurnView["ans
       </p>
       {answer.bestReading && <p className="text-sm text-muted">The caller left the choice to the delegation:</p>}
       <Markdown text={answer.text} />
+    </li>
+  );
+}
+
+// One question asked during a turn, with its answer once it came: the highlighted note the
+// delegation leaves for the caller. Renders nothing when only an answer arrived (no question).
+function QuestionBox({ ask, waitingFor }: { ask: TurnView["asks"][number]; waitingFor?: string | null }) {
+  if (ask.question === null) return null;
+  return (
+    <div
+      role="note"
+      aria-label="Question for the caller"
+      className="flex flex-col gap-2 rounded-xl border border-state-asking/50 bg-state-asking/10 px-3 py-2"
+    >
+      <p className="flex items-center gap-2 text-sm font-semibold text-state-asking">
+        <CircleHelp size={15} aria-hidden="true" />
+        Question for the caller
+      </p>
+      {ask.question.questions.map((q, i) => (
+        <Markdown key={i} text={q} />
+      ))}
+      {waitingFor !== undefined && (
+        <p className="flex items-center gap-2 text-[13px] text-muted">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-state-asking" aria-hidden="true" />
+          Waiting for an answer
+          {waitingFor !== null && <span className="font-mono tabular-nums text-text"> · {waitingFor}</span>}
+        </p>
+      )}
+      {ask.answer !== null && (
+        <p className="text-[13px] text-muted">
+          Answered after <span className="font-mono tabular-nums">{ask.answer.waited}</span>
+        </p>
+      )}
+    </div>
+  );
+}
+
+// A later question asked during the same turn, on the delegation's side of the chat: the same
+// outer layout as a delegation message, holding only its question.
+function QuestionMessage({ ask, waitingFor }: { ask: TurnView["asks"][number]; waitingFor?: string | null }) {
+  if (ask.question === null) return null;
+  return (
+    <li data-from="delegation" className="flex gap-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
+        <Asterisk size={15} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
+          <QuestionBox ask={ask} waitingFor={waitingFor} />
+        </div>
+      </div>
     </li>
   );
 }
@@ -287,7 +346,7 @@ function DelegationMessage({
     { part: "thinking", value: turn.thinkingRepeated },
   ].filter((m): m is { part: string; value: string } => m.value !== null);
   // A call to ask_caller is not drawn once its question is shown in this message.
-  const calls = turn.question !== null ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
+  const calls = turn.asks.some((a) => a.question !== null) ? turn.calls.filter((c) => c.name !== "ask_caller") : turn.calls;
   const thinkingChars = turn.thinking !== null
     ? turn.thinking.chars
     : turn.partial !== null && turn.partial.reasoning !== ""
@@ -372,32 +431,8 @@ function DelegationMessage({
           )}
         </div>
         )}
-        {turn.question !== null && (
-          <div
-            role="note"
-            aria-label="Question for the caller"
-            className="flex flex-col gap-2 rounded-xl border border-state-asking/50 bg-state-asking/10 px-3 py-2"
-          >
-            <p className="flex items-center gap-2 text-sm font-semibold text-state-asking">
-              <CircleHelp size={15} aria-hidden="true" />
-              Question for the caller
-            </p>
-            {turn.question.questions.map((q, i) => (
-              <Markdown key={i} text={q} />
-            ))}
-            {waitingFor !== undefined && (
-              <p className="flex items-center gap-2 text-[13px] text-muted">
-                <span className="h-2 w-2 animate-pulse rounded-full bg-state-asking" aria-hidden="true" />
-                Waiting for an answer
-                {waitingFor !== null && <span className="font-mono tabular-nums text-text"> · {waitingFor}</span>}
-              </p>
-            )}
-            {turn.answer !== null && (
-              <p className="text-[13px] text-muted">
-                Answered after <span className="font-mono tabular-nums">{turn.answer.waited}</span>
-              </p>
-            )}
-          </div>
+        {turn.asks[0] !== undefined && turn.asks[0].question !== null && (
+          <QuestionBox ask={turn.asks[0]} waitingFor={waitingFor} />
         )}
         {(figures.length > 0 || hasDetails) && (
           <div className="flex items-center gap-1">

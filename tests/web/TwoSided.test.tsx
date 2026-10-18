@@ -18,7 +18,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null, retries: [],
     toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
-    clock: null, at: null, question: null, answer: null, ...overrides,
+    clock: null, at: null, asks: [], ...overrides,
   };
 }
 
@@ -155,7 +155,7 @@ describe("the two sides", () => {
         view={view({
           turns: [
             turn(1, {
-              question: { questions: ["Which file?"] },
+              asks: [{ question: { questions: ["Which file?"] }, answer: null }],
               calls: [call({ name: "ask_caller" })],
             }),
           ],
@@ -172,7 +172,7 @@ describe("the two sides", () => {
         view={view({
           turns: [
             turn(1, {
-              question: { questions: ["Proceed on your best reading?"] },
+              asks: [{ question: { questions: ["Proceed on your best reading?"] }, answer: null }],
               calls: [call({ name: "ask_caller" }), call({ name: "read_file" })],
             }),
           ],

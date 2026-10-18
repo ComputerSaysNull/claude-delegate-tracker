@@ -11,6 +11,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 ## #73 — 2026-10-18 — feat: show every question a delegation asks, each beside its own answer
 
+### Added
+
+- **Every question a delegation asks shows with its own answer, in order.** Since server
+  v0.13.0 a run may ask its caller many times. A turn had room for one question and one
+  answer, so a second question in the same turn replaced the first one and its answer,
+  without an error. A turn now keeps a list: each answer goes to the oldest question still
+  waiting, and only a question still open says "Waiting for an answer".
+
 ### Changed
 
 - **The contract moves from v0.11.0 to v0.13.0; the transcript format stays 1.11.** A run

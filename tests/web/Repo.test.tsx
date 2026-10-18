@@ -53,7 +53,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null, retries: [],
     toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
-    clock: null, at: null, question: null, answer: null, ...overrides,
+    clock: null, at: null, asks: [], ...overrides,
   };
 }
 
@@ -172,7 +172,7 @@ describe("the repo on the stream page", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: null } })],
+          turns: [turn(1, { asks: [{ question: null, answer: { text: "yes", waited: "5s", bestReading: false, by: null } }] })],
         })}
       />,
     );
@@ -185,7 +185,7 @@ describe("the repo on the stream page", () => {
     render(
       <StreamViewBody
         view={view({
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: null } })],
+          turns: [turn(1, { asks: [{ question: null, answer: { text: "yes", waited: "5s", bestReading: false, by: null } }] })],
         })}
       />,
     );
@@ -198,7 +198,7 @@ describe("the repo on the stream page", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          turns: [turn(1, { answer: { text: "yes", waited: "48s", bestReading: false, by: "person" } })],
+          turns: [turn(1, { asks: [{ question: null, answer: { text: "yes", waited: "48s", bestReading: false, by: "person" } }] })],
         })}
       />,
     );
@@ -212,7 +212,7 @@ describe("the repo on the stream page", () => {
       <StreamViewBody
         view={view({
           row: row({ workspace: "web-shop" }),
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } })],
+          turns: [turn(1, { asks: [{ question: null, answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } }] })],
         })}
       />,
     );
@@ -225,7 +225,7 @@ describe("the repo on the stream page", () => {
     render(
       <StreamViewBody
         view={view({
-          turns: [turn(1, { answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } })],
+          turns: [turn(1, { asks: [{ question: null, answer: { text: "yes", waited: "5s", bestReading: false, by: "caller" } }] })],
         })}
       />,
     );

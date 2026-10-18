@@ -217,6 +217,14 @@ describe("asking the caller", () => {
     const r = rowOf([start(), { t: "question", at: at(3_000), questions: ["?"] }, { t: "end", at: at(1_000), ok: false, turns: 1, elapsed_seconds: 9 }]);
     expect(r.state).toBe("failed");
   });
+
+  it("asks again once a first answer arrived, and is live again after the second answer", () => {
+    const afterAnswer = [
+      { t: "question", at: at(5_000), questions: ["And which folder?"] },
+    ];
+    expect(rowOf([start(), { t: "question", at: at(10_000), questions: ["Which file?"] }, { t: "answer", at: at(8_000), text: "this one", waited_seconds: 2 }, ...afterAnswer]).state).toBe("asking");
+    expect(rowOf([start(), { t: "question", at: at(10_000), questions: ["Which file?"] }, { t: "answer", at: at(8_000), text: "this one", waited_seconds: 2 }, { t: "question", at: at(5_000), questions: ["And which folder?"] }, { t: "answer", at: at(2_000), text: "src", waited_seconds: 3 }]).state).toBe("live");
+  });
 });
 
 describe("progress on a card", () => {
