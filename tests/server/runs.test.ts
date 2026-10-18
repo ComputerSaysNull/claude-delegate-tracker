@@ -10,6 +10,7 @@ const NOW = new Date("2026-10-01T13:00:00.000Z");
 const GOOD = {
   name: "20261001T120000.000-a.jsonl", size: 100, startedAt: Date.parse("2026-10-01T12:00:00Z"), outcome: "ok", reason: null,
   repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
+  asks: null, questions: null,
 };
 const START_AT = "2026-10-01T12:00:00.000000+00:00";
 const END_AT = "2026-10-01T12:01:00.000000+00:00";
@@ -41,6 +42,11 @@ function toolEvent(t: "turn" | "tools", calls: Record<string, unknown>[]): Recor
   return { t, at: END_AT, turn: 1, tool_calls: calls };
 }
 
+// A question event as the contract writes it when a delegation calls ask_caller.
+function questionEvent(questions: string[]): Record<string, unknown> {
+  return { t: "question", at: END_AT, questions };
+}
+
 function writeStream(dir: string, name: string, events: unknown[]): string {
   const path = join(dir, name);
   writeFileSync(path, events.map(toLine).join("\n") + "\n");
@@ -55,6 +61,7 @@ function okRecord(name: string, size: number): RunRecord {
   return {
     name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
     model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
+    asks: 0, questions: 0,
   };
 }
 
@@ -69,6 +76,7 @@ describe("summariseRun", () => {
     expect(summariseRun("a.jsonl", 1200, lines([startEvent(), endEvent({ ended: "finished" })]), NOW)).toEqual({
       name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
+      asks: 0, questions: 0,
     });
   });
 
@@ -129,6 +137,21 @@ describe("summariseRun", () => {
     expect(r.inputTokens).toBeNull();
     expect(r.outputTokens).toBeNull();
     expect(r.cachedTokens).toBeNull();
+  });
+
+  it("counts the question events and the questions each held", () => {
+    const r = recordOf([startEvent(), questionEvent(["one", "two", "three"]), questionEvent(["four"]), endEvent()]);
+    expect([r.asks, r.questions]).toEqual([2, 4]);
+  });
+
+  it("counts only the text entries of a question event", () => {
+    const r = recordOf([startEvent(), questionEvent(["one", 42, null, "two"] as unknown as string[]), endEvent()]);
+    expect([r.asks, r.questions]).toEqual([1, 2]);
+  });
+
+  it("a finished stream that never asked gets zero asks and questions", () => {
+    const r = recordOf([startEvent(), endEvent()]);
+    expect([r.asks, r.questions]).toEqual([0, 0]);
   });
 });
 
@@ -326,6 +349,26 @@ describe("RunStore", () => {
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([GOOD]);
+  });
+
+  it("keeps a record saved before asks/questions existed, with both null", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20 };
+    writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
+    const store = new RunStore(file, null, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([{ ...old, asks: null, questions: null }]);
+  });
+
+  it("drops a saved record whose question counts are not numbers", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20 };
+    writeFileSync(file, JSON.stringify({ version: 1, runs: [{ ...base, asks: "2", questions: 4 }, { ...base, name: "b.jsonl", asks: 1, questions: [1] }] }));
+    const store = new RunStore(file, null, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([]);
   });
 
   it("an unwritable dataDir sets writeError and does not throw", () => {

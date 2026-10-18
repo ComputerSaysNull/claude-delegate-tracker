@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #75 — 2026-10-19 — feat: show in History how often delegations ask their caller
+
+### Added
+
+- **History shows how often delegations stop to ask their caller.** A card gives the
+  questions asked, the ask_caller calls that held them, how many delegations asked and how
+  many asked more than once. A chart shows questions per day, and each delegation that asked
+  more than once is a link that opens it. Asking more than once is possible since server
+  v0.13.0, and nothing showed how often runs wait on their caller. Each run record now keeps
+  both counts. A record saved before has none and shows `—`, not 0; at the next start each
+  one whose stream is still there is rebuilt once, so the status line shows them all as
+  disagreed that one time.
+
 ## #74 — 2026-10-19 — fix: open the History KV-cache chart's hover card with the mouse
 
 ### Fixed

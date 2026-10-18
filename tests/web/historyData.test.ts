@@ -1,7 +1,7 @@
 // The History tab's figures: the pure helpers the page turns the run records into. All the
 // dates are local, so a fixed `now` and local-time constructors keep these green in any zone.
 import { describe, expect, it } from "vitest";
-import { dayMonthYear, groupBy, inRange, perDay, reasons, totals } from "../../src/web/historyData.ts";
+import { askedMoreThanOnce, dayMonthYear, groupBy, inRange, perDay, reasons, totals } from "../../src/web/historyData.ts";
 import type { RunRecord } from "../../src/server/runs.ts";
 
 // A finished run with every field set; override the ones a test cares about.
@@ -19,6 +19,8 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     inputTokens: 1000,
     outputTokens: 200,
     cachedTokens: 600,
+    asks: 0,
+    questions: 0,
     ...overrides,
   };
 }
@@ -60,6 +62,10 @@ describe("totals", () => {
       failed: 0,
       tokens: null,
       cacheReusePercent: null,
+      questions: null,
+      asks: null,
+      asked: 0,
+      askedMoreThanOnce: 0,
     });
   });
 
@@ -118,10 +124,10 @@ describe("perDay", () => {
       now,
     );
     const byLabel = new Map(days.map((d) => [d.label, d]));
-    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300 });
-    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50 });
-    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0 });
-    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0 });
+    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0 });
+    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0 });
+    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0 });
+    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null });
   });
 
   it("never lets a day's fresh figure go below zero", () => {
@@ -188,5 +194,72 @@ describe("dayMonthYear", () => {
   it("formats a local day-month-year, zero-padded", () => {
     expect(dayMonthYear(new Date(2026, 9, 4, 12).getTime())).toBe("04-Oct-2026");
     expect(dayMonthYear(new Date(2026, 0, 5, 9).getTime())).toBe("05-Jan-2026");
+  });
+});
+
+describe("questions to the caller", () => {
+  const now = new Date(2026, 9, 4, 12);
+
+  it("totals questions and asks, and counts the runs that asked", () => {
+    const result = totals([
+      run({ name: "a", asks: 2, questions: 4 }),
+      run({ name: "b", asks: 1, questions: 1 }),
+      run({ name: "c", asks: 0, questions: 0 }),
+      run({ name: "d", asks: null, questions: null }),
+    ]);
+    expect(result.asks).toBe(3);
+    expect(result.questions).toBe(5);
+    expect(result.asked).toBe(2);
+    expect(result.askedMoreThanOnce).toBe(1);
+  });
+
+  it("leaves asks and questions null when no run reports them", () => {
+    const result = totals([
+      run({ name: "a", asks: null, questions: null }),
+      run({ name: "b", asks: null, questions: null }),
+    ]);
+    expect(result.asks).toBeNull();
+    expect(result.questions).toBeNull();
+    expect(result.asked).toBe(0);
+    expect(result.askedMoreThanOnce).toBe(0);
+  });
+
+  it("adds each run's asks and questions to its day, null when none", () => {
+    const days = perDay(
+      [
+        run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 2, questions: 4 }),
+        run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), asks: null, questions: null }),
+        run({ name: "c", startedAt: new Date(2026, 9, 3, 9).getTime(), asks: 1, questions: 2 }),
+      ],
+      7,
+      now,
+    );
+    const byLabel = new Map(days.map((d) => [d.label, d]));
+    expect(byLabel.get("4 Oct")!.asks).toBe(2);
+    expect(byLabel.get("4 Oct")!.questions).toBe(4);
+    expect(byLabel.get("3 Oct")!.asks).toBe(1);
+    expect(byLabel.get("3 Oct")!.questions).toBe(2);
+    expect(byLabel.get("2 Oct")!.asks).toBeNull();
+    expect(byLabel.get("2 Oct")!.questions).toBeNull();
+  });
+
+  it("leaves a day null when its only runs have no figure", () => {
+    const days = perDay([run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: null, questions: null })], 7, now);
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect([day.asks, day.questions]).toEqual([null, null]);
+  });
+
+  it("keeps a day's asks at a measured zero, not null", () => {
+    const days = perDay([run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 0, questions: 0 })], 7, now);
+    expect(days[6].asks).toBe(0);
+    expect(days[6].questions).toBe(0);
+  });
+
+  it("lists the runs that asked more than once, newest first", () => {
+    const a = run({ name: "a", asks: 3, startedAt: new Date(2026, 9, 1).getTime() });
+    const b = run({ name: "b", asks: 2, startedAt: new Date(2026, 9, 3).getTime() });
+    const c = run({ name: "c", asks: 1, startedAt: new Date(2026, 9, 2).getTime() });
+    const d = run({ name: "d", asks: 0, startedAt: new Date(2026, 9, 4).getTime() });
+    expect(askedMoreThanOnce([a, b, c, d]).map((r) => r.name)).toEqual(["b", "a"]);
   });
 });

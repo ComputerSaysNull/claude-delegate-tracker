@@ -5,11 +5,14 @@ import type { HourBucket } from "../server/busy.ts";
 import type { PowerBucket } from "../server/power.ts";
 import type { RunRecord, RunsStatus } from "../server/runs.ts";
 import { ChartTooltip } from "./ChartTooltip.tsx";
+import { addressFor } from "./address.ts";
 import { busiest, busyIn, kvPerDay, load, weekLoad } from "./busyData.ts";
+import { NO_FILTER } from "./filter.ts";
 import { compactCount } from "./format.ts";
 import { powerPerDay, type PowerDay } from "./powerData.ts";
 import { StateIcon } from "./states.tsx";
 import {
+  askedMoreThanOnce,
   dayMonthYear,
   groupBy,
   inRange,
@@ -20,7 +23,7 @@ import {
   type Group,
   type Range,
 } from "./historyData.ts";
-import { localTime } from "./time.ts";
+import { localDateTime, localTime } from "./time.ts";
 
 interface RunsResponse {
   status: RunsStatus;
@@ -451,6 +454,10 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
   const labels = chartLabels(days);
   const peak = days.length === 0 ? null : days.reduce((best, d) => (d.cached + d.fresh + d.output > best.cached + best.fresh + best.output ? d : best), days[0]);
   const peakText = peak === null ? "—" : `peak ${compactCount(peak.cached + peak.fresh + peak.output)} on ${peak.label}`;
+  const askRuns = askedMoreThanOnce(runs);
+  const askMax = days.reduce((m, d) => Math.max(m, d.questions ?? 0), 0);
+  const askPct = (v: number) => (askMax === 0 ? 0 : (v / askMax) * 100);
+  const fig = (v: number | null): string => (v === null ? "—" : String(v));
 
   return (
     <>
@@ -540,6 +547,51 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
               <span key={l}>{l}</span>
             ))}
           </div>
+        </div>
+
+        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+          <h3 className="text-sm font-semibold">Questions to the caller</h3>
+          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+            <span className="inline-flex items-baseline gap-1.5">questions<span className="font-mono tabular-nums text-text">{fig(t.questions)}</span></span>
+            <span className="inline-flex items-baseline gap-1.5">ask_caller calls<span className="font-mono tabular-nums text-text">{fig(t.asks)}</span></span>
+            <span className="inline-flex items-baseline gap-1.5">delegations asked<span className="font-mono tabular-nums text-text">{t.asked}</span></span>
+            <span className="inline-flex items-baseline gap-1.5">asked more than once<span className="font-mono tabular-nums text-text">{t.askedMoreThanOnce}</span></span>
+          </div>
+          <DayChart
+            days={days}
+            pct={askPct}
+            title={(d) => d.label}
+            ariaLabel={(d) => `${d.label}: ${d.questions ?? 0} questions`}
+            // One bar per day, in the colour a question has in the conversation; the calls that
+            // held them are the hover card's total row.
+            totalFor={(d) => ({ label: "ask_caller calls", value: fig(d.asks) })}
+            barsFor={(d) => [
+              { key: "questions", label: "questions", value: d.questions ?? 0, swatch: "bg-state-asking", text: fig(d.questions) },
+            ]}
+          />
+          <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+            {labels.map((l) => (
+              <span key={l}>{l}</span>
+            ))}
+          </div>
+          {askRuns.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <h4 className="text-[12.5px] font-semibold">Asked more than once</h4>
+              {askRuns.map((r) => (
+                <a
+                  key={r.name}
+                  href={addressFor({ selected: r.name, filter: NO_FILTER, section: "list" })}
+                  className="text-[12.5px] text-accent"
+                >
+                  {r.startedAt === null ? "—" : localDateTime(new Date(r.startedAt).toISOString())}
+                  {" · "}
+                  {r.repo ?? "—"}
+                  {" · "}
+                  {r.questions === null ? "—" : `${r.questions} questions`}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

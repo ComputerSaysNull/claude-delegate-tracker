@@ -19,6 +19,8 @@ export interface RunRecord {
   inputTokens: number | null;    // end.input_tokens
   outputTokens: number | null;   // end.output_tokens
   cachedTokens: number | null;   // end.cached_tokens
+  asks: number | null;      // question events: how many times it called ask_caller; null on a record saved before this field
+  questions: number | null; // the questions those events held (each one's questions array, string entries only)
 }
 
 export interface RunsStatus {
@@ -49,11 +51,38 @@ function reasonOf(outcome: Outcome, end: Record<string, unknown> | null): string
   return "failed";
 }
 
+// The question events a stream holds, as the counts summariseRun records: how many times it
+// called ask_caller, and how many questions those events held (their questions arrays' strings).
+function countQuestions(lines: string[]): { asks: number; questions: number } {
+  let asks = 0;
+  let questions = 0;
+  for (const line of lines) {
+    if (!line.includes("question")) continue;
+    let ev: unknown;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof ev !== "object" || ev === null || Array.isArray(ev)) continue;
+    const e = ev as Record<string, unknown>;
+    if (e.t !== "question") continue;
+    asks += 1;
+    if (Array.isArray(e.questions)) {
+      for (const q of e.questions) {
+        if (typeof q === "string") questions += 1;
+      }
+    }
+  }
+  return { asks, questions };
+}
+
 export function summariseRun(name: string, size: number, lines: string[], now: Date): RunRecord | null {
   const s = newStreamState();
   for (const line of lines) applyLine(s, line);
   if (s.end === null) return null;
   const outcome = stateOf(s, now.getTime(), 0) as Outcome;
+  const { asks, questions } = countQuestions(lines);
   return {
     name,
     size,
@@ -67,6 +96,8 @@ export function summariseRun(name: string, size: number, lines: string[], now: D
     inputTokens: typeof s.end.input_tokens === "number" ? s.end.input_tokens : null,
     outputTokens: typeof s.end.output_tokens === "number" ? s.end.output_tokens : null,
     cachedTokens: typeof s.end.cached_tokens === "number" ? s.end.cached_tokens : null,
+    asks,
+    questions,
   };
 }
 
@@ -83,7 +114,8 @@ function isRecord(v: unknown): v is RunRecord {
   const r = v as Record<string, unknown>;
   return typeof r.name === "string" && typeof r.size === "number" && typeof r.outcome === "string" && OUTCOMES.includes(r.outcome)
     && numberOrNull(r.startedAt) && stringOrNull(r.reason) && stringOrNull(r.repo) && typeof r.repoFromPaths === "boolean" && stringOrNull(r.model)
-    && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens);
+    && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens)
+    && numberOrNull(r.asks) && numberOrNull(r.questions);
 }
 
 function sameRecord(a: RunRecord, b: RunRecord): boolean {
@@ -205,7 +237,17 @@ export class RunStore {
     const obj = parsed as Record<string, unknown>;
     if (obj.version !== VERSION || !Array.isArray(obj.runs)) return;
     // A record of the wrong shape is dropped: the page reads these fields without checking.
-    this.kept = sortRecords((obj.runs as unknown[]).filter(isRecord));
+    // A record saved before asks/questions existed is kept, with those two read as null.
+    const runs = (obj.runs as unknown[]).map((r) => {
+      if (typeof r !== "object" || r === null) return r;
+      const rec = r as Record<string, unknown>;
+      return {
+        ...rec,
+        asks: rec.asks === undefined ? null : rec.asks,
+        questions: rec.questions === undefined ? null : rec.questions,
+      };
+    });
+    this.kept = sortRecords(runs.filter(isRecord));
     this.state.records = this.kept.length;
   }
 

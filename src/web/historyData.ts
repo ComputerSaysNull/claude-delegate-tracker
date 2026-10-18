@@ -28,6 +28,10 @@ export interface Totals {
   failed: number;
   tokens: number | null;
   cacheReusePercent: number | null;
+  questions: number | null;
+  asks: number | null;
+  asked: number;
+  askedMoreThanOnce: number;
 }
 
 export function totals(runs: RunRecord[]): Totals {
@@ -40,6 +44,12 @@ export function totals(runs: RunRecord[]): Totals {
   let cachedSum = 0;
   let inputSum = 0;
   let anyCache = false;
+  let questionSum = 0;
+  let anyQuestions = false;
+  let askSum = 0;
+  let anyAsks = false;
+  let asked = 0;
+  let askedMoreThanOnce = 0;
   for (const r of runs) {
     switch (r.outcome) {
       case "ok": ok++; break;
@@ -57,6 +67,16 @@ export function totals(runs: RunRecord[]): Totals {
       inputSum += r.inputTokens;
       cachedSum += r.cachedTokens;
     }
+    if (r.questions !== null) {
+      anyQuestions = true;
+      questionSum += r.questions;
+    }
+    if (r.asks !== null) {
+      anyAsks = true;
+      askSum += r.asks;
+      if (r.asks > 0) asked++;
+      if (r.asks > 1) askedMoreThanOnce++;
+    }
   }
   return {
     delegations: runs.length,
@@ -66,6 +86,10 @@ export function totals(runs: RunRecord[]): Totals {
     failed,
     tokens: anyTokens ? tokenSum : null,
     cacheReusePercent: anyCache && inputSum > 0 ? Math.round((cachedSum / inputSum) * 100) : null,
+    questions: anyQuestions ? questionSum : null,
+    asks: anyAsks ? askSum : null,
+    asked,
+    askedMoreThanOnce,
   };
 }
 
@@ -78,6 +102,8 @@ export interface Day {
   cached: number;
   fresh: number;
   output: number;
+  questions: number | null;
+  asks: number | null;
 }
 
 export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
@@ -87,7 +113,7 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
   for (let i = 0; i < days; i++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
     byDay.set(d.getTime(), i);
-    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0 });
+    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null });
   }
   for (const r of runs) {
     if (r.startedAt === null) continue;
@@ -104,6 +130,8 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
     day.cached += r.cachedTokens ?? 0;
     day.fresh += Math.max(0, (r.inputTokens ?? 0) - (r.cachedTokens ?? 0));
     day.output += r.outputTokens ?? 0;
+    if (r.questions !== null) day.questions = (day.questions ?? 0) + r.questions;
+    if (r.asks !== null) day.asks = (day.asks ?? 0) + r.asks;
   }
   return result;
 }
@@ -118,6 +146,13 @@ export function reasons(runs: RunRecord[]): { reason: string; outcome: Outcome; 
     else groups.set(reason, { reason, outcome: r.outcome, count: 1 });
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || (a.reason < b.reason ? -1 : a.reason > b.reason ? 1 : 0));
+}
+
+// The runs that asked the caller more than once, newest first by start time.
+export function askedMoreThanOnce(runs: RunRecord[]): RunRecord[] {
+  return runs
+    .filter((r) => r.asks !== null && r.asks > 1)
+    .sort((a, b) => (b.startedAt ?? -1) - (a.startedAt ?? -1));
 }
 
 export interface Group {
