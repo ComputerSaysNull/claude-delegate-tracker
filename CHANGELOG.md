@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #73 — 2026-10-18 — feat: show every question a delegation asks, each beside its own answer
+
+### Changed
+
+- **The contract moves from v0.11.0 to v0.13.0; the transcript format stays 1.11.** A run
+  may now ask its caller more than once, so a stream can hold several `question` events, each
+  followed by its `answer`, and every new answer comes from the caller. Only two
+  descriptions changed, not the shape.
+
 ## #72 — 2026-10-14 — fix: Model server charts span the chosen range and hold still, and its rows fill the card
 
 ### Fixed
