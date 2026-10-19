@@ -28,14 +28,16 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     inputTokens: 1000,
     outputTokens: 200,
     cachedTokens: 500,
+    asks: 0,
+    questions: 0,
     ...overrides,
   };
 }
 
 // Three runs: two in the last week, one 20 days ago (inside 30 days, outside 7).
 const RUNS = [
-  run({ name: "r1", startedAt: NOW - DAY }),
-  run({ name: "r2", startedAt: NOW - 3 * DAY, outcome: "failed", reason: "backend unreachable", elapsedSeconds: 60, inputTokens: 500, outputTokens: 100, cachedTokens: null }),
+  run({ name: "r1", startedAt: NOW - DAY, asks: 2, questions: 4 }),
+  run({ name: "r2", startedAt: NOW - 3 * DAY, outcome: "failed", reason: "backend unreachable", elapsedSeconds: 60, inputTokens: 500, outputTokens: 100, cachedTokens: null, asks: 1, questions: 2 }),
   run({ name: "r3", startedAt: NOW - 20 * DAY, outcome: "stopped", reason: "stopped by the caller", repo: "infra-scripts", model: "flash", elapsedSeconds: 30, inputTokens: 200, outputTokens: 50, cachedTokens: 100 }),
 ];
 
@@ -214,6 +216,49 @@ describe("HistoryPage", () => {
     expect(screen.getAllByText("input, from cache").length).toBeGreaterThan(0);
     expect(screen.getAllByText("input, new").length).toBeGreaterThan(0);
     expect(screen.getAllByText("output").length).toBeGreaterThan(0);
+  });
+
+  it("shows the questions card, its figures, and the asked-more-than-once list", async () => {
+    mockFetch(api(RUNS));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
+    expect(within(card).getByText("questions")).toBeTruthy();
+    expect(within(card).getByText("ask_caller calls")).toBeTruthy();
+    expect(within(card).getByText("delegations asked")).toBeTruthy();
+    expect(within(card).getByText("asked more than once")).toBeTruthy();
+    expect(within(card).getByText("6")).toBeTruthy(); // questions: 4 + 2 + 0
+    expect(within(card).getByText("3")).toBeTruthy(); // ask_caller calls: 2 + 1 + 0
+    expect(within(card).getByText("2")).toBeTruthy(); // delegations asked
+    expect(within(card).getByText("1")).toBeTruthy(); // asked more than once
+    const links = within(card).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute("href")).toBe("/s/r1");
+    expect(links[0].textContent).toContain("4 questions");
+  });
+
+  it("shows — on the questions card when no run in the range has the counts", async () => {
+    mockFetch(api([run({ name: "a", asks: null, questions: null }), run({ name: "b", asks: null, questions: null })]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
+    const figure = (label: string) => within(card).getByText(label).querySelector(".font-mono")!.textContent;
+    expect([figure("questions"), figure("ask_caller calls")]).toEqual(["—", "—"]);
+  });
+
+  it("shows a day's questions and its ask_caller calls on hover", async () => {
+    mockFetch(api(RUNS));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
+    const day = within(card).getAllByRole("button").find((b) => /: [1-9]\d* questions$/.test(b.getAttribute("aria-label") ?? ""))!;
+    fireEvent.mouseEnter(day);
+    const tooltip = within(card).getByRole("tooltip");
+    const rows = [...tooltip.querySelectorAll(".flex.items-center")].map((r) => r.textContent);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatch(/^questions\d+$/);
+    expect(rows[1]).toMatch(/^ask_caller calls\d+$/);
+    expect(tooltip.querySelector(".bg-state-asking")).not.toBeNull();
   });
 
   it("says every run finished when there is nothing to explain", async () => {

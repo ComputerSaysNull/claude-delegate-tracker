@@ -35,6 +35,8 @@ function rec(over: Partial<RunRecord> = {}): RunRecord {
     inputTokens: 1,
     outputTokens: 1,
     cachedTokens: 0,
+    asks: 0,
+    questions: 0,
     ...over,
   };
 }
