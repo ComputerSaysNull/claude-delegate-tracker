@@ -420,6 +420,19 @@ describe("HistoryPage", () => {
     expect(within(tooltip).getByText("85%")).toBeTruthy();
   });
 
+  // jsdom cannot tell which element is under the mouse, so this checks what decides it: the
+  // lines drawn after the day columns lie on top of them, and must let the mouse through.
+  it("lets the mouse through the KV-cache lines to the day columns", async () => {
+    mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByText("KV-cache use")).toBeTruthy());
+    const columns = within(kvCard()).getByRole("button", { name: /29 Sep/ }).parentElement!;
+    const plot = columns.parentElement!;
+    const above = [...plot.children].slice([...plot.children].indexOf(columns) + 1);
+    expect(above.length).toBeGreaterThan(0);
+    for (const el of above) expect(el.getAttribute("class") ?? "").toContain("pointer-events-none");
+  });
+
   it("centres the KV y-axis labels on their lines", async () => {
     mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
     render(<HistoryPage />);

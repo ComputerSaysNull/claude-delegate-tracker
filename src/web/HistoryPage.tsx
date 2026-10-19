@@ -256,8 +256,9 @@ function KvChart({ kv }: { kv: { label: string; peak: number | null; average: nu
               </div>
             ))}
           </div>
-          <div className="absolute left-0 right-0 top-[10%] border-t-2 border-dashed border-hot opacity-60" aria-hidden="true" />
-          <svg className="absolute inset-0 text-accent" width="100%" height="130" viewBox={`0 0 ${kv.length} 100`} preserveAspectRatio="none" aria-hidden="true">
+          {/* The lines lie over the day columns: they let the mouse through to them. */}
+          <div className="pointer-events-none absolute left-0 right-0 top-[10%] border-t-2 border-dashed border-hot opacity-60" aria-hidden="true" />
+          <svg className="pointer-events-none absolute inset-0 text-accent" width="100%" height="130" viewBox={`0 0 ${kv.length} 100`} preserveAspectRatio="none" aria-hidden="true">
             <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" vectorEffect="non-scaling-stroke" />
           </svg>
         </div>

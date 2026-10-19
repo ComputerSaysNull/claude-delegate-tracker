@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #74 — 2026-10-19 — fix: open the History KV-cache chart's hover card with the mouse
+
+### Fixed
+
+- **Hovering a day on the KV-cache chart in History opens its card again.** The card with
+  the day's peak and average opened on keyboard focus but never under the mouse. The
+  average line and the dashed 90% line are drawn on top of the day columns and caught the
+  mouse first. They now let it through. The test missed it because it sent the hover
+  straight to the column; a new test checks that everything over the columns lets the
+  mouse through.
+
 ## #73 — 2026-10-18 — feat: show every question a delegation asks, each beside its own answer
 
 ### Added
