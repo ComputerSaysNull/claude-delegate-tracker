@@ -45,7 +45,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
     n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null,
     toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, retries: [], tokensIn: null, tokensOut: null, tokS: null,
-    clock: null, at: null, question: null, answer: null, ...overrides,
+    clock: null, at: null, asks: [], ...overrides,
   };
 }
 

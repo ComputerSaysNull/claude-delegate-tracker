@@ -50,8 +50,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     tokS: null,
     clock: null,
     at: null,
-    question: null,
-    answer: null,
+    asks: [],
     ...overrides,
   };
 }

@@ -23,6 +23,8 @@ export interface CallView {
   time: string | null;          // from the call's `ms`: "<1s" under 1 s, else formatDuration
 }
 
+export type AnswerView = { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null };
+
 export interface TurnView {
   n: number;
   heading: string;              // "turn N of M" when of_turns is present, else "turn N"
@@ -40,8 +42,7 @@ export interface TurnView {
   repeated: string | null;      // turn.duplicate_line_share as a percent, only from 15%
   thinkingRepeated: string | null; // the thinking's repeat share as a percent, only from 30%: turn.reasoning_duplicate_line_share (format 1.9) when the turn has it, else counted here over lines of 20+ characters, from 5 such lines
   evicted: number | null;       // turn.tool_results_evicted, only when a number (a measured 0 too)
-  question: { questions: string[] } | null;  // the `question` asked during this turn
-  answer: { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null } | null; // the caller's reply to it; by: who answered, answer.by from format 1.10
+  asks: { question: { questions: string[] } | null; answer: AnswerView | null }[];  // each question asked during this turn, with its answer, in the order asked
   tokensIn: number | null;      // closed turn: input_tokens
   tokensOut: number | null;     // closed turn: output_tokens
   tokS: number | null;          // closed turn: out_tok_s, the decode speed
@@ -100,11 +101,11 @@ export interface TurnSlot {
   priced: Record<string, unknown> | null; tools: Record<string, unknown> | null;
   turn: Record<string, unknown> | null; alive: Record<string, unknown> | null;
   partialReasoning: string; partialAnswer: string; partialSeen: boolean; partialFinal: boolean;
-  question: Record<string, unknown> | null; answer: Record<string, unknown> | null;
+  asks: { question: Record<string, unknown> | null; answer: Record<string, unknown> | null }[];
 }
 
 function newSlot(): TurnSlot {
-  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false, partialFinal: false, question: null, answer: null };
+  return { priced: null, tools: null, turn: null, alive: null, partialReasoning: "", partialAnswer: "", partialSeen: false, partialFinal: false, asks: [] };
 }
 
 export function newViewState(): ViewState {
@@ -158,8 +159,13 @@ export function applyViewEvent(v: ViewState, evt: Record<string, unknown>): bool
     const slot = v.turns.get(highest);
     if (slot !== undefined) {
       if (t === "alive") slot.alive = evt;
-      else if (t === "question") slot.question = evt;
-      else slot.answer = evt;
+      else if (t === "question") slot.asks.push({ question: evt, answer: null });
+      else {
+        // An answer goes to the oldest question still waiting; a question we never saw is shown on its own.
+        const open = slot.asks.find((a) => a.question !== null && a.answer === null);
+        if (open !== undefined) open.answer = evt;
+        else slot.asks.push({ question: null, answer: evt });
+      }
     }
     v.seq += 1;
     return true;
@@ -378,8 +384,7 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     })(),
     // The schema also allows a boolean here, which says nothing countable.
     evicted: typeof evicted === "number" ? evicted : null,
-    question: questionOf(slot.question),
-    answer: answerOf(slot.answer),
+    asks: slot.asks.map((a) => ({ question: questionOf(a.question), answer: answerOf(a.answer) })).filter((a) => a.question !== null || a.answer !== null),
     tokensIn: num(slot.turn?.input_tokens),
     tokensOut: num(slot.turn?.output_tokens),
     tokS: num(slot.turn?.out_tok_s),
@@ -410,13 +415,13 @@ function retriesOf(turn: Record<string, unknown> | null): TurnView["retries"] {
   return out;
 }
 
-function questionOf(evt: Record<string, unknown> | null): TurnView["question"] {
+function questionOf(evt: Record<string, unknown> | null): { questions: string[] } | null {
   if (evt === null || !Array.isArray(evt.questions)) return null;
   const questions = evt.questions.filter((q): q is string => typeof q === "string" && q !== "");
   return questions.length === 0 ? null : { questions };
 }
 
-function answerOf(evt: Record<string, unknown> | null): TurnView["answer"] {
+function answerOf(evt: Record<string, unknown> | null): AnswerView | null {
   if (evt === null || typeof evt.text !== "string" || typeof evt.waited_seconds !== "number") return null;
   const by = evt.by === "caller" || evt.by === "person" ? evt.by : null;
   return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true, by };
