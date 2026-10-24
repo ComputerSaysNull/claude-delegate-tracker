@@ -12,16 +12,14 @@ It only reads. It never starts, stops or changes a delegation.
 
 ## Where it runs
 
-The tracker runs on the workstation, on the Windows side. It reads the transcript folder directly: the folder is on the Windows drive, and so is the tracker.
+The tracker runs on the always-on Linux machine where the MCP servers run, as a systemd user unit. It reads the transcript folder directly, because the folder is on that machine's own disk.
 
 ```
- workstation
+ always-on Linux machine
  ┌──────────────────────────────────────────────────────────────────────────┐
- │ WSL                                                                      │
- │   MCP server(s) ──writes──► transcript folder (.jsonl streams,           │
- │                             on the Windows drive)                        │
+ │   MCP server(s) ──writes──► transcript folder (.jsonl streams)           │
  │                                  ▲                                       │
- │ Windows                          │ read directly                         │
+ │                                  │ read directly                         │
  │   tracker backend (Node) ────────┘                                       │
  │          ├──► model server /metrics   (over the overlay VPN)             │
  │          └──► each cluster node, over SSH                                │
@@ -60,7 +58,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 - Intervals count from the previous pass, never from a fixed clock, so polls never overlap.
 - Reading the folder is fast; see JOURNAL.md.
 - Followed means at least one SSE connection subscribes to the stream (`/api/updates?stream=<name>`). Several pages may follow several streams.
-- Clock skew. Event times come from WSL's clock, "now" from Windows'. A line that appeared since the previous read was written at most one read interval ago, so `now − at` on it measures the skew to within that interval. Over 5 s either way: a banner, since every age is then wrong. With nothing running there is nothing fresh to measure, and the banner keeps its last reading.
+- Clock skew. Event times come from the clock of whatever writes the stream, "now" from the tracker's. A line that appeared since the previous read was written at most one read interval ago, so `now − at` on it measures the skew to within that interval. Over 5 s either way: a banner, since every age is then wrong. With nothing running there is nothing fresh to measure, and the banner keeps its last reading.
 
 ## Backend to page API
 
@@ -96,7 +94,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 
 ## Settings
 
-`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder, as a Windows path), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, `DATA_DIR` (where the run records are kept), `RUNS_SCAN_SECONDS`, the load and heat thresholds (`LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
+`TRACKER_PORT`, `TRANSCRIPT_DIR` (the transcript folder), `METRICS_URL`, `METRICS_TOKEN_ENV` (optional: the name of an env var holding a bearer token), `NODES` (each node's display name, SSH host and user), `NODE_KEY` (the path of the dedicated SSH key; the key itself never enters the repo), `NODE_KNOWN_HOSTS` (the path of the file pinning each node's host key), `QUIET_AFTER_SECONDS`, `HISTORY_WINDOW_SECONDS`, `DATA_DIR` (where the run records are kept), `RUNS_SCAN_SECONDS`, the load and heat thresholds (`LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C`), `ALLOWED_HOSTS` (extra Host names to accept, such as the overlay VPN's name for this machine), the poll intervals above, and the optional identity check.
 
 Defaults live only in the settings module, never in docs or tests.
 

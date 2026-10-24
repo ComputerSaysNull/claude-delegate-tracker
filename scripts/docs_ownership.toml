@@ -23,7 +23,7 @@ audience = ["user"]
 plane = "project"
 owns = [
   "src/server/settings.ts",
-  "scripts/autostart.ps1",
+  "scripts/autostart.sh",
   ".env.example",
 ]
 covers_not = """
