@@ -28,7 +28,7 @@ Local time everywhere, dark and light themes.
 
 ## Running it
 
-On Windows:
+On Linux:
 
 ```sh
 npm install
@@ -37,7 +37,7 @@ npm start
 
 `npm start` builds the page, then starts the server and prints the address to open. That is the whole setup: it reads the transcript folder itself, so there is nothing else to start. It listens on loopback only.
 
-To start it at every logon instead, with no window, run `powershell -File scripts/autostart.ps1` once. `-Stop` stops the tracker it started, and `-Remove` stops it and removes the entry. A tracker started by hand is left alone.
+To start it at boot instead, run `scripts/autostart.sh` once. It installs a systemd user unit that reads the same `.env`. `--stop` stops the tracker it started, and `--remove` stops it and removes the unit. A tracker started by hand is left alone. A user unit starts at boot only with linger on; the script says when to run `loginctl enable-linger "$USER"`.
 
 Settings are read from the environment, and from a `.env` file in the repo root if there is one; a value already in the environment wins. A setting it cannot use (such as a `TRACKER_PORT` that is not a port number) stops the start with a message naming it.
 
@@ -48,7 +48,7 @@ To reach it from a phone, share the tracker port through the overlay VPN's serve
 Settings come from the environment (see `.env.example` for the placeholders):
 
 - `TRACKER_PORT` — the port the tracker listens on.
-- `TRANSCRIPT_DIR` — the transcript folder, as a Windows path.
+- `TRANSCRIPT_DIR` — the transcript folder.
 - `METRICS_URL` — the model server's metrics base URL.
 - `METRICS_TOKEN_ENV` — optional: the name of an env var holding a bearer token.
 - `NODES` — each node's display name, SSH user and host, as comma-separated `name=user@host` entries (`:port` after the host when it is not 22).

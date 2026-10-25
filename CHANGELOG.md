@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #76 — 2026-10-24 — feat: start the tracker as a Linux service
+
+### Changed
+
+- **Autostart is a systemd user unit, and the Windows logon task is gone.** The tracker now
+  runs only on an always-on Linux machine, so `scripts/autostart.ps1` had no user left.
+  `scripts/autostart.sh` installs `claude-delegate-tracker.service`, which builds and starts
+  the server from the checkout, reads the same `.env` and restarts on failure, at most 3 times
+  in 5 minutes so a broken build does not rerun forever; `--stop` and `--remove` work as before.
+  A user unit starts at boot only with linger on, so the script prints the `loginctl
+  enable-linger` command when linger is off. `TRANSCRIPT_DIR` is no longer described as a
+  Windows path.
+
 ## #75 — 2026-10-19 — feat: show in History how often delegations ask their caller
 
 ### Added
