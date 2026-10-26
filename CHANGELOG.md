@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #77 — 2026-10-26 — fix: the docs gate reads only files it can read
+
+### Fixed
+
+- **The docs gate no longer crashes on a Markdown path it cannot read.** Every commit made
+  from a sandboxed session failed with a traceback that named no check. The sandbox lays a
+  device over a hidden path inside the repo, such as `.claude/loop.md`, and the body-history
+  and budget checks walk the tree for `*.md` and read whatever they find, so reading that
+  device raised. Both now go through one guard: anything that is not a regular file is
+  skipped, since it is no document, and a file that cannot be read is named in a warning,
+  because not read means not checked.
+
 ## #76 — 2026-10-24 — feat: start the tracker as a Linux service
 
 ### Changed

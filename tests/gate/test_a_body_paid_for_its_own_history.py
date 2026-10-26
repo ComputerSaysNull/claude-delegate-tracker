@@ -189,3 +189,41 @@ def test_a_tracked_document_is_not_checked(repo: Path):
         "# Changelog\n\n## #172 — 2026-09-12 — fix: a thing\n", encoding="utf-8")
 
     assert not fired(gate(repo))
+
+
+# --- a path it cannot read is never a crash ---------------------------------------------
+#
+# A sandbox can lay a placeholder over a hidden path inside the repo, such as a device named
+# `loop.md` under `.claude/`, and the gate's own tree walk then finds it. Reading it raised,
+# and the traceback failed every commit for a reason that named no check.
+
+def reached_verdict(lines: list[str]) -> bool:
+    """The gate ran to its end. This fixture fails other checks, which is not the question."""
+    return any(ln.startswith(("PASS", "FAIL:")) for ln in lines)
+
+
+def test_something_named_like_a_body_that_is_not_a_file_is_skipped(repo: Path):
+    """A directory stands in for the placeholder: neither is a file, and neither is a body."""
+    (repo / ".claude" / "notes.md").mkdir()
+
+    lines = gate(repo)
+
+    assert reached_verdict(lines), lines
+    assert not fired(lines)
+
+
+def test_a_body_it_cannot_read_is_reported_not_crashed_on(repo: Path):
+    """An unreadable body is named in a warning: not read means not checked, and it says so."""
+    locked = repo / ".claude" / "agents" / "locked.md"
+    locked.write_text(CLEAN_BODY + "\nMeasured 2026-09-12: hidden by the lock.\n", encoding="utf-8")
+    locked.chmod(0)
+    try:
+        lines = gate(repo)
+    finally:
+        locked.chmod(0o644)
+
+    assert reached_verdict(lines), lines
+    # The budget check walks every Markdown file too, and must say the same.
+    for check in ("[body-history]", "[budget]"):
+        assert any(check in ln and "WARN" in ln and "locked.md" in ln and "could not be read" in ln
+                   for ln in lines), (check, lines)
