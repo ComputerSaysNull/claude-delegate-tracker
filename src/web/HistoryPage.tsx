@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { HourBucket } from "../server/busy.ts";
 import type { PowerBucket } from "../server/power.ts";
 import type { RunRecord, RunsStatus } from "../server/runs.ts";
-import { ChartTooltip } from "./ChartTooltip.tsx";
+import { ChartTooltip, PlacedCard } from "./ChartTooltip.tsx";
 import { addressFor } from "./address.ts";
 import { busiest, busyIn, kvPerDay, load, weekLoad } from "./busyData.ts";
 import { NO_FILTER } from "./filter.ts";
@@ -178,9 +178,8 @@ function DayChart({
   const [active, setActive] = useState<number | null>(null);
   const n = days.length;
   const day = active === null ? null : days[active];
-  // The tooltip is centred over the active column, kept inside the card.
-  const centre = active === null ? 0 : ((active + 0.5) / n) * 100;
-  const left = Math.max(8, Math.min(92, centre));
+  // The card's anchor: the middle of the active column, as a share of the chart's width.
+  const at = active === null ? 0 : (active + 0.5) / n;
   return (
     <div className="relative">
       <div className="flex h-[130px] items-end gap-[3px] border-b border-line">
@@ -210,16 +209,13 @@ function DayChart({
         })}
       </div>
       {day !== null && (
-        <div
-          className="absolute bottom-full left-0 mb-2"
-          style={{ left: `${left}%`, transform: "translateX(-50%)" }}
-        >
+        <PlacedCard at={at}>
           <ChartTooltip
             title={title(day)}
             rows={barsFor(day).map((b) => ({ label: b.label, value: b.text, swatch: b.swatch }))}
             total={totalFor(day)}
           />
-        </div>
+        </PlacedCard>
       )}
     </div>
   );
@@ -230,8 +226,8 @@ function KvChart({ kv }: { kv: { label: string; peak: number | null; average: nu
   const [active, setActive] = useState<number | null>(null);
   const n = kv.length;
   const day = active === null ? null : kv[active];
-  const centre = active === null ? 0 : ((active + 0.5) / n) * 100;
-  const left = Math.max(8, Math.min(92, centre));
+  // The card's anchor: the middle of the active column, as a share of the chart's width.
+  const at = active === null ? 0 : (active + 0.5) / n;
   const points = kv.map((k, i) => (k.average === null ? null : `${i + 0.5},${100 - k.average}`)).filter((p): p is string => p !== null).join(" ");
   return (
     <div className="relative">
@@ -267,7 +263,7 @@ function KvChart({ kv }: { kv: { label: string; peak: number | null; average: nu
         </div>
       </div>
       {day !== null && (
-        <div className="absolute bottom-full left-0 mb-2" style={{ left: `${left}%`, transform: "translateX(-50%)" }}>
+        <PlacedCard at={at}>
           <ChartTooltip
             title={day.label}
             rows={[
@@ -275,7 +271,7 @@ function KvChart({ kv }: { kv: { label: string; peak: number | null; average: nu
               { label: "average", value: day.average === null ? "—" : `${day.average}%`, swatch: "bg-accent" },
             ]}
           />
-        </div>
+        </PlacedCard>
       )}
     </div>
   );
@@ -304,8 +300,8 @@ function PowerCard({ days }: { days: PowerDay[] }) {
   const pct = (v: number) => (dayMax === 0 ? 0 : (v / dayMax) * 100);
   const n = days.length;
   const day = active === null ? null : days[active];
-  const centre = active === null ? 0 : ((active + 0.5) / n) * 100;
-  const left = Math.max(8, Math.min(92, centre));
+  // The card's anchor: the middle of the active column, as a share of the chart's width.
+  const at = active === null ? 0 : (active + 0.5) / n;
   const labels = chartLabels(days);
   return (
     <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
@@ -353,7 +349,7 @@ function PowerCard({ days }: { days: PowerDay[] }) {
           })}
         </div>
         {day !== null && (
-          <div className="absolute bottom-full left-0 mb-2" style={{ left: `${left}%`, transform: "translateX(-50%)" }}>
+          <PlacedCard at={at}>
             <ChartTooltip
               title={day.label}
               rows={day.byNode.flatMap((x) => [
@@ -362,7 +358,7 @@ function PowerCard({ days }: { days: PowerDay[] }) {
                 { label: `${x.node} peak`, value: x.maxW === null ? "—" : `${x.maxW} W`, swatch: nodeSwatch(x.node, nodes) },
               ])}
             />
-          </div>
+          </PlacedCard>
         )}
       </div>
       <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
@@ -380,7 +376,7 @@ function BusyGrid({ grid }: { grid: (number | null)[][] }) {
   const [active, setActive] = useState<{ d: number; h: number } | null>(null);
   const max = Math.max(0, ...grid.flat().filter((v): v is number => v !== null));
   const activeCell = active === null ? null : grid[active.d][active.h];
-  const left = active === null ? 0 : ((active.h + 0.5) / 24) * 100;
+  const at = active === null ? 0 : (active.h + 0.5) / 24;
   return (
     <div className="relative">
       <div className="flex flex-col gap-[3px]">
@@ -411,12 +407,12 @@ function BusyGrid({ grid }: { grid: (number | null)[][] }) {
         </div>
       </div>
       {active !== null && (
-        <div className="absolute bottom-full left-0 mb-2" style={{ left: `${left}%`, transform: "translateX(-50%)" }}>
+        <PlacedCard at={at}>
           <ChartTooltip
             title={`${WEEKDAYS_FULL[active.d]} ${two(active.h)}:00–${two(active.h + 1)}:00`}
             rows={[{ label: "on average", value: activeCell === null ? "—" : `${activeCell.toFixed(1)} running at once`, swatch: "bg-accent" }]}
           />
-        </div>
+        </PlacedCard>
       )}
     </div>
   );

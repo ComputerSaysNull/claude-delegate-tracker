@@ -9,6 +9,21 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #79 — 2026-10-26 — fix: History hover cards stay on screen
+
+### Fixed
+
+- **A History hover card no longer sticks out past the screen edge on a phone.** Hovering
+  a day near either end of a chart, or an early or late hour in the weekday grid, pushed
+  the card off screen: part of it could not be read, and the page gained a sideways scroll.
+  Each of the four charts placed its card itself, from a percentage of the chart's width.
+  Three kept the card's centre between 8% and 92%, which on a narrow screen is far less
+  than half the card's 11rem width, and the weekday grid kept nothing. One `PlacedCard` now
+  places every card: it measures the card before the browser paints, centres it over its
+  column, and moves it in to 8px from any edge it would cross. On a wide screen that edge is
+  the History column's, inside its scrollbar, because a column that scrolls clips what it
+  holds there and not at the window's edge.
+
 ## #78 — 2026-10-26 — feat: vendor server v0.14.0 and show how a delegation was called
 
 ### Added
