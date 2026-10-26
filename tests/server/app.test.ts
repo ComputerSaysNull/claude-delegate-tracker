@@ -218,7 +218,7 @@ function makeRow(name: string): ListRow {
   return {
     name, state: "ok", why: null, age: null, kind: "delegate",
     model: null, effort: null, title: "", startedAt: null,
-    elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null,
+    elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null, mcpTask: null,
   };
 }
 

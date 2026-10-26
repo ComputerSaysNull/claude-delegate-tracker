@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #78 — 2026-10-26 — feat: vendor server v0.14.0 and show how a delegation was called
+
+### Added
+
+- **The details bar says how a delegation was called: "MCP task" or "Inline".** Server
+  v0.14.0 brings transcript format 1.12, whose start event says in `mcp_task` whether the
+  delegating call ran as an MCP task (the client polled it and was woken when it ended) or
+  inline (a client without task support waited on the call). Nothing showed which, so an
+  inline run looked the same as any other. The contract is vendored at v0.14.0, the row
+  carries the value, and the bar shows it after the kind. A stream that does not say (the
+  `run` CLI, or one from before format 1.12) gets no row, because absent is not false.
+
 ## #77 — 2026-10-26 — fix: the docs gate reads only files it can read
 
 ### Fixed

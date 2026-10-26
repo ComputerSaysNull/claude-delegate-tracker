@@ -26,7 +26,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
-    workspace: null,
+    workspace: null, mcpTask: null,
     ...overrides,
   };
 }

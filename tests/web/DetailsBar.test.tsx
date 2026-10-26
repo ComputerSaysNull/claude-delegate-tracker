@@ -48,7 +48,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
-    workspace: null,
+    workspace: null, mcpTask: null,
     ...overrides,
   };
 }
@@ -394,5 +394,29 @@ describe("the bar, after review", () => {
     expect(classes).toContain("bg-card");
     expect(classes).toContain("rounded-xl");
     expect(classes).toContain("border");
+  });
+});
+
+// start.mcp_task (format 1.12): whether the call ran as an MCP task or inline. Absent is not
+// false: like Repo, the row is left out when the stream does not say.
+describe("how the delegation was called, in the details bar", () => {
+  const calledAs = () => {
+    const aside = screen.getByRole("complementary", { name: "Details" });
+    return within(aside).queryByText("Called as");
+  };
+
+  it("says MCP task when it ran as one", () => {
+    render(<StreamViewBody view={view({ row: row({ mcpTask: true }) })} />);
+    expect(calledAs()?.nextElementSibling?.textContent).toBe("MCP task");
+  });
+
+  it("says Inline when it did not", () => {
+    render(<StreamViewBody view={view({ row: row({ mcpTask: false }) })} />);
+    expect(calledAs()?.nextElementSibling?.textContent).toBe("Inline");
+  });
+
+  it("shows no row when the stream does not say", () => {
+    render(<StreamViewBody view={view({ row: row({ mcpTask: null }) })} />);
+    expect(calledAs()).toBeNull();
   });
 });

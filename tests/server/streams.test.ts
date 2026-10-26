@@ -136,6 +136,28 @@ describe("the workspace", () => {
   });
 });
 
+describe("how the delegation was called (start.mcp_task, format 1.12)", () => {
+  const mcpTaskOf = (over: Record<string, unknown>) => listRow("x", build([start(over)]), NOW, QUIET).mcpTask;
+
+  it("is true when it ran as an MCP task", () => {
+    expect(mcpTaskOf({ mcp_task: true })).toBe(true);
+  });
+
+  it("is false when it ran inline", () => {
+    expect(mcpTaskOf({ mcp_task: false })).toBe(false);
+  });
+
+  // Absent is not false: a run the `run` CLI started, or one from before format 1.12.
+  it("is null when start.mcp_task is absent", () => {
+    expect(mcpTaskOf({})).toBeNull();
+  });
+
+  it("is null when start.mcp_task is not a boolean", () => {
+    expect(mcpTaskOf({ mcp_task: "yes" })).toBeNull();
+    expect(mcpTaskOf({ mcp_task: 0 })).toBeNull();
+  });
+});
+
 describe("the title", () => {
   const titleOf = (over: Record<string, unknown>) => listRow("x.jsonl", build([start(over)]), NOW, QUIET).title;
 

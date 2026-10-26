@@ -41,7 +41,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
   return {
     name: "stream-1", state: "live", why: null, age: null, kind: "delegate", model: null, effort: null,
     title: "Refactor the auth module", startedAt: null, elapsed: null, turns: null, unknownFormat: null,
-    left: null, queueOf: null, workspace: null, ...overrides,
+    left: null, queueOf: null, workspace: null, mcpTask: null, ...overrides,
   };
 }
 
