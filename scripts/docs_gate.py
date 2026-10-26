@@ -445,6 +445,23 @@ def _body_prose_lines(text: str):
         i += 1
 
 
+def _read_walked(p: Path, check: str, out: list[Finding]) -> str | None:
+    """The text of a file a tree walk found, or None when there is nothing to check.
+
+    Only a regular file is a document: a sandbox lays a device over a hidden path inside the
+    repo, and reading it raised, failing the whole run for a reason that named no check. A
+    file that cannot be read is named in a warning, because not read means not checked.
+    """
+    if not p.is_file():
+        return None
+    try:
+        return p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        out.append(Finding(WARN, check, f"{rel(p)} could not be read ({exc.strerror or exc}), "
+                                        f"so it was not checked."))
+        return None
+
+
 def check_body_history() -> list[Finding]:
     """History in a file that is re-read on every invocation.
 
@@ -463,7 +480,9 @@ def check_body_history() -> list[Finding]:
             continue
         for p in sorted(base.rglob("*.md")):
             r = rel(p)
-            text = p.read_text(encoding="utf-8", errors="replace")
+            text = _read_walked(p, "body-history", out)
+            if text is None:
+                continue
             for i, line in _body_prose_lines(text):
                 for pattern, what in BODY_HISTORY:
                     m = pattern.search(line)
@@ -873,7 +892,9 @@ def check_budgets() -> list[Finding]:
         if (".git" in p.parts or "docs/audits" in r or "docs/reviews" in r
                 or "archive" in p.parts):
             continue
-        text = p.read_text(encoding="utf-8", errors="replace")
+        text = _read_walked(p, "budget", out)
+        if text is None:
+            continue
         total = len(text.splitlines())
 
         per_entry = re.search(r"<!--\s*BUDGET-PER-ENTRY:\s*(\d+)", text)
