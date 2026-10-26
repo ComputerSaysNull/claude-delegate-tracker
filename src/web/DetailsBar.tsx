@@ -75,6 +75,7 @@ export function DetailsFigures({ view }: { view: StreamView }) {
       <dl className={`${LABEL_COLUMN} gap-y-1.5 text-sm`}>
         <Row label="Repo" value={row.workspace} />
         <Row label="Kind" value={row.kind} />
+        <Row label="Called as" value={row.mcpTask === null ? null : row.mcpTask ? "MCP task" : "Inline"} />
         <Row label="Model" value={row.model} />
         <Row label="Effort" value={row.effort} />
         <Row label="Started" value={row.startedAt !== null ? localTime(row.startedAt) : null} />

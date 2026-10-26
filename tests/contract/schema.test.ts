@@ -61,6 +61,15 @@ describe("transcript schema", () => {
     expect(validate({ ...start!.event, t: 42 })).toBe(false);
   });
 
+  // The tracker reads start.mcp_task (format 1.12), so the vendored schema must define it as a boolean.
+  it("defines start.mcp_task as a boolean", () => {
+    const start = allEvents().find((x) => x.event.t === "start");
+    expect(start).toBeDefined();
+    expect(validate({ ...start!.event, mcp_task: true })).toBe(true);
+    expect(validate({ ...start!.event, mcp_task: false })).toBe(true);
+    expect(validate({ ...start!.event, mcp_task: "yes" })).toBe(false);
+  });
+
   it.each(["t", "at"])("rejects an event without its required %s", (field) => {
     const event: Record<string, unknown> = { ...allEvents()[0].event };
     expect(validate(event)).toBe(true);
