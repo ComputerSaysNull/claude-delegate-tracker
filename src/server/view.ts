@@ -9,6 +9,7 @@ export interface FileView {
   size: string | null;          // from `bytes`, e.g. "1.2 KB"; null when absent
   skipped: string | null;       // a skipped file's `reason`; null for a file that was read
   lines: { start: number; end: number } | null; // a file read as a line range; null otherwise
+  images: number | null;        // files_read[].images (format 1.13): how many images the file was sent as; null for a text file
 }
 
 export interface CallView {
@@ -18,7 +19,7 @@ export interface CallView {
   status: string | null;        // while the turn is open: the `running` status from the newest `alive`
   args: [string, string][];     // every argument, in order; a non-string value as JSON
   message: string | null;       // a refusal's `message`, in full
-  result: string | null;        // "40 lines, 1.2 KB" from result_lines/result_bytes; whichever exist; null when neither
+  result: string | null;        // "40 lines, 1.2 KB" from result_lines/result_bytes, or "8 images" from result_images; null when neither
   exitCode: number | null;
   time: string | null;          // from the call's `ms`: "<1s" under 1 s, else formatDuration
 }
@@ -200,6 +201,10 @@ function sizeOf(bytes: number): string {
 }
 
 function resultOf(call: Record<string, unknown>): string | null {
+  const images = call.result_images;
+  if (typeof images === "number" && Number.isInteger(images) && images >= 1) {
+    return images === 1 ? "1 image" : `${images} images`;
+  }
   const lines = typeof call.result_lines === "number" ? call.result_lines : null;
   const bytes = typeof call.result_bytes === "number" ? call.result_bytes : null;
   if (lines === null && bytes === null) return null;
@@ -440,11 +445,13 @@ function fileView(e: unknown, skipped = false): FileView | null {
         Number.isInteger(start) && Number.isInteger(end) &&
         start >= 1 && end >= 1 && end >= start) lines = { start, end };
   }
+  const images = rec.images;
   return {
     path,
     size: typeof rec.bytes === "number" ? sizeOf(rec.bytes) : null,
     skipped: typeof rec.reason === "string" ? rec.reason : null,
     lines,
+    images: typeof images === "number" && Number.isInteger(images) && images >= 1 ? images : null,
   };
 }
 
