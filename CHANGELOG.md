@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #80 — 2026-10-30 — fix: a missing node key no longer stops the tracker
+
+### Fixed
+
+- **A node key or known_hosts file that cannot be read no longer stops the tracker from
+  starting.** With `NODE_KEY` pointing at a missing file, the process exited at start-up
+  with `ENOENT`, so the delegation list, History and the model server figures were gone
+  along with the nodes. The SSH runner read both files once, when it was made. It now reads
+  them each time it opens a connection. A file it cannot read fails that poll, the node shows
+  as unreachable with its banner, everything else keeps working, and a file put back is used
+  on the next poll without a restart.
+
 ## #79 — 2026-10-26 — fix: History hover cards stay on screen
 
 ### Fixed
