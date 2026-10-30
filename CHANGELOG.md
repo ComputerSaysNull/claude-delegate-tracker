@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #82 — 2026-10-30 — feat: show in History how many delegations ran inline
+
+### Added
+
+- **History says how many delegations ran inline instead of as an MCP task.** Since format
+  1.12 a start event says in `mcp_task` whether the delegating call ran as an MCP task or
+  inline, where a client without task support waits on the call. Only the details bar showed
+  it, one run at a time, so whether such clients were in use could not be seen over days.
+  The run records now keep it, the Delegations total says how many ran inline, and a day's
+  hover card says "Ran inline: n of m", counting only runs whose stream says how they were
+  called; a run that does not say counts as neither. Records saved before this are rebuilt
+  from their streams at the next start, so that start counts every record as disagreeing once.
+
 ## #81 — 2026-10-30 — feat: vendor server v0.15.0 and show how many images a call sent
 
 ### Added

@@ -36,6 +36,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     cachedTokens: 500,
     asks: 0,
     questions: 0,
+    mcpTask: null,
     ...overrides,
   };
 }

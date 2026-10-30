@@ -10,7 +10,7 @@ const NOW = new Date("2026-10-01T13:00:00.000Z");
 const GOOD = {
   name: "20261001T120000.000-a.jsonl", size: 100, startedAt: Date.parse("2026-10-01T12:00:00Z"), outcome: "ok", reason: null,
   repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
-  asks: null, questions: null,
+  asks: null, questions: null, mcpTask: null,
 };
 const START_AT = "2026-10-01T12:00:00.000000+00:00";
 const END_AT = "2026-10-01T12:01:00.000000+00:00";
@@ -61,7 +61,7 @@ function okRecord(name: string, size: number): RunRecord {
   return {
     name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
     model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-    asks: 0, questions: 0,
+    asks: 0, questions: 0, mcpTask: null,
   };
 }
 
@@ -76,7 +76,7 @@ describe("summariseRun", () => {
     expect(summariseRun("a.jsonl", 1200, lines([startEvent(), endEvent({ ended: "finished" })]), NOW)).toEqual({
       name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-      asks: 0, questions: 0,
+      asks: 0, questions: 0, mcpTask: null,
     });
   });
 
@@ -152,6 +152,13 @@ describe("summariseRun", () => {
   it("a finished stream that never asked gets zero asks and questions", () => {
     const r = recordOf([startEvent(), endEvent()]);
     expect([r.asks, r.questions]).toEqual([0, 0]);
+  });
+
+  it("records how the run was called: as an MCP task, inline, or not said", () => {
+    expect(recordOf([startEvent({ mcp_task: true }), endEvent()]).mcpTask).toBe(true);
+    expect(recordOf([startEvent({ mcp_task: false }), endEvent()]).mcpTask).toBe(false);
+    expect(recordOf([startEvent(), endEvent()]).mcpTask).toBeNull();
+    expect(recordOf([startEvent({ mcp_task: "yes" }), endEvent()]).mcpTask).toBeNull();
   });
 });
 
@@ -358,7 +365,27 @@ describe("RunStore", () => {
     writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
-    expect(store.records()).toEqual([{ ...old, asks: null, questions: null }]);
+    expect(store.records()).toEqual([{ ...old, asks: null, questions: null, mcpTask: null }]);
+  });
+
+  it("keeps a record saved before mcpTask existed, with it null", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0 };
+    writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
+    const store = new RunStore(file, null, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([{ ...old, mcpTask: null }]);
+  });
+
+  it("drops a saved record whose mcpTask is not a boolean or null", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0 };
+    writeFileSync(file, JSON.stringify({ version: 1, runs: [{ ...base, mcpTask: "yes" }] }));
+    const store = new RunStore(file, null, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([]);
   });
 
   it("drops a saved record whose question counts are not numbers", () => {

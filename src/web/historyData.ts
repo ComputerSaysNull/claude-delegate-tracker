@@ -32,6 +32,8 @@ export interface Totals {
   asks: number | null;
   asked: number;
   askedMoreThanOnce: number;
+  inline: number;
+  said: number;
 }
 
 export function totals(runs: RunRecord[]): Totals {
@@ -50,6 +52,8 @@ export function totals(runs: RunRecord[]): Totals {
   let anyAsks = false;
   let asked = 0;
   let askedMoreThanOnce = 0;
+  let inline = 0;
+  let said = 0;
   for (const r of runs) {
     switch (r.outcome) {
       case "ok": ok++; break;
@@ -77,6 +81,10 @@ export function totals(runs: RunRecord[]): Totals {
       if (r.asks > 0) asked++;
       if (r.asks > 1) askedMoreThanOnce++;
     }
+    if (r.mcpTask !== null) {
+      said++;
+      if (r.mcpTask === false) inline++;
+    }
   }
   return {
     delegations: runs.length,
@@ -90,6 +98,8 @@ export function totals(runs: RunRecord[]): Totals {
     asks: anyAsks ? askSum : null,
     asked,
     askedMoreThanOnce,
+    inline,
+    said,
   };
 }
 
@@ -104,6 +114,8 @@ export interface Day {
   output: number;
   questions: number | null;
   asks: number | null;
+  inline: number;
+  said: number;
 }
 
 export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
@@ -113,7 +125,7 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
   for (let i = 0; i < days; i++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
     byDay.set(d.getTime(), i);
-    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null });
+    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, inline: 0, said: 0 });
   }
   for (const r of runs) {
     if (r.startedAt === null) continue;
@@ -132,6 +144,10 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
     day.output += r.outputTokens ?? 0;
     if (r.questions !== null) day.questions = (day.questions ?? 0) + r.questions;
     if (r.asks !== null) day.asks = (day.asks ?? 0) + r.asks;
+    if (r.mcpTask !== null) {
+      day.said++;
+      if (r.mcpTask === false) day.inline++;
+    }
   }
   return result;
 }
