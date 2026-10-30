@@ -47,7 +47,7 @@ const RUNS: RunRecord[] = [
     name: "20261001T120000.000-a.jsonl", size: 1200, startedAt: 1_700_000_000_000,
     outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false, model: "flash",
     elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-    asks: 0, questions: 0,
+    asks: 0, questions: 0, mcpTask: null,
   },
 ];
 const RUNS_STATUS: RunsStatus = {

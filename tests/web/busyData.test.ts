@@ -37,6 +37,7 @@ function rec(over: Partial<RunRecord> = {}): RunRecord {
     cachedTokens: 0,
     asks: 0,
     questions: 0,
+    mcpTask: null,
     ...over,
   };
 }

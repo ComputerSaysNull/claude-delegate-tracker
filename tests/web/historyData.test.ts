@@ -21,6 +21,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     cachedTokens: 600,
     asks: 0,
     questions: 0,
+    mcpTask: null,
     ...overrides,
   };
 }
@@ -66,6 +67,8 @@ describe("totals", () => {
       asks: null,
       asked: 0,
       askedMoreThanOnce: 0,
+      inline: 0,
+      said: 0,
     });
   });
 
@@ -99,6 +102,15 @@ describe("totals", () => {
   it("counts a run that reports only input in the token total", () => {
     expect(totals([run({ name: "a", inputTokens: 1000, outputTokens: null, cachedTokens: null })]).tokens).toBe(1000);
   });
+
+  it("counts how many ran inline and how many said how they were called", () => {
+    const result = totals([
+      run({ name: "a", mcpTask: false }),
+      run({ name: "b", mcpTask: true }),
+      run({ name: "c", mcpTask: null }),
+    ]);
+    expect([result.inline, result.said]).toEqual([1, 2]);
+  });
 });
 
 describe("perDay", () => {
@@ -124,15 +136,29 @@ describe("perDay", () => {
       now,
     );
     const byLabel = new Map(days.map((d) => [d.label, d]));
-    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0 });
-    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0 });
-    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0 });
-    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null });
+    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0, inline: 0, said: 0 });
+    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0, inline: 0, said: 0 });
+    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0, inline: 0, said: 0 });
+    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, inline: 0, said: 0 });
   });
 
   it("never lets a day's fresh figure go below zero", () => {
     const days = perDay([run({ name: "x", startedAt: new Date(2026, 9, 4, 9).getTime(), inputTokens: 100, outputTokens: 0, cachedTokens: 200 })], 7, now);
     expect(days[6].fresh).toBe(0);
+  });
+
+  it("counts how many ran inline and how many said how they were called", () => {
+    const days = perDay(
+      [
+        run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), mcpTask: false }),
+        run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), mcpTask: true }),
+        run({ name: "c", startedAt: new Date(2026, 9, 4, 11).getTime(), mcpTask: null }),
+      ],
+      7,
+      now,
+    );
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect([day.inline, day.said]).toEqual([1, 2]);
   });
 });
 

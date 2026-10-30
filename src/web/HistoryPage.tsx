@@ -167,6 +167,7 @@ function DayChart({
   ariaLabel,
   totalFor,
   barsFor,
+  extraRows,
 }: {
   days: Day[];
   pct: (v: number) => number;
@@ -174,6 +175,7 @@ function DayChart({
   ariaLabel: (d: Day) => string;
   totalFor: (d: Day) => { label: string; value: string };
   barsFor: (d: Day) => Bar[];
+  extraRows?: (d: Day) => { label: string; value: string; swatch: string }[];
 }) {
   const [active, setActive] = useState<number | null>(null);
   const n = days.length;
@@ -212,7 +214,10 @@ function DayChart({
         <PlacedCard at={at}>
           <ChartTooltip
             title={title(day)}
-            rows={barsFor(day).map((b) => ({ label: b.label, value: b.text, swatch: b.swatch }))}
+            rows={[
+              ...barsFor(day).map((b) => ({ label: b.label, value: b.text, swatch: b.swatch })),
+              ...(extraRows?.(day) ?? []),
+            ]}
             total={totalFor(day)}
           />
         </PlacedCard>
@@ -461,6 +466,7 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
         <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-card p-3.5">
           <span className="text-[12.5px] text-muted">Delegations</span>
           <span className="font-mono tabular-nums text-2xl font-medium">{t.delegations.toLocaleString()}</span>
+          {t.said > 0 && <span className="text-xs text-muted">{`${t.inline} ran inline`}</span>}
         </div>
         <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-card p-3.5">
           <span className="text-[12.5px] text-muted">Done</span>
@@ -502,6 +508,9 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
             title={(d) => d.label}
             ariaLabel={(d) => `${d.label}: ${d.ok} done, ${d.stopped} stopped, ${d.limits} timed out or cut off, ${d.failed} failed`}
             totalFor={(d) => ({ label: "Delegations", value: String(d.ok + d.stopped + d.limits + d.failed) })}
+            extraRows={(d) =>
+              d.said > 0 ? [{ label: "Ran inline", value: `${d.inline} of ${d.said}`, swatch: "bg-line" }] : []
+            }
             barsFor={(d) => [
               { key: "done", label: "done", value: d.ok, swatch: "bg-chart-done", text: String(d.ok) },
               { key: "stopped", label: "stopped", value: d.stopped, swatch: "bg-chart-stopped", text: String(d.stopped) },

@@ -15,6 +15,7 @@ export interface RunRecord {
   repo: string | null;     // start.workspace, or inferred from the paths a stream read
   repoFromPaths: boolean;  // true when repo came from the paths, false when the stream named it or it is null
   model: string | null;    // start.model_key
+  mcpTask: boolean | null; // start.mcp_task (format 1.12): false when the call ran inline; null when the stream does not say or on a record saved before this field
   elapsedSeconds: number | null; // end.elapsed_seconds
   inputTokens: number | null;    // end.input_tokens
   outputTokens: number | null;   // end.output_tokens
@@ -92,6 +93,7 @@ export function summariseRun(name: string, size: number, lines: string[], now: D
     repo: typeof s.start?.workspace === "string" ? s.start.workspace : null,
     repoFromPaths: false,
     model: typeof s.start?.model_key === "string" ? s.start.model_key : null,
+    mcpTask: typeof s.start?.mcp_task === "boolean" ? s.start.mcp_task : null,
     elapsedSeconds: typeof s.end.elapsed_seconds === "number" ? s.end.elapsed_seconds : null,
     inputTokens: typeof s.end.input_tokens === "number" ? s.end.input_tokens : null,
     outputTokens: typeof s.end.output_tokens === "number" ? s.end.output_tokens : null,
@@ -115,7 +117,7 @@ function isRecord(v: unknown): v is RunRecord {
   return typeof r.name === "string" && typeof r.size === "number" && typeof r.outcome === "string" && OUTCOMES.includes(r.outcome)
     && numberOrNull(r.startedAt) && stringOrNull(r.reason) && stringOrNull(r.repo) && typeof r.repoFromPaths === "boolean" && stringOrNull(r.model)
     && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens)
-    && numberOrNull(r.asks) && numberOrNull(r.questions);
+    && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean");
 }
 
 function sameRecord(a: RunRecord, b: RunRecord): boolean {
@@ -245,6 +247,7 @@ export class RunStore {
         ...rec,
         asks: rec.asks === undefined ? null : rec.asks,
         questions: rec.questions === undefined ? null : rec.questions,
+        mcpTask: rec.mcpTask === undefined ? null : rec.mcpTask,
       };
     });
     this.kept = sortRecords(runs.filter(isRecord));

@@ -30,6 +30,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     cachedTokens: 500,
     asks: 0,
     questions: 0,
+    mcpTask: null,
     ...overrides,
   };
 }
@@ -204,6 +205,27 @@ describe("HistoryPage", () => {
     expect(tileText("Done")).toContain("—");
     expect(tileText("Tokens processed")).toContain("—");
     expect(tileText("Cache reuse")).toContain("—");
+  });
+
+  it("shows how many ran inline under the Delegations tile", async () => {
+    mockFetch(api([run({ name: "a", mcpTask: false }), run({ name: "b", mcpTask: true })]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(tileText("Delegations")).toContain("2"));
+    expect(tileText("Delegations")).toContain("1 ran inline");
+  });
+
+  it("shows '0 ran inline' when the runs said they were tasks and none ran inline", async () => {
+    mockFetch(api([run({ name: "a", mcpTask: true }), run({ name: "b", mcpTask: true })]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(tileText("Delegations")).toContain("2"));
+    expect(tileText("Delegations")).toContain("0 ran inline");
+  });
+
+  it("shows no ran-inline line when every run's mcpTask is null", async () => {
+    mockFetch(api([run({ name: "a", mcpTask: null }), run({ name: "b", mcpTask: null })]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(tileText("Delegations")).toContain("2"));
+    expect(tileText("Delegations")).not.toContain("ran inline");
   });
 
   it("names the chart legends", async () => {
@@ -386,6 +408,28 @@ describe("HistoryPage", () => {
       for (const column of within(delegationsCard()).getAllByRole("button")) {
         expect(column.getAttribute("title")).toBeNull();
       }
+    });
+
+    it("shows 'Ran inline: n of m' in a day's hover card", async () => {
+      mockFetch(api([
+        run({ name: "a", startedAt: NOW - 2 * DAY, mcpTask: false }),
+        run({ name: "b", startedAt: NOW - 2 * DAY, mcpTask: true }),
+      ]));
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      fireEvent.mouseOver(dayColumn("2 Oct"));
+      const tooltip = screen.getByRole("tooltip");
+      expect(within(tooltip).getByText("Ran inline")).toBeTruthy();
+      expect(within(tooltip).getByText("1 of 2")).toBeTruthy();
+    });
+
+    it("shows no Ran-inline line for a day where every run's mcpTask is null", async () => {
+      mockFetch(api([run({ name: "a", startedAt: NOW - 2 * DAY, mcpTask: null })]));
+      render(<HistoryPage />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      fireEvent.mouseOver(dayColumn("2 Oct"));
+      const tooltip = screen.getByRole("tooltip");
+      expect(within(tooltip).queryByText("Ran inline")).toBeNull();
     });
   });
 
