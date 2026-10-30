@@ -89,6 +89,7 @@ All routes are GET-only, with no CORS headers: any other method gets `405`, and 
 | The transcript folder is unreadable | A banner, the last known state kept, retries after 1, 2, 4 … 30 s. |
 | A stream file is shorter than its reader's offset | It was replaced (by the sync client, say): read it again from 0 and rebuild its state. |
 | A figures source is unreachable | Its panel shows `—` and "no figures since <time>". |
+| The node key or known_hosts file cannot be read | Each node is unreachable, as above; the rest of the tracker runs. Both files are read again on each new connection. |
 | A stream names a contract major this tracker does not know | A banner on that stream, then a best-effort render. |
 | An event does not match the schema | It is still used, and counted in health. |
 

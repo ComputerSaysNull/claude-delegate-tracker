@@ -533,12 +533,14 @@ export interface SshRunnerDeps {
 }
 
 // The real runner: one ssh2 connection per node, kept open and reopened after it drops.
+// The key and known_hosts are read on each new connection, so a missing file makes the node
+// unreachable rather than stopping the tracker, and a file put back is used on the next poll.
 export function sshRunner(deps: SshRunnerDeps): NodeRunner {
-  const key = readFileSync(deps.keyPath);
-  const known = parseKnownHosts(readFileSync(deps.knownHostsPath, "utf8"));
   const connections = new Map<string, Promise<Client>>();
 
   function connect(target: NodeTarget): Promise<Client> {
+    const key = readFileSync(deps.keyPath);
+    const known = parseKnownHosts(readFileSync(deps.knownHostsPath, "utf8"));
     const client = new Client();
     const connection = new Promise<Client>((resolve, reject) => {
       let refused = false;

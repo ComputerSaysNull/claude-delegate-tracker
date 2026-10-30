@@ -1,6 +1,10 @@
 // One test per rule in docs/ARCHITECTURE.md "The nodes".
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  sshRunner,
   parseStats,
   nodeFiguresFrom,
   parseKnownHosts,
@@ -975,5 +979,49 @@ describe("NodesPoller", () => {
     const p = makePoller();
     p.poller.stop();
     expect(p.close).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("sshRunner", () => {
+  const target: NodeTarget = { name: "node-a", user: "u", host: "127.0.0.1", port: 1 };
+
+  function files(over: { key?: boolean; known?: boolean } = {}): { keyPath: string; knownHostsPath: string } {
+    const dir = mkdtempSync(join(tmpdir(), "nodes-"));
+    const keyPath = join(dir, "key");
+    const knownHostsPath = join(dir, "known_hosts");
+    if (over.key !== false) writeFileSync(keyPath, "not a key\n");
+    if (over.known !== false) writeFileSync(knownHostsPath, "");
+    return { keyPath, knownHostsPath };
+  }
+
+  async function statusWith(runner: ReturnType<typeof sshRunner>): Promise<string> {
+    const poller = new NodesPoller({ targets: [target], runner, now: () => new Date(T0) });
+    await poller.poll();
+    return poller.figures()[0].status;
+  }
+
+  it("a missing key file leaves the runner usable and its node unreachable", async () => {
+    const runner = sshRunner({ ...files({ key: false }), timeoutMs: 1000 });
+    await expect(runner.run(target)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await statusWith(runner)).toBe("unreachable");
+  });
+
+  it("a missing known_hosts file leaves the runner usable and its node unreachable", async () => {
+    const runner = sshRunner({ ...files({ known: false }), timeoutMs: 1000 });
+    await expect(runner.run(target)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await statusWith(runner)).toBe("unreachable");
+  });
+
+  it("reads the files again on the next poll, so a key put back is used without a restart", async () => {
+    const paths = files({ key: false });
+    const runner = sshRunner({ ...paths, timeoutMs: 1000 });
+    await expect(runner.run(target)).rejects.toMatchObject({ code: "ENOENT" });
+    writeFileSync(paths.keyPath, "not a key\n");
+    // Past the read now: ssh2 refuses the key's content instead, still an unreachable node.
+    const err = await runner.run(target).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as NodeJS.ErrnoException).code).not.toBe("ENOENT");
+    expect(err).not.toBeInstanceOf(HostKeyRefused);
+    expect(await statusWith(runner)).toBe("unreachable");
   });
 });
