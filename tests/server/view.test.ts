@@ -310,6 +310,33 @@ describe("calls", () => {
     expect(calls[3].result).toBeNull();
   });
 
+  it("shows how many images a result carried, instead of its lines and bytes", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+        { name: "eight", outcome: "ran", arguments: {}, result_images: 8, result_lines: 1, result_bytes: 212 },
+        { name: "one", outcome: "ran", arguments: {}, result_images: 1 },
+      ], text: "" },
+    ]);
+    expect(v.turns[0].calls[0].result).toBe("8 images");
+    expect(v.turns[0].calls[1].result).toBe("1 image");
+  });
+
+  it("ignores an image count that is not a whole number of at least 1", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+        { name: "string", outcome: "ran", arguments: {}, result_images: "8", result_lines: 1, result_bytes: 212 },
+        { name: "zero", outcome: "ran", arguments: {}, result_images: 0, result_lines: 1, result_bytes: 212 },
+        { name: "fraction", outcome: "ran", arguments: {}, result_images: 2.5, result_lines: 1, result_bytes: 212 },
+        { name: "absent", outcome: "ran", arguments: {}, result_lines: 1, result_bytes: 212 },
+      ], text: "" },
+    ]);
+    for (const c of v.turns[0].calls) expect(c.result).toBe("1 lines · 212 B");
+  });
+
   it("shows call time as <1s under a second and a duration otherwise", () => {
     const v = viewOf([
       start(),
@@ -879,9 +906,9 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null },
-      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null },
-      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null },
+      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null },
+      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null, images: null },
+      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null, images: null },
     ]);
   });
 
@@ -894,7 +921,7 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 } },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 }, images: null },
     ]);
     const single = viewOf([start({ files_read: [{ path: "/w/a", start_line: 7, end_line: 7 }] })]);
     expect(single.files[0].lines).toEqual({ start: 7, end: 7 });
@@ -903,7 +930,7 @@ describe("files", () => {
   it("leaves lines null for a whole-file entry with neither bound", () => {
     const v = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py" }] })]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null, images: null },
     ]);
   });
 
@@ -934,7 +961,26 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null },
+      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null, images: null },
+    ]);
+  });
+
+  it("carries how many images a file was sent as", () => {
+    const v = viewOf([
+      start({
+        files_read: [
+          { path: "/w/proj/photo.png", images: 8 },
+          { path: "/w/proj/text.py" },
+          { path: "/w/proj/str.png", images: "8" },
+          { path: "/w/proj/zero.png", images: 0 },
+        ],
+      }),
+    ]);
+    expect(v.files).toEqual([
+      { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8 },
+      { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null },
+      { path: "/w/proj/str.png", size: null, skipped: null, lines: null, images: null },
+      { path: "/w/proj/zero.png", size: null, skipped: null, lines: null, images: null },
     ]);
   });
 });

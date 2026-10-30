@@ -70,6 +70,30 @@ describe("transcript schema", () => {
     expect(validate({ ...start!.event, mcp_task: "yes" })).toBe(false);
   });
 
+  // The tracker reads tool_call.result_images and files_read[].images (format 1.13), so the
+  // vendored schema must define both as whole numbers.
+  it("defines a tool call's result_images as an integer", () => {
+    const turn = allEvents().find((x) => x.event.t === "turn" && Array.isArray(x.event.tool_calls) && x.event.tool_calls.length > 0);
+    expect(turn).toBeDefined();
+    const withImages = (v: unknown) => {
+      const [first, ...rest] = turn!.event.tool_calls as Record<string, unknown>[];
+      return { ...turn!.event, tool_calls: [{ ...first, result_images: v }, ...rest] };
+    };
+    expect(validate(withImages(8))).toBe(true);
+    expect(validate(withImages("8"))).toBe(false);
+  });
+
+  it("defines a prefetched file's images as an integer", () => {
+    const start = allEvents().find((x) => x.event.t === "start" && Array.isArray(x.event.files_read) && x.event.files_read.length > 0);
+    expect(start).toBeDefined();
+    const withImages = (v: unknown) => {
+      const [first, ...rest] = start!.event.files_read as Record<string, unknown>[];
+      return { ...start!.event, files_read: [{ ...first, images: v }, ...rest] };
+    };
+    expect(validate(withImages(8))).toBe(true);
+    expect(validate(withImages("8"))).toBe(false);
+  });
+
   it.each(["t", "at"])("rejects an event without its required %s", (field) => {
     const event: Record<string, unknown> = { ...allEvents()[0].event };
     expect(validate(event)).toBe(true);

@@ -170,6 +170,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
                         <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{insideRepo(file.path, row.workspace)}</span>
                       </span>
                       {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
+                      {file.images !== null && <span className="whitespace-nowrap"> · {file.images} {file.images === 1 ? "image" : "images"}</span>}
                       {file.lines !== null && <span className="whitespace-nowrap"> · lines {file.lines.start}–{file.lines.end}</span>}
                       {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
                     </span>

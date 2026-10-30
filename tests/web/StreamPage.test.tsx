@@ -320,7 +320,7 @@ describe("long values on a phone", () => {
   });
 
   it("a file path is clamped to two lines, with the full path on hover and focus", () => {
-    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null, lines: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null, lines: null, images: null }] })} />);
     const summary = screen.getByText(LONG);
     expect(summary.className).toMatch(/\bline-clamp-2\b/);
     expect(summary.className).toMatch(/\bbreak-all\b/);
@@ -329,13 +329,32 @@ describe("long values on a phone", () => {
   });
 
   it("shows the read range after a ranged file's path", () => {
-    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: { start: 596, end: 630 } }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: { start: 596, end: 630 }, images: null }] })} />);
     expect(screen.getByText(/lines 596–630/)).toBeTruthy();
   });
 
   it("shows no range text on a whole file's chip", () => {
-    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null }] })} />);
     expect(screen.queryByText(/lines \d/)).toBeNull();
+  });
+
+  it("shows an image count after a file's size, and nothing for a text file", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          files: [
+            { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8 },
+            { path: "/w/proj/one.png", size: null, skipped: null, lines: null, images: 1 },
+            { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null },
+          ],
+        })}
+      />,
+    );
+    const chipOf = (path: string) => screen.getByText(path).closest('[class*="max-w-full"]')!;
+    expect(chipOf("/w/proj/photo.png").textContent).toContain("8 images");
+    expect(chipOf("/w/proj/one.png").textContent).toContain("1 image");
+    expect(chipOf("/w/proj/one.png").textContent).not.toContain("1 images");
+    expect(chipOf("/w/proj/text.py").textContent).not.toContain("image");
   });
 
   it("gives every chip the same fixed width classes, for a short path and a long path alike", () => {
@@ -343,8 +362,8 @@ describe("long values on a phone", () => {
       <StreamViewBody
         view={view({
           files: [
-            { path: "/w/short.py", size: null, skipped: null, lines: null },
-            { path: LONG, size: null, skipped: null, lines: null },
+            { path: "/w/short.py", size: null, skipped: null, lines: null, images: null },
+            { path: LONG, size: null, skipped: null, lines: null, images: null },
           ],
         })}
       />,

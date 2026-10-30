@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #81 — 2026-10-30 — feat: vendor server v0.15.0 and show how many images a call sent
+
+### Added
+
+- **A call or a prefetched file that sent images says how many.** Since server v0.14.0,
+  `read_file` and `files[]` can hand a vision model images, and a large one goes as tiles,
+  each counting against the model's image limit. The stream recorded none of that, so a
+  `read_file` of a 4K screenshot that sent 8 tiles showed as "1 lines · 212 B": the size of
+  the text placeholder, not what the model saw. Server v0.15.0 brings transcript format 1.13,
+  with `tool_call.result_images` and `files_read[].images`. The contract is vendored at
+  v0.15.0; such a call's row now reads "8 images" ("1 image") in place of its lines and
+  bytes, and an image file's chip shows its count after its size. A value that is not a
+  whole number of at least 1 is ignored, and a text file shows nothing new.
+
 ## #80 — 2026-10-30 — fix: a missing node key no longer stops the tracker
 
 ### Fixed
