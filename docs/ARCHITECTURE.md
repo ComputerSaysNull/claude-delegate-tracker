@@ -66,7 +66,7 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 |---|---|
 | `GET /` | The page (built static files). |
 | `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, how many lines were not JSON, and every kind, model and repo any listed stream has, for the filter choices. |
-| `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name that match the filter in the query (the address's `q`, `state`, `kind`, `model`, `repo`), ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. An old stream is read whole once and kept as a small summary, read again only while it has not ended and its file grew; a few hundred are summarised each poll, so every stream soon is. |
+| `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name that match the filter in the query (the address's filter keys), ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. An old stream is read whole once and kept as a small summary, read again only while it has not ended and its file grew; a few hundred are summarised each poll, so every stream soon is. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/streams/<name>/thinking/<turn>` | One finished turn's thinking, as text, fetched only when the page opens its fold. `<name>` is looked up among the names the backend listed itself and `<turn>` among the turns it holds; anything else is `404`. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
@@ -238,18 +238,18 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 - Order by `start.at`, newest first, never by last activity.
 - Say when the list is capped at 20. Scrolling to its end loads the next 20 by itself, "Loading…" while they come, "No older delegations" at the end, and a Try again after a failure; older pages are a snapshot, not live.
-- Search and filters (title words, state, kind, model, repo) apply to the live rows and to older pages the backend filters itself, so a match far back is found without paging through the rest; setting a filter loads its first older page at once. They say how many rows they show.
+- Search and filters (title words, state, kind, model, repo, and whether the caller sent the run a `message`) apply to the live rows and to older pages the backend filters itself, so a match far back is found without paging through the rest; setting a filter loads its first older page at once. They say how many rows they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
 - Above the list, count what is running and queued now, and what failed today; runs that timed out or were stopped today are counted apart, and only when there are any.
 - A card leads with the state's icon (named for a screen reader), the title (15px, semibold) and the start time; under them its kind, its turns ("turn N of M" while running, "N turns" after) and how long it took. A card whose stream names a workspace leads that second line with the repo (`start.workspace`, format 1.5) in place of the tool kind. A running card shows its turns as segments (done, the current one, those to come); the time left is the details bar's. A queued card shows its wait and its limit. A click anywhere on a card opens the delegation; the title stays the link, for the keyboard and a new tab.
-- The search box stays in view; a Filters button beside it counts the state, kind, model and repo filters that are on, and opens one panel holding those four controls. Each active filter shows as a chip under the search box that removes it.
+- The search box stays in view; a Filters button beside it counts the state, kind, model, repo and messaged filters that are on, and opens one panel holding those controls. Each active filter shows as a chip under the search box that removes it.
 
 ### Layout
 
 - A header bar names the tracker and says whether updates are live (with the newest check's time, or "Reconnecting…") and whether the backend is healthy, as two pills. The cluster figures run across the top. Below them, on a wide screen, the list sits on the left in a capped column and the open delegation on the right, each scrolling on its own while the header and cluster stay in place; with none open, the right side asks for a choice.
 - Opening a delegation never loads a page; a click with a modifier key is left to the browser, so a new tab still works.
-- The address holds the open delegation (`/s/<name>`) and the filters (`q`, `state`, `kind`, `model`, `repo`), so Back, reload and a bookmark land on the same view. Opening or closing a delegation is a step Back undoes; a filter change only rewrites the current address. A state the page does not know is left out, and a name that cannot be decoded opens nothing.
+- The address holds the open delegation (`/s/<name>`) and the filters (`q`, `state`, `kind`, `model`, `repo`, `messaged`), so Back, reload and a bookmark land on the same view. Opening or closing a delegation is a step Back undoes; a filter change only rewrites the current address. A state the page does not know is left out, and a name that cannot be decoded opens nothing.
 
 ### Notifications
 

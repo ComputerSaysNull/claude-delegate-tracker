@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #86 — 2026-11-02 — feat: filter the list to delegations the caller messaged
+
+### Added
+
+- **A "Messaged by the caller" filter finds the runs a caller steered.** Since format 1.14 a
+  caller can tell a running delegation something it did not ask for, but finding which runs
+  were steered meant opening each one. The filter panel now has a "Messaged by the caller"
+  box, kept in the address like the other filters; because the backend filters older pages
+  itself, it finds every such run, not only the loaded ones.
+
 ## #85 — 2026-11-02 — feat: load older delegations by scrolling to the end of the list
 
 ### Changed

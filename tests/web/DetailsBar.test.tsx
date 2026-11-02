@@ -47,7 +47,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     turns: null,
     unknownFormat: null,
     left: null,
-    queueOf: null,
+    queueOf: null, messaged: false,
     workspace: null, mcpTask: null,
     ...overrides,
   };

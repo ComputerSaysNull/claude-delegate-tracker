@@ -17,10 +17,11 @@ export interface StreamState {
   waitOfSeconds: number | null;  // the newest `waiting.of_seconds`: how long it may wait
   endsInSeconds: number | null;  // the newest `alive.ends_in_seconds`: the deadline that ends the run
   askedAtMs: number | null;      // when the open `question` was asked; null once answered
+  messages: number;              // the caller's `message` events (format 1.14)
 }
 
 export function newStreamState(): StreamState {
-  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null, askedAtMs: null };
+  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null, askedAtMs: null, messages: 0 };
 }
 
 // Normalise a 6-digit (or any) fraction to at most 3 digits before Date.parse.
@@ -55,6 +56,7 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
     if (typeof evt.of_turns === "number") s.ofTurns = evt.of_turns;
   } else if (t === "question") s.askedAtMs = atMs ?? s.lastAtMs;
   else if (t === "answer") s.askedAtMs = null;
+  else if (t === "message") s.messages += 1;
   else if (t === "alive") {
     s.lastSignal = "alive";
     s.endsInSeconds = typeof evt.ends_in_seconds === "number" ? evt.ends_in_seconds : null;
@@ -156,6 +158,7 @@ export function listRow(name: string, s: StreamState, now: Date, quietAfterSecon
     left: state === "live" && s.endsInSeconds !== null ? formatDuration(s.endsInSeconds) : null,
     // A limit of 0 is no limit.
     queueOf: state === "queued" && s.waitOfSeconds !== null && s.waitOfSeconds > 0 ? formatAge(s.waitOfSeconds) : null,
+    messaged: s.messages > 0,
   };
 }
 
@@ -167,6 +170,7 @@ export interface ListRow {
   mcpTask: boolean | null;      // start.mcp_task (format 1.12): ran as an MCP task (true) or inline (false); null when absent
   left: string | null;          // a running delegation's time left
   queueOf: string | null;       // a queued delegation's longest wait
+  messaged: boolean;            // the caller sent it a `message` (format 1.14)
 }
 
 export function formatAge(seconds: number): string {

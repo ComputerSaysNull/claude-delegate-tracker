@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterFromParams,
   filterToParams,
+  isFiltering,
   NO_FILTER,
   rowMatches,
   slimState,
@@ -86,6 +87,7 @@ describe("rowMatches", () => {
       queueOf: null,
       workspace: null,
       mcpTask: null,
+      messaged: false,
       ...overrides,
     };
   }
@@ -132,9 +134,27 @@ describe("rowMatches", () => {
 
   it("combines all filters with AND", () => {
     const r = row({ state: "live", kind: "claude-code", model: "claude-sonnet-4", title: "auth module" });
-    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null };
+    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null, messaged: false };
     expect(rowMatches(r, f)).toBe(true);
     expect(rowMatches(r, { ...f, states: ["ok"] })).toBe(false);
+  });
+
+  it("matches a row's messaged flag", () => {
+    expect(rowMatches(row({ messaged: true }), { ...NO_FILTER, messaged: true })).toBe(true);
+    expect(rowMatches(row({ messaged: false }), { ...NO_FILTER, messaged: true })).toBe(false);
+    // Off means "not filtering on it": messaged and unmessaged rows both pass.
+    expect(rowMatches(row({ messaged: true }), { ...NO_FILTER, messaged: false })).toBe(true);
+    expect(rowMatches(row({ messaged: false }), { ...NO_FILTER, messaged: false })).toBe(true);
+  });
+});
+
+describe("isFiltering", () => {
+  it("is true when only the messaged filter is on", () => {
+    expect(isFiltering({ ...NO_FILTER, messaged: true })).toBe(true);
+  });
+
+  it("is false when nothing is filtering", () => {
+    expect(isFiltering(NO_FILTER)).toBe(false);
   });
 });
 
@@ -147,6 +167,7 @@ describe("filter params", () => {
       kind: "one-shot",
       model: "flash",
       repo: "docs",
+      messaged: false,
     });
   });
 
@@ -155,7 +176,7 @@ describe("filter params", () => {
   });
 
   it("round-trips a filter through filterToParams", () => {
-    const f: RowFilter = { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "flash", repo: "docs" };
+    const f: RowFilter = { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "flash", repo: "docs", messaged: false };
     const q = new URLSearchParams();
     filterToParams(f, q);
     expect(filterFromParams(q)).toEqual(f);
@@ -172,5 +193,27 @@ describe("filter params", () => {
     filterToParams({ ...NO_FILTER, model: "rare" }, q);
     expect(q.get("before")).toBe("20261001T120000.000-a.jsonl");
     expect(filterFromParams(q).model).toBe("rare");
+  });
+
+  it("reads messaged=1 as true, anything else false", () => {
+    expect(filterFromParams(new URLSearchParams("messaged=1")).messaged).toBe(true);
+    expect(filterFromParams(new URLSearchParams("messaged=yes")).messaged).toBe(false);
+    expect(filterFromParams(new URLSearchParams("messaged=0")).messaged).toBe(false);
+    expect(filterFromParams(new URLSearchParams("")).messaged).toBe(false);
+  });
+
+  it("round-trips the messaged flag through filterToParams", () => {
+    const f: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: true };
+    const q = new URLSearchParams();
+    filterToParams(f, q);
+    expect(q.get("messaged")).toBe("1");
+    expect(filterFromParams(q)).toEqual(f);
+  });
+
+  it("writes no messaged key for the empty filter", () => {
+    const q = new URLSearchParams();
+    filterToParams(NO_FILTER, q);
+    expect(q.has("messaged")).toBe(false);
+    expect(q.toString()).toBe("");
   });
 });

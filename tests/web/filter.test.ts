@@ -18,7 +18,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
-    workspace: null, mcpTask: null,
+    workspace: null, mcpTask: null, messaged: false,
     ...overrides,
   };
 }
@@ -77,7 +77,7 @@ describe("filterRows", () => {
   });
 
   it("combines all filters with AND", () => {
-    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null };
+    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null, messaged: false };
     expect(filterRows(ROWS, f).map((r) => r.name)).toEqual(["a"]);
   });
 
@@ -102,6 +102,7 @@ describe("isFiltering", () => {
     expect(isFiltering({ ...NO_FILTER, kind: "one-shot" })).toBe(true);
     expect(isFiltering({ ...NO_FILTER, model: "claude-opus-4" })).toBe(true);
     expect(isFiltering({ ...NO_FILTER, repo: "web-shop" })).toBe(true);
+    expect(isFiltering({ ...NO_FILTER, messaged: true })).toBe(true);
   });
 });
 

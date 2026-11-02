@@ -22,6 +22,7 @@ describe("reading the address", () => {
       kind: "claude-code",
       model: "flash",
       repo: null,
+      messaged: false,
     });
   });
 
@@ -69,7 +70,7 @@ describe("writing the address", () => {
   });
 
   it("reads back what it wrote", () => {
-    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash", repo: null }, section: "list" as const };
+    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash", repo: null, messaged: false }, section: "list" as const };
     const url = new URL(addressFor(address), "http://x");
     expect(readAddress(url.pathname, url.search)).toEqual(address);
   });
@@ -77,6 +78,14 @@ describe("writing the address", () => {
   it("writes the repo filter and reads it back", () => {
     const address = { selected: null, filter: { ...NO_FILTER, repo: "web-shop" }, section: "list" as const };
     expect(addressFor(address)).toBe("/?repo=web-shop");
+    const url = new URL(addressFor(address), "http://x");
+    expect(readAddress(url.pathname, url.search)).toEqual(address);
+  });
+
+  it("reads the messaged filter and writes it back", () => {
+    expect(readAddress("/", "?messaged=1").filter.messaged).toBe(true);
+    const address = { selected: null, filter: { ...NO_FILTER, messaged: true }, section: "list" as const };
+    expect(addressFor(address)).toBe("/?messaged=1");
     const url = new URL(addressFor(address), "http://x");
     expect(readAddress(url.pathname, url.search)).toEqual(address);
   });

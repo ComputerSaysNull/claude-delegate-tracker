@@ -231,9 +231,9 @@ export function DelegationList({
     if (autoLoad) void loadOlder(firstBefore);
   }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps -- once per filter, not per live update
 
-  // The Filters button counts the state, kind, model and repo filters that are on; the search text is not counted.
+  // The Filters button counts the state, kind, model, repo and messaged filters that are on; the search text is not counted.
   const activeCount =
-    filter.states.length + (filter.kind !== null ? 1 : 0) + (filter.model !== null ? 1 : 0) + (filter.repo !== null ? 1 : 0);
+    filter.states.length + (filter.kind !== null ? 1 : 0) + (filter.model !== null ? 1 : 0) + (filter.repo !== null ? 1 : 0) + (filter.messaged ? 1 : 0);
 
   // One chip per active state, kind, model or repo filter; pressing it removes just that filter.
   const chips: { label: string; remove: () => void }[] = [];
@@ -251,6 +251,9 @@ export function DelegationList({
   }
   if (filter.repo !== null) {
     chips.push({ label: `repo ${filter.repo}`, remove: () => setFilter((prev) => ({ ...prev, repo: null })) });
+  }
+  if (filter.messaged) {
+    chips.push({ label: "messaged by the caller", remove: () => setFilter((prev) => ({ ...prev, messaged: false })) });
   }
 
   // The observer and the event listener call this ref so neither ever uses a stale closure.
@@ -453,6 +456,14 @@ export function DelegationList({
                   </option>
                 ))}
               </select>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={filter.messaged}
+                  onChange={() => setFilter((prev) => ({ ...prev, messaged: !prev.messaged }))}
+                />
+                Messaged by the caller
+              </label>
             </div>
           )}
           {chips.length > 0 && (

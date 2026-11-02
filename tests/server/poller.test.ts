@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Poller } from "../../src/server/poller.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
+import { NO_FILTER } from "../../src/server/catalog.ts";
 import { buildView } from "../../src/server/view.ts";
 import type { ViewPatch } from "../../src/server/view.ts";
 
@@ -585,7 +586,7 @@ describe("history with a filter", () => {
     return names.reverse(); // newest first
   }
 
-  const RARE = { text: "", states: [], kind: null, model: "rare", repo: null };
+  const RARE = { text: "", states: [], kind: null, model: "rare", repo: null, messaged: false };
 
   it("returns only the matching streams after the cursor, and stops at the oldest", () => {
     const dir = makeDir();
@@ -677,6 +678,29 @@ describe("history with a filter", () => {
       rmSync(join(dir, names[29]));
       poller.pass();
       expect(poller.list().choices.repos).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("an old stream the caller messaged is the only match for the messaged filter", () => {
+    const dir = makeDir();
+    try {
+      // 30 finished streams; only the oldest (i = 0, beyond the newest 25) holds a message event.
+      const names = fillFiltered(dir, 30, () => ({}));
+      const oldest = names[29];
+      writeStream(dir, oldest, [
+        startEvent("2026-10-01T10:00:00.000Z"),
+        { t: "message", at: "2026-10-01T10:00:03.000Z", text: "Look again", by: "caller" },
+        endEvent("2026-10-01T10:00:05.000Z"),
+      ]);
+      const poller = makePoller(dir);
+      for (let i = 0; i < 3; i++) poller.pass();
+      const live = poller.list().rows.map((r) => r.name);
+      const page = poller.history(live[live.length - 1], { ...NO_FILTER, messaged: true });
+      expect(page).not.toBeNull();
+      expect(page!.rows.map((r) => r.name)).toEqual([oldest]);
+      expect(page!.rows[0].messaged).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
