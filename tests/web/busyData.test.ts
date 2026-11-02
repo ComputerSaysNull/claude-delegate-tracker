@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { busyIn, busiest, kvPerDay, load, weekLoad } from "../../src/web/busyData.ts";
 import type { HourBucket } from "../../src/server/busy.ts";
 import type { RunRecord } from "../../src/server/runs.ts";
-import type { Range } from "../../src/web/historyData.ts";
+import { spanOf, type Range } from "../../src/web/historyData.ts";
 
 // A bucket at a local wall-clock time: `hour` is the ms of that local instant (a UTC-hour start
 // in a whole-hour zone), and the local day/hour round-trip through `new Date(hour)` exactly.
@@ -55,14 +55,14 @@ describe("busyIn", () => {
     const first = bucketAt(new Date(2026, 8, 28, 0)); // 28 Sep, the first day of a 7-day range
     const today = bucketAt(new Date(2026, 9, 4, 9)); // 4 Oct
     const after = bucketAt(new Date(2026, 9, 5, 0)); // 5 Oct, tomorrow
-    expect(busyIn([before, first, today, after], 7, now).map((b) => b.hour)).toEqual([first.hour, today.hour]);
+    expect(busyIn([before, first, today, after], spanOf(7, [], now)).map((b) => b.hour)).toEqual([first.hour, today.hour]);
   });
 
   it("moves the oldest kept day with a 30-day range", () => {
     const before = bucketAt(new Date(2026, 8, 4, 12)); // 4 Sep, the day before a 30-day range
     const first = bucketAt(new Date(2026, 8, 5, 0)); // 5 Sep, the first day
     const today = bucketAt(new Date(2026, 9, 4, 0)); // 4 Oct
-    expect(busyIn([before, first, today], 30, now).map((b) => b.hour)).toEqual([first.hour, today.hour]);
+    expect(busyIn([before, first, today], spanOf(30, [], now)).map((b) => b.hour)).toEqual([first.hour, today.hour]);
   });
 });
 
@@ -77,7 +77,7 @@ describe("load", () => {
       rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: 1800 }), // 10:00-10:30
       rec({ startedAt: new Date(2026, 9, 4, 10, 15).getTime(), elapsedSeconds: 2700 }), // 10:15-11:00
     ];
-    expect(load(runs, days, now)).toEqual({
+    expect(load(runs, spanOf(days, runs, now))).toEqual({
       busyPercent: 1, // 1 h of 156 h
       busyHours: 1,
       idleHours: 155,
@@ -89,7 +89,7 @@ describe("load", () => {
   it("clips a run that crosses the range start", () => {
     // A run that starts 30 min before the range start and runs 1.5 h is clipped to the 1 h in range.
     const runs = [rec({ startedAt: new Date(2026, 8, 27, 23, 30).getTime(), elapsedSeconds: 5400 })];
-    expect(load(runs, days, now)).toEqual({
+    expect(load(runs, spanOf(days, runs, now))).toEqual({
       busyPercent: 1,
       busyHours: 1,
       idleHours: 155,
@@ -103,7 +103,7 @@ describe("load", () => {
       rec({ startedAt: null, elapsedSeconds: 3600 }),
       rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: null }),
     ];
-    expect(load(runs, days, now)).toEqual({
+    expect(load(runs, spanOf(days, runs, now))).toEqual({
       busyPercent: 0,
       busyHours: 0,
       idleHours: 156,
@@ -113,7 +113,7 @@ describe("load", () => {
   });
 
   it("reports 0% busy with no runs but a range that has time", () => {
-    expect(load([], days, now)).toEqual({
+    expect(load([], spanOf(days, [], now))).toEqual({
       busyPercent: 0,
       busyHours: 0,
       idleHours: 156,
@@ -130,7 +130,7 @@ describe("weekLoad", () => {
 
   it("counts a run on Monday 10:00 as one run on average", () => {
     const runs = [rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 })];
-    const grid = weekLoad(runs, days, now);
+    const grid = weekLoad(runs, spanOf(days, runs, now));
     expect(grid).toHaveLength(7);
     expect(grid[0]).toHaveLength(24);
     expect(grid[0][10]).toBeCloseTo(1); // one Monday 10:00-11:00 in the range
@@ -141,7 +141,7 @@ describe("weekLoad", () => {
       rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 }),
       rec({ startedAt: new Date(2026, 8, 28, 10).getTime(), elapsedSeconds: 3600 }),
     ];
-    const grid = weekLoad(runs, days, now);
+    const grid = weekLoad(runs, spanOf(days, runs, now));
     expect(grid[0][10]).toBeCloseTo(2);
   });
 
@@ -150,13 +150,13 @@ describe("weekLoad", () => {
       rec({ startedAt: new Date(2026, 9, 4, 10).getTime(), elapsedSeconds: 3600 }), // Sunday 10:00, reached
       rec({ startedAt: new Date(2026, 9, 4, 13).getTime(), elapsedSeconds: 3600 }), // Sunday 13:00, not reached
     ];
-    const grid = weekLoad(runs, days, now);
+    const grid = weekLoad(runs, spanOf(days, runs, now));
     expect(grid[6][10]).toBeCloseTo(1); // today's Sunday 10:00 is counted
     expect(grid[6][13]).toBeNull(); // Sunday 13:00 is after now, so the range holds none
   });
 
   it("leaves a cell null where the range holds no such hour", () => {
-    const grid = weekLoad([], days, now);
+    const grid = weekLoad([], spanOf(days, [], now));
     expect(grid[6][23]).toBeNull(); // Sunday 23:00 is after now, not reached
     expect(grid[0][10]).toBe(0); // Monday 10:00 exists but has no runs
   });
@@ -196,14 +196,14 @@ describe("kvPerDay", () => {
     const day = kvPerDay([
       bucketAt(new Date(2026, 9, 4, 9), { kvMax: 70, kvSum: 3600, kvSeconds: 3600 }),
       bucketAt(new Date(2026, 9, 4, 10), { kvMax: 30, kvSum: 3600, kvSeconds: 3600 }),
-    ], 7, now).at(-1)!;
+    ], spanOf(7, [], now)).at(-1)!;
     expect(day.peak).toBe(70);
   });
 
   const now = new Date(2026, 9, 4, 12);
 
   it("returns exactly `days` entries, oldest first, labelled day + short month", () => {
-    const result = kvPerDay([], 7, now);
+    const result = kvPerDay([], spanOf(7, [], now));
     expect(result).toHaveLength(7);
     expect(result[0].label).toBe("28 Sep");
     expect(result[6].label).toBe("4 Oct");
@@ -217,8 +217,7 @@ describe("kvPerDay", () => {
         bucketAt(new Date(2026, 8, 28, 9), { kvSum: 2000, kvSeconds: 1000, kvMax: 50 }),
         bucketAt(new Date(2026, 8, 28, 10), { kvSum: 1000, kvSeconds: 1000, kvMax: 80 }),
       ],
-      7,
-      now,
+      spanOf(7, [], now),
     );
     expect(result[0].peak).toBe(80);
     expect(result[0].average).toBe(1.5);
@@ -230,16 +229,41 @@ describe("kvPerDay", () => {
         bucketAt(new Date(2026, 8, 28, 9), { kvSum: 1000, kvSeconds: 1000, kvMax: 10 }),
         bucketAt(new Date(2026, 8, 28, 10), { kvSum: 500, kvSeconds: 1000, kvMax: 20 }),
       ],
-      7,
-      now,
+      spanOf(7, [], now),
     );
     expect(result[0].peak).toBe(20);
     expect(result[0].average).toBe(0.8); // 1500 / 2000 = 0.75 -> 0.8
   });
 
   it("leaves a day null when no bucket there has a KV figure", () => {
-    const result = kvPerDay([bucketAt(new Date(2026, 8, 28, 9), { kvSum: 0, kvSeconds: 0, kvMax: null })], 7, now);
+    const result = kvPerDay([bucketAt(new Date(2026, 8, 28, 9), { kvSum: 0, kvSeconds: 0, kvMax: null })], spanOf(7, [], now));
     expect(result[0].peak).toBeNull();
     expect(result[0].average).toBeNull();
+  });
+});
+
+describe("kvPerDay over a weekly span", () => {
+  // 6 Jun 2026 is 120 days before 4 Oct, so an "all" span is weekly. The first 7-day bucket
+  // starts at the earliest run's local day (6 Jun) and holds 6-12 Jun.
+  const now = new Date(2026, 9, 4, 12);
+  const runs = [
+    rec({ startedAt: new Date(2026, 5, 6, 10).getTime() }),
+    rec({ startedAt: new Date(2026, 9, 4, 9).getTime() }),
+  ];
+
+  it("puts a week's hours into one entry with the week's peak and mean", () => {
+    const span = spanOf("all", runs, now);
+    const result = kvPerDay([
+      bucketAt(new Date(2026, 5, 8, 10), { kvSum: 2000, kvSeconds: 1000, kvMax: 50 }),
+      bucketAt(new Date(2026, 5, 10, 11), { kvSum: 1000, kvSeconds: 1000, kvMax: 80 }),
+      bucketAt(new Date(2026, 5, 15, 9), { kvSum: 3000, kvSeconds: 1000, kvMax: 90 }), // next week
+    ], span);
+    expect(result[0].label).toBe("week of 6 Jun");
+    expect(result[0].peak).toBe(80);
+    expect(result[0].average).toBe(1.5);
+    // The hour in the next week lands in its own entry, not the first.
+    expect(result[1].label).toBe("week of 13 Jun");
+    expect(result[1].peak).toBe(90);
+    expect(result[1].average).toBe(3);
   });
 });

@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #88 — 2026-11-02 — feat: keep every hour of chart history and add an All time range
+
+### Added
+
+- **History keeps every number and offers All time.** The KV-cache and GPU power files
+  dropped hours older than 90 days, and the range stopped at 90 days, so totals since
+  recording began could not be seen once the data passed 90 days. Nothing is dropped any more
+  (measured: about 2.5 MB a year for both files), and the range has All time, starting at the
+  first run record. A range longer than 90 days shows one column per week in every per-day
+  chart, so the columns stay readable. Hours dropped before this change are gone.
+
 ## #87 — 2026-11-02 — feat: show in History how often the caller steps in
 
 ### Changed

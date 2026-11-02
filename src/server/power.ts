@@ -4,7 +4,6 @@
 // crosses.
 import fs from "node:fs";
 import path from "node:path";
-import { KEEP_DAYS } from "./busy.ts";
 import type { NodeFigures } from "./nodes.ts";
 
 export interface PowerBucket {
@@ -17,7 +16,6 @@ export interface PowerBucket {
 
 const VERSION = 1;
 const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
 const SAVE_INTERVAL_MS = 60_000;
 
 const numberOrNull = (v: unknown): boolean => v === null || typeof v === "number";
@@ -40,8 +38,8 @@ interface Prev {
   w: number;
 }
 
-// One bucket per UTC hour per node for the last KEEP_DAYS days, so the History tab can chart GPU
-// energy. Buckets are dropped when older than KEEP_DAYS days, on push and on load.
+// One bucket per UTC hour per node, kept for the whole lifetime, so the History tab can chart GPU
+// energy. Every hour is kept: about 2.5 MB a year for both this and the busy file, measured.
 export class PowerStore {
   private file: string | null;
   private now: () => number;
@@ -74,11 +72,9 @@ export class PowerStore {
     if (typeof parsed !== "object" || parsed === null) return;
     const obj = parsed as Record<string, unknown>;
     if (obj.version !== VERSION || !Array.isArray(obj.buckets)) return;
-    // A bucket of the wrong shape is dropped; one older than KEEP_DAYS days is too.
-    const cutoff = this.now() - KEEP_DAYS * DAY_MS;
+    // A bucket of the wrong shape is dropped; every hour is kept.
     for (const b of obj.buckets as unknown[]) {
       if (!isBucket(b)) continue;
-      if (b.hour < cutoff) continue;
       const bucket = this.getBucket(b.hour, b.node);
       bucket.wh = b.wh;
       bucket.seconds = b.seconds;
@@ -98,7 +94,6 @@ export class PowerStore {
       if (this.apply(atMs, node.name, node.gpuPowerW)) changed = true;
       this.prev.set(node.name, { atMs, w: node.gpuPowerW });
     }
-    this.prune();
     if (changed) this.maybeSave(atMs);
   }
 
@@ -157,13 +152,6 @@ export class PowerStore {
       byNode.set(node, b);
     }
     return b;
-  }
-
-  private prune(): void {
-    const cutoff = this.now() - KEEP_DAYS * DAY_MS;
-    for (const hour of this.byHour.keys()) {
-      if (hour < cutoff) this.byHour.delete(hour);
-    }
   }
 
   private maybeSave(atMs: number): void {

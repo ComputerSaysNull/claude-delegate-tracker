@@ -11,11 +11,8 @@ export interface HourBucket {
   kvMax: number | null;  // the highest KV-cache percent read in the hour
 }
 
-export const KEEP_DAYS = 90;
-
 const VERSION = 2;
 const HOUR_MS = 3_600_000;
-const DAY_MS = 86_400_000;
 const SAVE_INTERVAL_MS = 60_000;
 
 const numberOrNull = (v: unknown): boolean => v === null || typeof v === "number";
@@ -35,8 +32,8 @@ interface Prev {
   kv: number;
 }
 
-// One bucket per UTC hour for the last KEEP_DAYS days, so the History tab can chart KV-cache use.
-// Buckets are dropped when older than KEEP_DAYS days, on push and on load.
+// One bucket per UTC hour, kept for the whole lifetime, so the History tab can chart KV-cache use.
+// Every hour is kept: about 2.5 MB a year for both this and the power file, measured.
 export class BusyStore {
   private file: string | null;
   private now: () => number;
@@ -69,11 +66,9 @@ export class BusyStore {
     if (typeof parsed !== "object" || parsed === null) return;
     const obj = parsed as Record<string, unknown>;
     if (obj.version !== VERSION || !Array.isArray(obj.buckets)) return;
-    // A bucket of the wrong shape is dropped; one older than KEEP_DAYS days is too.
-    const cutoff = this.now() - KEEP_DAYS * DAY_MS;
+    // A bucket of the wrong shape is dropped; every hour is kept.
     for (const b of obj.buckets as unknown[]) {
       if (!isBucket(b)) continue;
-      if (b.hour < cutoff) continue;
       this.byHour.set(b.hour, b);
     }
   }
@@ -82,11 +77,9 @@ export class BusyStore {
     // A gap: it clears the previous-reading marker and adds nothing.
     if (model.status !== "ok" || model.kvCachePercent === null) {
       this.prev = null;
-      this.prune();
       return;
     }
     const changed = this.apply(atMs, model.kvCachePercent);
-    this.prune();
     if (changed) this.maybeSave(atMs);
   }
 
@@ -127,13 +120,6 @@ export class BusyStore {
       this.byHour.set(hour, b);
     }
     return b;
-  }
-
-  private prune(): void {
-    const cutoff = this.now() - KEEP_DAYS * DAY_MS;
-    for (const hour of this.byHour.keys()) {
-      if (hour < cutoff) this.byHour.delete(hour);
-    }
   }
 
   private maybeSave(atMs: number): void {

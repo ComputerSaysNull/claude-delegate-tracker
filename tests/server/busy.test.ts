@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { BusyStore, KEEP_DAYS } from "../../src/server/busy.ts";
+import { BusyStore } from "../../src/server/busy.ts";
 import type { HourBucket } from "../../src/server/busy.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
 
@@ -110,22 +110,24 @@ describe("BusyStore", () => {
     expect(store.buckets().map((b) => b.hour)).toEqual([T0, T0 + HOUR]);
   });
 
-  it("drops buckets older than KEEP_DAYS days on load", () => {
+  it("a bucket 200 days old survives a load", () => {
     const dir = makeDir();
     const file = join(dir, "busy.json");
-    const oldHour = hourOf(T0 - (KEEP_DAYS + 1) * DAY);
+    const oldHour = hourOf(T0 - 200 * DAY);
     writeFileSync(file, JSON.stringify({ version: 2, buckets: [goodBucket(oldHour), goodBucket(T0)] }));
     const store = new BusyStore(file, () => T0, 60);
     store.load();
-    expect(store.buckets()).toEqual([goodBucket(T0)]);
+    expect(store.buckets()).toEqual([goodBucket(oldHour), goodBucket(T0)]);
   });
 
-  it("drops buckets older than KEEP_DAYS days on push", () => {
+  it("a bucket 200 days old survives a push", () => {
     const store = new BusyStore(null, () => T0, 100_000);
-    const oldHour = hourOf(T0 - (KEEP_DAYS + 1) * DAY);
+    const oldHour = hourOf(T0 - 200 * DAY);
     store.push(oldHour + 1000, figures({ kvCachePercent: 50 }));
-    store.push(oldHour + 2000, figures({ kvCachePercent: 50 })); // creates an old bucket, dropped at once
-    expect(store.buckets()).toEqual([]);
+    store.push(oldHour + 2000, figures({ kvCachePercent: 50 })); // creates the old bucket
+    store.push(T0 + 1000, figures({ kvCachePercent: 50 }));
+    store.push(T0 + 2000, figures({ kvCachePercent: 50 })); // a new hour, the old bucket stays
+    expect(store.buckets().map((b) => b.hour)).toEqual([oldHour, T0]);
   });
 
   it("saves the buckets so a second store loading the file sees the same", () => {

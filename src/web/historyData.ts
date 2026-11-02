@@ -1,7 +1,26 @@
 // The History tab's figures, computed from the run records the backend keeps on disk. Pure: no React, no fetch.
 import type { Outcome, RunRecord } from "../server/runs.ts";
 
-export type Range = 7 | 30 | 90;
+export type Range = 7 | 30 | 90 | "all";
+
+// One column of a chart: a half-open window of one local day (or, on a long "all" span, seven).
+export interface Bucket {
+  label: string;
+  startMs: number;
+  endMs: number;
+}
+
+// The range the History tab shows: from the first local midnight to now, one Bucket per column.
+// A long "all" range uses 7-day buckets, flagged by `weekly`.
+export interface Span {
+  startMs: number;
+  endMs: number;
+  buckets: Bucket[];
+  weekly: boolean;
+}
+
+// A range longer than this shows one column per week rather than per day.
+export const DAILY_UP_TO = 90;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -10,14 +29,83 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
-export function inRange(runs: RunRecord[], days: Range, now: Date): RunRecord[] {
-  const today = startOfDay(now).getTime();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1)).getTime();
-  return runs.filter((r) => {
-    if (r.startedAt === null) return false;
-    const day = startOfDay(new Date(r.startedAt)).getTime();
-    return day >= start && day <= today;
-  });
+export function inRange(runs: RunRecord[], span: Span): RunRecord[] {
+  const endMs = span.buckets.length === 0 ? span.endMs : span.buckets[span.buckets.length - 1].endMs;
+  return runs.filter((r) => r.startedAt !== null && r.startedAt >= span.startMs && r.startedAt < endMs);
+}
+
+// The whole range from the first local midnight to now, as one Bucket per column. A number range
+// gives the last `range` local days, today included, one bucket per day. "all" runs from the
+// earliest run's local day (today when none), one bucket per day up to DAILY_UP_TO days, then
+// 7-day buckets labelled "week of 3 Nov", the last one cut short at the end of today. Dates are
+// stepped with `new Date(y, m, d + i)` so local midnights stay right across clock changes.
+export function spanOf(range: Range, runs: RunRecord[], now: Date): Span {
+  const today = startOfDay(now);
+  if (range === "all") {
+    let earliest: Date | null = null;
+    for (const r of runs) {
+      if (r.startedAt === null) continue;
+      const d = startOfDay(new Date(r.startedAt));
+      if (earliest === null || d.getTime() < earliest.getTime()) earliest = d;
+    }
+    const start = earliest ?? today;
+    if (countDays(start, today) > DAILY_UP_TO) {
+      return { startMs: start.getTime(), endMs: now.getTime(), buckets: weeklyBuckets(start, today), weekly: true };
+    }
+    return { startMs: start.getTime(), endMs: now.getTime(), buckets: dailyBuckets(start, today), weekly: false };
+  }
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (range - 1));
+  return { startMs: start.getTime(), endMs: now.getTime(), buckets: dailyBuckets(start, today), weekly: false };
+}
+
+function dailyBuckets(start: Date, today: Date): Bucket[] {
+  const buckets: Bucket[] = [];
+  let d = start;
+  while (d.getTime() <= today.getTime()) {
+    const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    buckets.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, startMs: d.getTime(), endMs: next.getTime() });
+    d = next;
+  }
+  return buckets;
+}
+
+function weeklyBuckets(start: Date, today: Date): Bucket[] {
+  const buckets: Bucket[] = [];
+  const end = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  let cur = start;
+  while (cur.getTime() < end.getTime()) {
+    const next = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + 7);
+    const bucketEnd = next.getTime() <= end.getTime() ? next : end;
+    buckets.push({ label: `week of ${cur.getDate()} ${MONTHS[cur.getMonth()]}`, startMs: cur.getTime(), endMs: bucketEnd.getTime() });
+    cur = new Date(bucketEnd.getFullYear(), bucketEnd.getMonth(), bucketEnd.getDate());
+  }
+  return buckets;
+}
+
+function countDays(start: Date, today: Date): number {
+  let n = 1;
+  let d = start;
+  while (d.getTime() < today.getTime()) {
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    n++;
+  }
+  return n;
+}
+
+// The span bucket holding `ms`, or undefined when it lies outside every bucket. The buckets are
+// contiguous and sorted by startMs, so the last one whose startMs is at most `ms` is the answer.
+export function bucketIndex(span: Span, ms: number): number | undefined {
+  const buckets = span.buckets;
+  const n = buckets.length;
+  if (n === 0 || ms < buckets[0].startMs || ms >= buckets[n - 1].endMs) return undefined;
+  let lo = 0;
+  let hi = n - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (buckets[mid].startMs <= ms) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 export interface Totals {
@@ -144,18 +232,17 @@ export interface Day {
   said: number;
 }
 
-export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
-  const result: Day[] = [];
-  const byDay = new Map<number, number>();
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
-  for (let i = 0; i < days; i++) {
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    byDay.set(d.getTime(), i);
-    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
-  }
+export function perDay(runs: RunRecord[], span: Span): Day[] {
+  const result: Day[] = span.buckets.map((b) => ({
+    label: b.label,
+    ok: 0, stopped: 0, limits: 0, failed: 0,
+    cached: 0, fresh: 0, output: 0,
+    questions: null, asks: null, asked: 0, messaged: 0, both: 0,
+    messages: null, undelivered: null, waits: [], inline: 0, said: 0,
+  }));
   for (const r of runs) {
     if (r.startedAt === null) continue;
-    const index = byDay.get(startOfDay(new Date(r.startedAt)).getTime());
+    const index = bucketIndex(span, r.startedAt);
     if (index === undefined) continue;
     const day = result[index];
     switch (r.outcome) {
