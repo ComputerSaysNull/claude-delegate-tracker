@@ -37,7 +37,7 @@ function summary(overrides: Partial<SummaryView> = {}): SummaryView {
 }
 
 function view(overrides: Partial<StreamView> = {}): StreamView {
-  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, turns: [], summary: null, ...overrides };
+  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, turns: [], messages: [], summary: null, ...overrides };
 }
 
 const message = (from: string) => document.querySelectorAll(`[data-from="${from}"]`);
@@ -292,6 +292,47 @@ describe("a question to the caller", () => {
     render(<StreamViewBody view={view({ row: row({ state: "asking", age: "12s" }), turns: [threeAsks] })} />);
     const waiting = screen.getAllByRole("note", { name: "Question for the caller" }).map((n) => n.textContent?.includes("Waiting for an answer"));
     expect(waiting).toEqual([false, false, true]);
+  });
+});
+
+describe("a caller's message", () => {
+  it("places a delivered message before the turn it names and an undelivered one after the last turn", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          turns: [turn(1), turn(2)],
+          messages: [
+            { text: "The test wants a count, not a deadline", turn: 2, queuedSeconds: 2, delivered: true, at: null },
+            { text: "Also check the sibling test", turn: null, queuedSeconds: 0.5, delivered: false, at: null },
+          ],
+        })}
+      />,
+    );
+    const [turn1, turn2] = message("delegation");
+    const delivered = screen.getByText("The test wants a count, not a deadline");
+    const deliveredLi = delivered.closest("li")!;
+    expect(deliveredLi.textContent).toContain("Message from the caller");
+    expect(deliveredLi.textContent).toContain("waited 2s for the turn to end");
+    expect(turn1.compareDocumentPosition(delivered) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(delivered.compareDocumentPosition(turn2) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    const undelivered = screen.getByText(/Not delivered/);
+    const undeliveredLi = undelivered.closest("li")!;
+    expect(undeliveredLi.textContent).toContain("Also check the sibling test");
+    expect(undeliveredLi.textContent).toContain("Not delivered — the run ended first");
+    expect(turn2.compareDocumentPosition(undelivered) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("says the wait in whole seconds", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          turns: [turn(1)],
+          messages: [{ text: "Use the count", turn: 1, queuedSeconds: 1.6, delivered: true, at: null }],
+        })}
+      />,
+    );
+    expect(screen.getByText("Use the count").closest("li")!.textContent).toContain("waited 2s for the turn to end");
   });
 });
 

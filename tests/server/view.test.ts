@@ -817,6 +817,52 @@ describe("waiting", () => {
   });
 });
 
+describe("a caller's message", () => {
+  it("a lone message naming a turn with no other events adds no turn", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "message", at: at(0), text: "Still going?", by: "caller", turn: 5, queued_seconds: 1.5, delivered: true },
+    ]);
+    expect(v.turns.map((t) => t.n)).toEqual([1]);
+    expect(v.messages).toEqual([
+      { text: "Still going?", turn: 5, queuedSeconds: 1.5, delivered: true, at: "2026-10-01T13:00:09.000Z" },
+    ]);
+  });
+
+  it("a message with a string queued_seconds leaves queuedSeconds null", () => {
+    const v = viewOf([
+      start(),
+      { t: "message", at: at(0), text: "hi", by: "caller", turn: 1, queued_seconds: "2", delivered: true },
+    ]);
+    expect(v.messages).toEqual([
+      { text: "hi", turn: 1, queuedSeconds: null, delivered: true, at: "2026-10-01T13:00:09.000Z" },
+    ]);
+  });
+
+  it("a message whose turn is not a whole number, or whose delivered is not a boolean, reads them as null", () => {
+    const v = viewOf([
+      start(),
+      { t: "message", at: at(0), text: "hi", by: "caller", turn: 2.5, queued_seconds: 2, delivered: "yes" },
+    ]);
+    expect(v.messages).toEqual([
+      { text: "hi", turn: null, queuedSeconds: 2, delivered: null, at: "2026-10-01T13:00:09.000Z" },
+    ]);
+  });
+
+  it("diffView carries messages", () => {
+    const prev = viewOf([start()]);
+    const next = viewOf([
+      start(),
+      { t: "message", at: at(0), text: "hi", by: "caller", turn: 1, queued_seconds: 2, delivered: true },
+    ]);
+    const patch = diffView(prev, next);
+    expect(patch.messages).toEqual([
+      { text: "hi", turn: 1, queuedSeconds: 2, delivered: true, at: "2026-10-01T13:00:09.000Z" },
+    ]);
+  });
+});
+
 describe("summary", () => {
   it("reads finished values from end", () => {
     const v = viewOf([
@@ -1077,6 +1123,15 @@ describe("contract samples", () => {
     expect(failed.summary!.finished).toBe(true);
     expect(failed.summary!.ok).toBe(false);
     expect(failed.summary!.error).toBe("backend_unreachable: the endpoint refused the connection");
+  });
+
+  it("renders the caller's message sample", () => {
+    const v = loadSample("message.jsonl");
+    expect(v.messages).toEqual([
+      { text: "The test wants a count, not a deadline", turn: 2, queuedSeconds: 2, delivered: true, at: "2026-10-01T12:03:00.000Z" },
+      { text: "Also check the sibling test", turn: null, queuedSeconds: 0.5, delivered: false, at: "2026-10-01T12:03:25.000Z" },
+    ]);
+    expect(v.turns.map((t) => t.n)).toEqual([1, 2]);
   });
 });
 

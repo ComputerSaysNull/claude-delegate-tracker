@@ -24,7 +24,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
 }
 
 function view(overrides: Partial<StreamView> = {}): StreamView {
-  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, turns: [], summary: null, ...overrides };
+  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, messages: [], turns: [], summary: null, ...overrides };
 }
 
 const retry = (over: Partial<TurnView["retries"][number]> = {}): TurnView["retries"][number] => ({

@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #83 — 2026-11-02 — feat: vendor server v0.16.0 and show a caller's unasked message
+
+### Added
+
+- **A message the caller sent without being asked shows in the conversation.** Format 1.14
+  adds a `message` event: a caller can now steer a running delegation, not only answer its
+  questions. The tracker dropped any event kind it did not know, so a run that changed course
+  because it was told to read as the model's own idea. The message now shows on the caller's
+  side just before the turn that read it, with how long it waited for that turn; one the run
+  never read shows at the end, marked as not delivered. It is kept apart from the turns,
+  because it is written before its turn's own events and would otherwise draw an empty turn.
+
 ## #82 — 2026-10-30 — feat: show in History how many delegations ran inline
 
 ### Added

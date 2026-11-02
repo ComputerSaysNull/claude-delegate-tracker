@@ -27,7 +27,7 @@ export function applyPatch(held: StreamView, patch: ViewPatch): StreamView | "re
       turns[index] = turn;
     }
   }
-  return { ...held, seq: patch.seq, row: patch.row, waiting: patch.waiting, summary: patch.summary, turns };
+  return { ...held, seq: patch.seq, row: patch.row, waiting: patch.waiting, messages: patch.messages, summary: patch.summary, turns };
 }
 
 export function useStreamView(name: string): { view: StreamView | null; connected: boolean; missing: boolean } {

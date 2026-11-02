@@ -26,7 +26,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
 }
 
 function view(overrides: Partial<StreamView> = {}): StreamView {
-  return { name: "stream-1", seq: 1, row: row(), task: null, files: [], waiting: null, turns: [], summary: null, ...overrides };
+  return { name: "stream-1", seq: 1, row: row(), task: null, files: [], waiting: null, messages: [], turns: [], summary: null, ...overrides };
 }
 
 const TEXT = "Look at the file.";
