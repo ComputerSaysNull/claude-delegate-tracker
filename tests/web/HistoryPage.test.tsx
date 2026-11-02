@@ -386,13 +386,13 @@ describe("HistoryPage", () => {
     for (const name of ["Repo", "Model", "Delegations", "Done", "Tokens", "Cache reuse", "Median time", "Last"]) {
       expect(headers).toContain(name);
     }
-    const repoRow = screen.getByText("web-shop").closest("tr")!;
+    const repoRow = within(screen.getAllByRole("table")[0]).getByText("web-shop").closest("tr")!;
     expect(repoRow.textContent).toContain("2");
     expect(repoRow.textContent).toContain("50%");
     expect(repoRow.textContent).toContain("1.8k");
     expect(repoRow.textContent).toContain("1m30s");
     expect(repoRow.textContent).toContain(dayMonthYear(NOW - DAY));
-    const modelRow = screen.getByText("claude-code").closest("tr")!;
+    const modelRow = within(screen.getAllByRole("table")[1]).getByText("claude-code").closest("tr")!;
     expect(modelRow.textContent).toContain("2");
     expect(modelRow.textContent).toContain("50%");
   });
@@ -681,6 +681,93 @@ describe("HistoryPage", () => {
       mockFetch(api(RUNS), { buckets: [], writeError: null }, { buckets: [], writeError: "power disk full" });
       render(<HistoryPage />);
       await waitFor(() => expect(screen.getByText(/Could not save: power disk full/)).toBeTruthy());
+    });
+  });
+
+  describe("the re-arranged History tab", () => {
+    // The three labelled groups, found by their h2 heading.
+    function groupSection(name: string): HTMLElement {
+      return screen.getByRole("heading", { name, level: 2 }).closest("section")!;
+    }
+
+    // The card holding a group table, found as the nearest ancestor of its heading that holds a table.
+    function tableCard(name: string): HTMLElement {
+      const heading = screen.getByRole("heading", { name, level: 3 });
+      let el: HTMLElement | null = heading;
+      while (el && !el.querySelector("table")) el = el.parentElement;
+      return el!;
+    }
+
+    it("groups the cards into three labelled sections in the given order", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Delegations", level: 2 })).toBeTruthy());
+      expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+        "Delegations",
+        "Cluster",
+        "By repo and by model",
+      ]);
+      const cardHeadings = (name: string) =>
+        within(groupSection(name)).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+      expect(cardHeadings("Delegations")).toEqual([
+        "Delegations per day",
+        "Caller involvement",
+        "Tokens per day",
+        "Why runs did not finish",
+      ]);
+      expect(cardHeadings("Cluster")).toEqual([
+        "KV-cache use",
+        "GPU power",
+        "When the cluster is busy",
+        "Busy and idle",
+      ]);
+      expect(cardHeadings("By repo and by model")).toEqual(["By repo", "By model"]);
+    });
+
+    it("lays each group's cards in a grid of at most two columns", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Delegations", level: 2 })).toBeTruthy());
+      for (const name of ["Delegations", "Cluster", "By repo and by model"]) {
+        const grid = groupSection(name).querySelector(".grid");
+        expect(grid).not.toBeNull();
+        expect(grid!.classList.contains("grid")).toBe(true);
+        expect(grid!.classList.contains("lg:grid-cols-2")).toBe(true);
+      }
+      // The card grids, and whatever wraps them, never hold more than two cards a row; a
+      // grid inside a card (a table's compact figures) is the card's own business.
+      for (const name of ["Delegations", "Cluster", "By repo and by model"]) {
+        const grid = groupSection(name).querySelector(".grid")!;
+        for (let el: Element | null = grid; el !== null; el = el.parentElement) {
+          expect(typeof el.className === "string" ? el.className : "").not.toMatch(/grid-cols-([3-9]|1[0-2])/);
+        }
+      }
+    });
+
+    it("wraps the wide by-repo table and adds a compact list below the sm breakpoint", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "By repo", level: 3 })).toBeTruthy());
+      const card = tableCard("By repo");
+      // The wide table shows only from the sm breakpoint up.
+      const table = within(card).getByRole("table");
+      const tableWrapper = table.parentElement!;
+      expect(tableWrapper.className).toMatch(/\bhidden\b/);
+      expect(tableWrapper.className).toMatch(/\bsm:block\b/);
+      // The compact list shows only below sm.
+      const compact = [...card.querySelectorAll<HTMLElement>("[class]")].find((el) => /\bsm:hidden\b/.test(el.className))!;
+      expect(compact).toBeTruthy();
+      expect(within(compact).getByText("web-shop")).toBeTruthy();
+      for (const label of ["Delegations", "Done", "Tokens", "Cache reuse", "Median time", "Last"]) {
+        expect(within(compact).getAllByText(label).length).toBeGreaterThan(0);
+      }
+      // Each figure is a label above a value, and every value carries whitespace-nowrap.
+      for (const label of ["Delegations", "Done", "Tokens", "Cache reuse", "Median time", "Last"]) {
+        for (const labelEl of within(compact).getAllByText(label)) {
+          const valueEl = labelEl.nextElementSibling!;
+          expect(valueEl.className).toMatch(/\bwhitespace-nowrap\b/);
+        }
+      }
     });
   });
 });

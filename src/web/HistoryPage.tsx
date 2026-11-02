@@ -311,7 +311,7 @@ function PowerCard({ days }: { days: PowerDay[] }) {
   const at = active === null ? 0 : (active + 0.5) / n;
   const labels = chartLabels(days);
   return (
-    <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+    <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h3 className="text-sm font-semibold">GPU power</h3>
         <span className="text-[12.5px] text-muted">{totalText}</span>
@@ -465,7 +465,7 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid gap-3 grid-cols-[repeat(auto-fit,minmax(160px,1fr))]">
         <div className="flex flex-col gap-0.5 rounded-xl border border-line bg-card p-3.5">
           <span className="text-[12.5px] text-muted">Delegations</span>
           <span className="font-mono tabular-nums text-2xl font-medium">{t.delegations.toLocaleString()}</span>
@@ -496,219 +496,229 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">Delegations per day</h3>
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-done" aria-hidden="true" />done</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-stopped" aria-hidden="true" />stopped</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-limits" aria-hidden="true" />timed out or cut off</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-failed" aria-hidden="true" />failed</span>
-          </div>
-          <DayChart
-            days={days}
-            pct={dayPct}
-            title={(d) => d.label}
-            ariaLabel={(d) => `${d.label}: ${d.ok} done, ${d.stopped} stopped, ${d.limits} timed out or cut off, ${d.failed} failed`}
-            totalFor={(d) => ({ label: "Delegations", value: String(d.ok + d.stopped + d.limits + d.failed) })}
-            extraRows={(d) =>
-              d.said > 0 ? [{ label: "Ran inline", value: `${d.inline} of ${d.said}`, swatch: "bg-line" }] : []
-            }
-            barsFor={(d) => [
-              { key: "done", label: "done", value: d.ok, swatch: "bg-chart-done", text: String(d.ok) },
-              { key: "stopped", label: "stopped", value: d.stopped, swatch: "bg-chart-stopped", text: String(d.stopped) },
-              { key: "limits", label: "timed out or cut off", value: d.limits, swatch: "bg-chart-limits", text: String(d.limits) },
-              { key: "failed", label: "failed", value: d.failed, swatch: "bg-chart-failed", text: String(d.failed) },
-            ]}
-          />
-          <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
-            {labels.map((l) => (
-              <span key={l}>{l}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h3 className="text-sm font-semibold">Tokens per day</h3>
-            <span className="text-[12.5px] text-muted">{peakText}</span>
-          </div>
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/30" aria-hidden="true" />input, from cache</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
-          </div>
-          <DayChart
-            days={days}
-            pct={tokenPct}
-            title={(d) => d.label}
-            ariaLabel={(d) => `${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
-            totalFor={(d) => ({ label: "Tokens", value: compactCount(d.cached + d.fresh + d.output) })}
-            barsFor={(d) => [
-              { key: "cached", label: "input, from cache", value: d.cached, swatch: "bg-accent/30", text: compactCount(d.cached) },
-              { key: "fresh", label: "input, new", value: d.fresh, swatch: "bg-accent/65", text: compactCount(d.fresh) },
-              { key: "output", label: "output", value: d.output, swatch: "bg-accent", text: compactCount(d.output) },
-            ]}
-          />
-          <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
-            {labels.map((l) => (
-              <span key={l}>{l}</span>
-            ))}
-          </div>
-        </div>
-
-        <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">Caller involvement</h3>
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-baseline gap-1.5">questions<span className="font-mono tabular-nums text-text">{fig(t.questions)}</span></span>
-            <span className="inline-flex items-baseline gap-1.5">ask_caller calls<span className="font-mono tabular-nums text-text">{fig(t.asks)}</span></span>
-            <span className="inline-flex items-baseline gap-1.5">delegations asked<span className="font-mono tabular-nums text-text">{t.asked}</span></span>
-            <span className="inline-flex items-baseline gap-1.5">asked more than once<span className="font-mono tabular-nums text-text">{t.askedMoreThanOnce}</span></span>
-            <span className="inline-flex items-baseline gap-1.5">delegations messaged<span className="font-mono tabular-nums text-text">{t.messaged}</span></span>
-            <span className="inline-flex items-baseline gap-1.5">never delivered<span className="font-mono tabular-nums text-text">{fig(t.undelivered)}</span></span>
-          </div>
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-asked" aria-hidden="true" />asked</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-messaged" aria-hidden="true" />messaged</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-both" aria-hidden="true" />both</span>
-          </div>
-          <DayChart
-            days={days}
-            pct={involvedPct}
-            title={(d) => d.label}
-            ariaLabel={(d) => `${d.label}: ${d.asked} asked, ${d.messaged} messaged, ${d.both} both`}
-            // One bar per day for each kind of involvement; the involved count is the total row.
-            totalFor={(d) => ({ label: "Delegations involved", value: String(d.asked + d.messaged + d.both) })}
-            barsFor={(d) => [
-              { key: "asked", label: "asked", value: d.asked, swatch: "bg-chart-asked", text: String(d.asked) },
-              { key: "messaged", label: "messaged", value: d.messaged, swatch: "bg-chart-messaged", text: String(d.messaged) },
-              { key: "both", label: "both", value: d.both, swatch: "bg-chart-both", text: String(d.both) },
-            ]}
-            extraRows={(d) => [
-              { label: "Questions", value: fig(d.questions), swatch: "bg-line" },
-              { label: "Messages", value: fig(d.messages), swatch: "bg-line" },
-              { label: "Median wait", value: median(d.waits) === null ? "—" : `${Math.round(median(d.waits)!)}s`, swatch: "bg-line" },
-              { label: "Never delivered", value: fig(d.undelivered), swatch: "bg-line" },
-            ]}
-          />
-          <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
-            {labels.map((l) => (
-              <span key={l}>{l}</span>
-            ))}
-          </div>
-          {askRuns.length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <h4 className="text-[12.5px] font-semibold">Asked more than once</h4>
-              {askRuns.map((r) => (
-                <a
-                  key={r.name}
-                  href={addressFor({ selected: r.name, filter: NO_FILTER, section: "list" })}
-                  className="text-[12.5px] text-accent"
-                >
-                  {r.startedAt === null ? "—" : localDateTime(new Date(r.startedAt).toISOString())}
-                  {" · "}
-                  {r.repo ?? "—"}
-                  {" · "}
-                  {r.questions === null ? "—" : `${r.questions} questions`}
-                </a>
+      {/* Three labelled groups, at most two cards a row. */}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">Delegations</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">Delegations per day</h3>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-done" aria-hidden="true" />done</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-stopped" aria-hidden="true" />stopped</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-limits" aria-hidden="true" />timed out or cut off</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-failed" aria-hidden="true" />failed</span>
+            </div>
+            <DayChart
+              days={days}
+              pct={dayPct}
+              title={(d) => d.label}
+              ariaLabel={(d) => `${d.label}: ${d.ok} done, ${d.stopped} stopped, ${d.limits} timed out or cut off, ${d.failed} failed`}
+              totalFor={(d) => ({ label: "Delegations", value: String(d.ok + d.stopped + d.limits + d.failed) })}
+              extraRows={(d) =>
+                d.said > 0 ? [{ label: "Ran inline", value: `${d.inline} of ${d.said}`, swatch: "bg-line" }] : []
+              }
+              barsFor={(d) => [
+                { key: "done", label: "done", value: d.ok, swatch: "bg-chart-done", text: String(d.ok) },
+                { key: "stopped", label: "stopped", value: d.stopped, swatch: "bg-chart-stopped", text: String(d.stopped) },
+                { key: "limits", label: "timed out or cut off", value: d.limits, swatch: "bg-chart-limits", text: String(d.limits) },
+                { key: "failed", label: "failed", value: d.failed, swatch: "bg-chart-failed", text: String(d.failed) },
+              ]}
+            />
+            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+              {labels.map((l) => (
+                <span key={l}>{l}</span>
               ))}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-            <h3 className="text-sm font-semibold">KV-cache use</h3>
-            {kvPeakText !== "" && <span className="text-[12.5px] text-muted">{kvPeakText}</span>}
-          </div>
-          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-line" aria-hidden="true" />daily peak</span>
-            <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-accent" aria-hidden="true" />daily average</span>
-            <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-hot" aria-hidden="true" />90%: amber from here</span>
-          </div>
-          {noBusy ? (
-            <p className="text-muted">No figures from the model server in this range.</p>
-          ) : (
-            <>
-              <KvChart kv={kv} />
-              <div className="flex justify-between pl-[44px] font-mono tabular-nums text-[11.5px] text-muted">
-                {labels.map((l) => (
-                  <span key={l}>{l}</span>
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">Caller involvement</h3>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-baseline gap-1.5">questions<span className="font-mono tabular-nums text-text">{fig(t.questions)}</span></span>
+              <span className="inline-flex items-baseline gap-1.5">ask_caller calls<span className="font-mono tabular-nums text-text">{fig(t.asks)}</span></span>
+              <span className="inline-flex items-baseline gap-1.5">delegations asked<span className="font-mono tabular-nums text-text">{t.asked}</span></span>
+              <span className="inline-flex items-baseline gap-1.5">asked more than once<span className="font-mono tabular-nums text-text">{t.askedMoreThanOnce}</span></span>
+              <span className="inline-flex items-baseline gap-1.5">delegations messaged<span className="font-mono tabular-nums text-text">{t.messaged}</span></span>
+              <span className="inline-flex items-baseline gap-1.5">never delivered<span className="font-mono tabular-nums text-text">{fig(t.undelivered)}</span></span>
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-asked" aria-hidden="true" />asked</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-messaged" aria-hidden="true" />messaged</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-both" aria-hidden="true" />both</span>
+            </div>
+            <DayChart
+              days={days}
+              pct={involvedPct}
+              title={(d) => d.label}
+              ariaLabel={(d) => `${d.label}: ${d.asked} asked, ${d.messaged} messaged, ${d.both} both`}
+              // One bar per day for each kind of involvement; the involved count is the total row.
+              totalFor={(d) => ({ label: "Delegations involved", value: String(d.asked + d.messaged + d.both) })}
+              barsFor={(d) => [
+                { key: "asked", label: "asked", value: d.asked, swatch: "bg-chart-asked", text: String(d.asked) },
+                { key: "messaged", label: "messaged", value: d.messaged, swatch: "bg-chart-messaged", text: String(d.messaged) },
+                { key: "both", label: "both", value: d.both, swatch: "bg-chart-both", text: String(d.both) },
+              ]}
+              extraRows={(d) => [
+                { label: "Questions", value: fig(d.questions), swatch: "bg-line" },
+                { label: "Messages", value: fig(d.messages), swatch: "bg-line" },
+                { label: "Median wait", value: median(d.waits) === null ? "—" : `${Math.round(median(d.waits)!)}s`, swatch: "bg-line" },
+                { label: "Never delivered", value: fig(d.undelivered), swatch: "bg-line" },
+              ]}
+            />
+            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+              {labels.map((l) => (
+                <span key={l}>{l}</span>
+              ))}
+            </div>
+            {askRuns.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <h4 className="text-[12.5px] font-semibold">Asked more than once</h4>
+                {askRuns.map((r) => (
+                  <a
+                    key={r.name}
+                    href={addressFor({ selected: r.name, filter: NO_FILTER, section: "list" })}
+                    className="text-[12.5px] text-accent"
+                  >
+                    {r.startedAt === null ? "—" : localDateTime(new Date(r.startedAt).toISOString())}
+                    {" · "}
+                    {r.repo ?? "—"}
+                    {" · "}
+                    {r.questions === null ? "—" : `${r.questions} questions`}
+                  </a>
                 ))}
               </div>
-            </>
-          )}
+            )}
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 className="text-sm font-semibold">Tokens per day</h3>
+              <span className="text-[12.5px] text-muted">{peakText}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/30" aria-hidden="true" />input, from cache</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
+            </div>
+            <DayChart
+              days={days}
+              pct={tokenPct}
+              title={(d) => d.label}
+              ariaLabel={(d) => `${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
+              totalFor={(d) => ({ label: "Tokens", value: compactCount(d.cached + d.fresh + d.output) })}
+              barsFor={(d) => [
+                { key: "cached", label: "input, from cache", value: d.cached, swatch: "bg-accent/30", text: compactCount(d.cached) },
+                { key: "fresh", label: "input, new", value: d.fresh, swatch: "bg-accent/65", text: compactCount(d.fresh) },
+                { key: "output", label: "output", value: d.output, swatch: "bg-accent", text: compactCount(d.output) },
+              ]}
+            />
+            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+              {labels.map((l) => (
+                <span key={l}>{l}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">Why runs did not finish</h3>
+            {why.length === 0 ? (
+              <p className="text-muted">Every run finished.</p>
+            ) : (
+              why.map((r) => (
+                <div key={r.reason} className="flex items-center gap-2.5 text-[13px]">
+                  <StateIcon state={r.outcome} />
+                  <span className="flex-1">{r.reason}</span>
+                  <span className="font-mono tabular-nums">{r.count}</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
+      </section>
 
-        <PowerCard days={powerDays} />
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">Cluster</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 className="text-sm font-semibold">KV-cache use</h3>
+              {kvPeakText !== "" && <span className="text-[12.5px] text-muted">{kvPeakText}</span>}
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-line" aria-hidden="true" />daily peak</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-0.5 w-3.5 bg-accent" aria-hidden="true" />daily average</span>
+              <span className="inline-flex items-center gap-1.5"><span className="w-3.5 border-t-2 border-dashed border-hot" aria-hidden="true" />90%: amber from here</span>
+            </div>
+            {noBusy ? (
+              <p className="text-muted">No figures from the model server in this range.</p>
+            ) : (
+              <>
+                <KvChart kv={kv} />
+                <div className="flex justify-between pl-[44px] font-mono tabular-nums text-[11.5px] text-muted">
+                  {labels.map((l) => (
+                    <span key={l}>{l}</span>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
 
-        <div className="flex min-w-0 flex-[2_1_280px] flex-col gap-3 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">Busy and idle</h3>
-          {runs.length === 0 ? (
-            <p className="text-muted">No delegations in this range.</p>
-          ) : (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="font-mono tabular-nums text-3xl font-medium">{busyLoad.busyPercent}%</span>
-                <span className="text-muted">of the time at least one delegation was running</span>
-              </div>
-              <div className="flex h-3 overflow-hidden rounded-full" aria-hidden="true">
-                <div className="bg-accent" style={{ width: `${busyLoad.busyPercent ?? 0}%` }} />
-                <div className="flex-1 bg-line" />
-              </div>
-              <span className="text-[12.5px] text-muted">busy <span className="font-mono tabular-nums text-text">{busyLoad.busyHours}h</span> · idle <span className="font-mono tabular-nums text-text">{busyLoad.idleHours}h</span></span>
-              <div className="text-[12.5px] text-muted">
-                at most {busyLoad.peak} at once · on average {busyLoad.averageWhileBusy} while busy
-              </div>
-              <div className="text-[12.5px] text-muted">
-                {hottest === null ? "No busy hour recorded." : `Busiest: ${WEEKDAYS_PLURAL[hottest.day]} ${two(hottest.hour)}:00–${two(hottest.hour + 1)}:00`}
-              </div>
-            </>
-          )}
+          <PowerCard days={powerDays} />
+
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">When the cluster is busy</h3>
+            {runs.length === 0 ? (
+              <p className="text-muted">No delegations in this range.</p>
+            ) : (
+              <>
+                <BusyGrid grid={grid} />
+                <div className="flex items-center gap-1.5 text-xs text-muted">
+                  <span>quiet</span>
+                  <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.06 }} />
+                  <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.3 }} />
+                  <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.6 }} />
+                  <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.9 }} />
+                  <span>busy</span>
+                </div>
+                <p className="text-xs text-muted">Delegations at once, on average</p>
+              </>
+            )}
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-3 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">Busy and idle</h3>
+            {runs.length === 0 ? (
+              <p className="text-muted">No delegations in this range.</p>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="font-mono tabular-nums text-3xl font-medium">{busyLoad.busyPercent}%</span>
+                  <span className="text-muted">of the time at least one delegation was running</span>
+                </div>
+                <div className="flex h-3 overflow-hidden rounded-full" aria-hidden="true">
+                  <div className="bg-accent" style={{ width: `${busyLoad.busyPercent ?? 0}%` }} />
+                  <div className="flex-1 bg-line" />
+                </div>
+                <span className="text-[12.5px] text-muted">busy <span className="font-mono tabular-nums text-text">{busyLoad.busyHours}h</span> · idle <span className="font-mono tabular-nums text-text">{busyLoad.idleHours}h</span></span>
+                <div className="text-[12.5px] text-muted">
+                  at most {busyLoad.peak} at once · on average {busyLoad.averageWhileBusy} while busy
+                </div>
+                <div className="text-[12.5px] text-muted">
+                  {hottest === null ? "No busy hour recorded." : `Busiest: ${WEEKDAYS_PLURAL[hottest.day]} ${two(hottest.hour)}:00–${two(hottest.hour + 1)}:00`}
+                </div>
+              </>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="flex flex-wrap gap-4">
-        <div className="flex min-w-0 flex-[3_1_460px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">When the cluster is busy</h3>
-          {runs.length === 0 ? (
-            <p className="text-muted">No delegations in this range.</p>
-          ) : (
-            <>
-              <BusyGrid grid={grid} />
-              <div className="flex items-center gap-1.5 text-xs text-muted">
-                <span>quiet</span>
-                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.06 }} />
-                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.3 }} />
-                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.6 }} />
-                <span className="h-2.5 w-3.5 rounded-sm bg-accent" style={{ opacity: 0.9 }} />
-                <span>busy</span>
-              </div>
-              <p className="text-xs text-muted">Delegations at once, on average</p>
-            </>
-          )}
+      <section className="flex flex-col gap-3">
+        <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">By repo and by model</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <GroupTable name="Repo" groups={repoGroups} />
+          <GroupTable name="Model" groups={modelGroups} />
         </div>
-
-        <div className="flex min-w-0 flex-[2_1_280px] flex-col gap-2 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">Why runs did not finish</h3>
-          {why.length === 0 ? (
-            <p className="text-muted">Every run finished.</p>
-          ) : (
-            why.map((r) => (
-              <div key={r.reason} className="flex items-center gap-2.5 text-[13px]">
-                <StateIcon state={r.outcome} />
-                <span className="flex-1">{r.reason}</span>
-                <span className="font-mono tabular-nums">{r.count}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      <GroupTable name="Repo" groups={repoGroups} />
-      <GroupTable name="Model" groups={modelGroups} />
+      </section>
 
       <p className="text-muted">
         {`${data.status.records.toLocaleString()} runs kept`}
@@ -742,34 +752,70 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
 // One row per repo or model: how many, how many finished, tokens, cache reuse, time, last date.
 function GroupTable({ name, groups }: { name: string; groups: Group[] }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-line bg-card p-4">
+    <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
       <h3 className="mb-2 text-sm font-semibold">By {name.toLowerCase()}</h3>
-      <table className="w-full border-collapse text-[13px]">
-        <thead>
-          <tr className="text-left text-muted">
-            <th className="py-1.5 pr-2 font-medium">{name}</th>
-            <th className="px-2 py-1.5 text-right font-medium">Delegations</th>
-            <th className="px-2 py-1.5 text-right font-medium">Done</th>
-            <th className="px-2 py-1.5 text-right font-medium">Tokens</th>
-            <th className="px-2 py-1.5 text-right font-medium">Cache reuse</th>
-            <th className="px-2 py-1.5 text-right font-medium">Median time</th>
-            <th className="py-1.5 pl-2 text-right font-medium">Last</th>
-          </tr>
-        </thead>
-        <tbody className="font-mono tabular-nums">
-          {groups.map((g) => (
-            <tr key={g.key} className="border-t border-line">
-              <td className="py-1.5 pr-2 font-sans">{g.key}</td>
-              <td className="px-2 py-1.5 text-right">{g.delegations.toLocaleString()}</td>
-              <td className="px-2 py-1.5 text-right">{g.donePercent}%</td>
-              <td className="px-2 py-1.5 text-right">{g.tokens === null ? "—" : compactCount(g.tokens)}</td>
-              <td className="px-2 py-1.5 text-right">{g.cacheReusePercent === null ? "—" : `${g.cacheReusePercent}%`}</td>
-              <td className="px-2 py-1.5 text-right">{g.medianSeconds === null ? "—" : formatDuration(g.medianSeconds)}</td>
-              <td className="py-1.5 pl-2 text-right">{g.last === null ? "—" : dayMonthYear(g.last)}</td>
+      <div className="hidden sm:block overflow-x-auto">
+        <table className="w-full border-collapse text-[13px]">
+          <thead>
+            <tr className="text-left text-muted">
+              <th className="py-1.5 pr-2 font-medium">{name}</th>
+              <th className="px-2 py-1.5 text-right font-medium">Delegations</th>
+              <th className="px-2 py-1.5 text-right font-medium">Done</th>
+              <th className="px-2 py-1.5 text-right font-medium">Tokens</th>
+              <th className="px-2 py-1.5 text-right font-medium">Cache reuse</th>
+              <th className="px-2 py-1.5 text-right font-medium">Median time</th>
+              <th className="py-1.5 pl-2 text-right font-medium">Last</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="font-mono tabular-nums">
+            {groups.map((g) => (
+              <tr key={g.key} className="border-t border-line">
+                <td className="py-1.5 pr-2 font-sans">{g.key}</td>
+                <td className="px-2 py-1.5 text-right">{g.delegations.toLocaleString()}</td>
+                <td className="px-2 py-1.5 text-right">{g.donePercent}%</td>
+                <td className="px-2 py-1.5 text-right">{g.tokens === null ? "—" : compactCount(g.tokens)}</td>
+                <td className="px-2 py-1.5 text-right">{g.cacheReusePercent === null ? "—" : `${g.cacheReusePercent}%`}</td>
+                <td className="px-2 py-1.5 text-right">{g.medianSeconds === null ? "—" : formatDuration(g.medianSeconds)}</td>
+                <td className="py-1.5 pl-2 text-right">{g.last === null ? "—" : dayMonthYear(g.last)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* On a phone each row is a block so no figure wraps. */}
+      <div className="sm:hidden flex flex-col">
+        {groups.map((g) => (
+          <div key={g.key} className="border-t border-line py-2.5">
+            <div className="text-[13px] font-semibold">{g.key}</div>
+            <div className="grid grid-cols-3 gap-x-3 gap-y-2">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Delegations</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.delegations.toLocaleString()}</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Done</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.donePercent}%</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Tokens</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.tokens === null ? "—" : compactCount(g.tokens)}</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Cache reuse</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.cacheReusePercent === null ? "—" : `${g.cacheReusePercent}%`}</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Median time</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.medianSeconds === null ? "—" : formatDuration(g.medianSeconds)}</span>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-[11.5px] text-muted whitespace-nowrap">Last</span>
+                <span className="font-mono tabular-nums text-[13px] whitespace-nowrap">{g.last === null ? "—" : dayMonthYear(g.last)}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

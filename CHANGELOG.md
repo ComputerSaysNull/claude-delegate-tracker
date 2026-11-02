@@ -9,6 +9,17 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #89 — 2026-11-02 — feat: give the History charts more room in labelled groups
+
+### Changed
+
+- **History is laid out in three labelled groups, at most two charts side by side.** The
+  charts sat in rows of flexible cards that put three in a row on a wide screen, cramped and
+  hard to scan. They now sit under Delegations, Cluster, and By repo and by model, two to a
+  row at most and one per row on a phone, to the mockup the operator approved. On a phone the
+  repo and model tables squeezed their columns until numbers wrapped; each row is now a block
+  with its name over its six figures, and no figure wraps.
+
 ## #88 — 2026-11-02 — feat: keep every hour of chart history and add an All time range
 
 ### Added
