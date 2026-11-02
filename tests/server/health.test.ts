@@ -22,6 +22,7 @@ function list(over: Partial<ListResponse> = {}): ListResponse {
     folderReadable: true,
     badLines: 0,
     schemaFailures: 0,
+    choices: { kinds: [], models: [], repos: [] },
     ...over,
   };
 }

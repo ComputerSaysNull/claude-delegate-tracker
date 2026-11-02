@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
 import { localTime } from "../../src/web/time.ts";
 import { STATE_LABEL } from "../../src/web/states.tsx";
+import { NO_FILTER } from "../../src/web/filter.ts";
 import type { HistoryPage, ListResponse } from "../../src/server/poller.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 
@@ -39,6 +40,7 @@ function list(rows: ListRow[], overrides: Partial<ListResponse> = {}): ListRespo
     folderReadable: true,
     badLines: 0,
     schemaFailures: 0,
+    choices: { kinds: [], models: [], repos: [] },
     ...overrides,
   };
 }
@@ -318,5 +320,144 @@ describe("DelegationList", () => {
     fireEvent.change(search, { target: { value: "zzz" } });
     expect(screen.getByText("No loaded delegation matches.")).toBeTruthy();
     expect(screen.queryByText("Alpha")).toBeNull();
+  });
+
+  it("carries the current filter on the Older fetch", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "old-rare", model: "rare", title: "Older rare" })], nextBefore: "more-1" })), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "older-2", model: "rare", title: "Second older" })], nextBefore: null })), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    await screen.findByText("Older rare");
+    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    await screen.findByText("Second older");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const url = new URL(fetchMock.mock.calls[1][0], "http://localhost");
+    expect(url.searchParams.get("before")).toBe("more-1");
+    expect(url.searchParams.get("model")).toBe("rare");
+  });
+
+  it("loads the first filtered older page by itself when a filter is set and the list is capped", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page({ rows: [row({ name: "old-rare", model: "rare", title: "Older rare" })], nextBefore: null })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    expect(await screen.findByText("Older rare")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = new URL(fetchMock.mock.calls[0][0], "http://localhost");
+    expect(url.searchParams.get("before")).toBe("last live");
+    expect(url.searchParams.get("model")).toBe("rare");
+  });
+
+  it("drops the previous filter's older rows and loads the first page for the new filter", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "old-rare", model: "rare", kind: "delegate", title: "Older rare" })], nextBefore: null })), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "old-other", model: "other", kind: "delegate", title: "Older other" })], nextBefore: null })), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    await screen.findByText("Older rare");
+    rerender(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    expect(await screen.findByText("Older other")).toBeTruthy();
+    expect(screen.queryByText("Older rare")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const url = new URL(fetchMock.mock.calls[1][0], "http://localhost");
+    expect(url.searchParams.get("before")).toBe("last live");
+    expect(url.searchParams.get("kind")).toBe("delegate");
+  });
+
+  it("ignores an older page that resolves after the filter has changed", async () => {
+    let resolveRare!: (r: Response) => void;
+    const rare = new Promise<Response>((resolve) => {
+      resolveRare = resolve;
+    });
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(rare)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "old-other", model: "other", kind: "delegate", title: "Older other" })], nextBefore: null })), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    rerender(
+      <DelegationList
+        list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
+        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null }}
+        onFilterChange={() => {}}
+      />,
+    );
+    expect(await screen.findByText("Older other")).toBeTruthy();
+    await act(async () => {
+      resolveRare(
+        new Response(JSON.stringify(page({ rows: [row({ name: "old-rare", model: "rare", kind: "delegate", title: "Older rare" })], nextBefore: null })), { status: 200 }),
+      );
+    });
+    expect(screen.queryByText("Older rare")).toBeNull();
+  });
+
+  it("offers Show older again when the filter is cleared while its page is still loading", async () => {
+    const never = new Promise<Response>(() => {});
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(never));
+    const capped = list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 });
+    const { rerender } = render(
+      <DelegationList list={capped} filter={{ text: "", states: [], kind: null, model: "rare", repo: null }} onFilterChange={() => {}} />,
+    );
+    expect(await screen.findByRole("button", { name: "Loading…" })).toBeTruthy();
+    rerender(<DelegationList list={capped} filter={NO_FILTER} onFilterChange={() => {}} />);
+    const button = await screen.findByRole("button", { name: "Show older" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("fetches nothing by itself when no filter is set", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <DelegationList
+        list={list([row({ name: "last live", title: "Live task" })], { capped: true, total: 21 })}
+        filter={NO_FILTER}
+        onFilterChange={() => {}}
+      />,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

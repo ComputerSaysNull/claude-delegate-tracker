@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "../../src/web/filter.ts";
+import { unionChoices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "../../src/web/filter.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 
 function row(overrides: Partial<ListRow> = {}): ListRow {
@@ -105,14 +105,14 @@ describe("isFiltering", () => {
   });
 });
 
-describe("choices", () => {
+describe("unionChoices", () => {
   it("returns distinct, non-null values, sorted", () => {
-    expect(choices(ROWS, "kind")).toEqual(["claude-code", "one-shot"]);
-    expect(choices(ROWS, "model")).toEqual(["claude-opus-4", "claude-sonnet-4"]);
+    expect(unionChoices(ROWS, "kind", [])).toEqual(["claude-code", "one-shot"]);
+    expect(unionChoices(ROWS, "model", [])).toEqual(["claude-opus-4", "claude-sonnet-4"]);
   });
 
   it("returns an empty list when there is nothing to choose", () => {
-    expect(choices([], "kind")).toEqual([]);
-    expect(choices([row({ model: null })], "model")).toEqual([]);
+    expect(unionChoices([], "kind", [])).toEqual([]);
+    expect(unionChoices([row({ model: null })], "model", [])).toEqual([]);
   });
 });

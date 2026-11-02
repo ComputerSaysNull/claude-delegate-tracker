@@ -65,8 +65,8 @@ The repo machinery (the docs gate, hooks, publishing) is Python, copied from the
 | Route | Returns |
 |---|---|
 | `GET /` | The page (built static files). |
-| `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, and how many lines were not JSON. |
-| `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name, ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. Each is read whole on request and never polled. |
+| `GET /api/streams` | The list rows, already derived (state, why, age, kind, model, effort, title, start time, elapsed, turns, an unknown format), plus whether the list is capped, how many streams the folder holds, how many names lack the stamp, whether the folder was readable, how many lines were not JSON, and every kind, model and repo any listed stream has, for the filter choices. |
+| `GET /api/streams?before=<name>` | The next 20 streams older than `<name>` by name that match the filter in the query (the address's `q`, `state`, `kind`, `model`, `repo`), ordered like the list, and the cursor for the next page. `<name>` must be one the backend listed itself, else `404`. An old stream is read whole once and kept as a small summary, read again only while it has not ended and its file grew; a few hundred are summarised each poll, so every stream soon is. |
 | `GET /api/streams/<name>` | One stream's full derived view. `<name>` is looked up among the names the backend listed itself; anything else is `404`. A name from a URL is never joined onto a path. |
 | `GET /api/streams/<name>/thinking/<turn>` | One finished turn's thinking, as text, fetched only when the page opens its fold. `<name>` is looked up among the names the backend listed itself and `<turn>` among the turns it holds; anything else is `404`. |
 | `GET /api/cluster` | The latest model server and node figures, and when each was read. |
@@ -238,7 +238,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 - Order by `start.at`, newest first, never by last activity.
 - Say when the list is capped at 20, and offer older ones a page at a time; older pages are a snapshot, not live.
-- Search and filters (title words, state, kind, model, repo) apply to the rows loaded so far, live and older alike, and say how many of them they show.
+- Search and filters (title words, state, kind, model, repo) apply to the live rows and to older pages the backend filters itself, so a match far back is found without paging through the rest; setting a filter loads its first older page at once. They say how many rows they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
 - Above the list, count what is running and queued now, and what failed today; runs that timed out or were stopped today are counted apart, and only when there are any.

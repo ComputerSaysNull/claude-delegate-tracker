@@ -1,8 +1,9 @@
-import { useState, Fragment, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, Fragment, type ReactNode } from "react";
 import { ChevronDown, ChevronRight, Search, SlidersHorizontal } from "lucide-react";
 import type { ListResponse, HistoryPage } from "../server/poller.ts";
 import type { ListRow } from "../server/streams.ts";
-import { choices, filterRows, isFiltering, NO_FILTER, type RowFilter } from "./filter.ts";
+import { filterToParams } from "../server/catalog.ts";
+import { filterRows, isFiltering, NO_FILTER, unionChoices, type RowFilter } from "./filter.ts";
 import { groupRows, todayCounts } from "./groups.ts";
 import { localTime } from "./time.ts";
 import { StateIcon, STATE_TEXT, STATE_LABEL, cardClass } from "./states.tsx";
@@ -184,7 +185,7 @@ export function DelegationList({
   const [older, setOlder] = useState<ListRow[]>([]);
   const [cursor, setCursor] = useState<string | null>(null); // the next page's `before`
   const [started, setStarted] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loadingKey, setLoadingKey] = useState<string | null>(null); // the filter key of the page being fetched
   const [error, setError] = useState(false);
   const [ownFilter, setOwnFilter] = useState<RowFilter>(NO_FILTER);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -195,6 +196,37 @@ export function DelegationList({
     if (onFilterChange !== undefined) onFilterChange(value);
     else setOwnFilter(value);
   };
+
+  const live = list?.rows ?? [];
+  // A string naming the exact filter a request is made for; the effect below reloads the
+  // first older page when it changes, and a response for an older key is dropped.
+  const filterKey = useMemo(() => {
+    const q = new URLSearchParams();
+    filterToParams(filter, q);
+    return q.toString();
+  }, [filter]);
+  const filterKeyRef = useRef(filterKey); // the newest filter key, read when a response arrives
+  useEffect(() => {
+    filterKeyRef.current = filterKey;
+  }, [filterKey]);
+  const loading = loadingKey === filterKey;
+
+  // A change of filter drops the previous filter's older rows (reset while rendering, as
+  // React advises for state that follows a prop) and loads the first page for the new one.
+  const [rowsKey, setRowsKey] = useState(filterKey);
+  if (rowsKey !== filterKey) {
+    setRowsKey(filterKey);
+    setOlder([]);
+    setCursor(null);
+    setStarted(false);
+    setError(false);
+  }
+  const firstBefore = live[live.length - 1]?.name ?? null;
+  const autoLoad = isFiltering(filter) && list !== null && list.capped && firstBefore !== null;
+  useEffect(() => {
+    // With no filter nothing is fetched on its own; the Older button pages.
+    if (autoLoad) void loadOlder(firstBefore);
+  }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps -- once per filter, not per live update
 
   // The Filters button counts the state, kind, model and repo filters that are on; the search text is not counted.
   const activeCount =
@@ -223,15 +255,14 @@ export function DelegationList({
   }
 
   const now = new Date();
-  const live = list.rows;
   const loaded = [...live, ...older];
   const filtering = isFiltering(filter);
   const filteredLive = filterRows(live, filter);
   const filteredOlder = filterRows(older, filter);
   const shownCount = filteredLive.length + filteredOlder.length;
-  const kindChoices = choices(loaded, "kind");
-  const modelChoices = choices(loaded, "model");
-  const repoChoices = choices(loaded, "workspace");
+  const kindChoices = unionChoices(loaded, "kind", list.choices.kinds);
+  const modelChoices = unionChoices(loaded, "model", list.choices.models);
+  const repoChoices = unionChoices(loaded, "workspace", list.choices.repos);
   const groups = groupRows([...filteredLive, ...filteredOlder], now);
   const counts = todayCounts(loaded, now);
 
@@ -244,16 +275,22 @@ export function DelegationList({
     });
   };
 
-  async function loadOlder(): Promise<void> {
-    if (loading) return;
-    const before = started ? cursor : live[live.length - 1]?.name ?? null;
+  async function loadOlder(beforeArg?: string | null): Promise<void> {
+    const requestKey = filterKey; // the filter this request is made for
+    if (loadingKey === requestKey) return; // a page for this filter is already on its way
+    const before = beforeArg !== undefined ? beforeArg : started ? cursor : live[live.length - 1]?.name ?? null;
     if (before === null) return;
-    setLoading(true);
+    setLoadingKey(requestKey);
     setError(false);
     try {
-      const res = await fetch("/api/streams?before=" + encodeURIComponent(before));
+      const q = new URLSearchParams();
+      filterToParams(filter, q);
+      const params = q.toString();
+      const res = await fetch("/api/streams?before=" + encodeURIComponent(before) + (params === "" ? "" : "&" + params));
       if (!res.ok) throw new Error(`status ${res.status}`);
       const page = (await res.json()) as HistoryPage;
+      // A page for a filter that has since changed is dropped, so it cannot replace the new filter's rows.
+      if (requestKey !== filterKeyRef.current) return;
       setOlder((prev) => {
         const shown = new Set<string>();
         for (const r of live) shown.add(r.name);
@@ -263,9 +300,10 @@ export function DelegationList({
       setCursor(page.nextBefore);
       setStarted(true);
     } catch {
+      if (requestKey !== filterKeyRef.current) return;
       setError(true);
     } finally {
-      setLoading(false);
+      setLoadingKey((k) => (k === requestKey ? null : k));
     }
   }
 

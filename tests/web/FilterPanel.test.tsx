@@ -31,7 +31,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
   };
 }
 
-function list(rows: ListRow[]): ListResponse {
+function list(rows: ListRow[], overrides: Partial<ListResponse> = {}): ListResponse {
   return {
     rows,
     capped: false,
@@ -40,6 +40,8 @@ function list(rows: ListRow[]): ListResponse {
     folderReadable: true,
     badLines: 0,
     schemaFailures: 0,
+    choices: { kinds: [], models: [], repos: [] },
+    ...overrides,
   };
 }
 
@@ -187,5 +189,23 @@ describe("DelegationList filter panel", () => {
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove filter: Failed" }));
     expect(onFilterChange).toHaveBeenLastCalledWith(expect.objectContaining({ states: ["stopped"] }));
+  });
+
+  it("offers a value that only list.choices knows, with no loaded row having it", () => {
+    render(
+      <DelegationList
+        list={list([row({ name: "a", kind: "claude-code", model: "claude-sonnet-4" })], {
+          choices: { kinds: ["delegate", "claude-code"], models: ["rare", "claude-sonnet-4"], repos: ["repo-x"] },
+        })}
+        filter={NO_FILTER}
+        onFilterChange={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    const options = (label: string) =>
+      [...screen.getByRole("combobox", { name: label }).querySelectorAll("option")].map((o) => o.textContent ?? "");
+    expect(options("Kind")).toContain("delegate");
+    expect(options("Model")).toContain("rare");
+    expect(options("Repo")).toContain("repo-x");
   });
 });

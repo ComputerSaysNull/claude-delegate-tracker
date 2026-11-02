@@ -563,6 +563,126 @@ describe("history", () => {
   });
 });
 
+describe("history with a filter", () => {
+  function writeNamed(dir: string, name: string, at: string, opts: { model?: string; workspace?: string; finish?: boolean } = {}): void {
+    const start = {
+      ...startEvent(at),
+      ...(opts.model === undefined ? {} : { model_key: opts.model }),
+      ...(opts.workspace === undefined ? {} : { workspace: opts.workspace }),
+    };
+    writeStream(dir, name, opts.finish === false ? [start] : [start, endEvent(at)]);
+  }
+
+  function fillFiltered(dir: string, count: number, mk: (i: number) => { model?: string; workspace?: string; finish?: boolean }): string[] {
+    const names: string[] = [];
+    for (let i = 0; i < count; i++) {
+      const at = new Date(Date.UTC(2026, 9, 1, 10, i)).toISOString();
+      const stamp = at.replace(/[-:]/g, "").replace("Z", "").replace(/\.(\d{3})$/, ".$1");
+      const name = `${stamp}-s${i}.jsonl`;
+      writeNamed(dir, name, at, mk(i));
+      names.push(name);
+    }
+    return names.reverse(); // newest first
+  }
+
+  const RARE = { text: "", states: [], kind: null, model: "rare", repo: null };
+
+  it("returns only the matching streams after the cursor, and stops at the oldest", () => {
+    const dir = makeDir();
+    try {
+      // 30 finished streams; only the 3 oldest (i = 0, 1, 2) have model "rare".
+      const names = fillFiltered(dir, 30, (i) => (i < 3 ? { model: "rare" } : {}));
+      const poller = makePoller(dir);
+      poller.pass();
+      const live = poller.list().rows.map((r) => r.name);
+      const page = poller.history(live[live.length - 1], RARE);
+      expect(page).not.toBeNull();
+      expect(page!.rows.map((r) => r.name)).toEqual([names[27], names[28], names[29]]);
+      expect(page!.nextBefore).toBeNull();
+      expect(page!.rows.every((r) => r.model === "rare")).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("pages through the matching streams 20 at a time, never a non-matching row", () => {
+    const dir = makeDir();
+    try {
+      // 61 streams; after the newest, three of every four match, so 45 matching streams
+      // sit among 15 that do not.
+      const names = fillFiltered(dir, 61, (i) => (i < 60 && i % 4 !== 0 ? { model: "rare" } : {}));
+      const poller = makePoller(dir);
+      poller.pass();
+      const matching = names.slice(1).filter((_, k) => (59 - k) % 4 !== 0);
+      expect(matching).toHaveLength(45);
+      const page1 = poller.history(names[0], RARE);
+      expect(page1!.rows.map((r) => r.name)).toEqual(matching.slice(0, 20));
+      expect(page1!.nextBefore).toBe(matching[19]);
+      const page2 = poller.history(page1!.nextBefore!, RARE);
+      expect(page2!.rows.map((r) => r.name)).toEqual(matching.slice(20, 40));
+      expect(page2!.nextBefore).toBe(matching[39]);
+      const page3 = poller.history(page2!.nextBefore!, RARE);
+      expect(page3!.rows.map((r) => r.name)).toEqual(matching.slice(40, 45));
+      expect(page3!.nextBefore).toBeNull();
+      for (const page of [page1, page2, page3]) {
+        expect(page!.rows.every((r) => r.model === "rare")).toBe(true);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("re-reads an old unfinished stream once it ends, and shows it as ok", () => {
+    const dir = makeDir();
+    try {
+      // 30 streams; only the oldest (i = 0, beyond the newest 25) is unfinished and matches.
+      const names = fillFiltered(dir, 30, (i) => (i === 0 ? { model: "rare", finish: false } : {}));
+      const poller = makePoller(dir);
+      poller.pass();
+      const live = poller.list().rows.map((r) => r.name);
+      const before = live[live.length - 1];
+      const page1 = poller.history(before, RARE);
+      expect(page1!.rows.map((r) => r.name)).toEqual([names[29]]);
+      expect(page1!.rows[0].state).toBe("quiet");
+      appendFileSync(join(dir, names[29]), JSON.stringify(endEvent("2026-10-01T10:00:05.000Z")) + "\n");
+      const page2 = poller.history(before, RARE);
+      expect(page2!.rows.map((r) => r.name)).toEqual([names[29]]);
+      expect(page2!.rows[0].state).toBe("ok");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("lists a workspace only an old stream has, once enough passes cache it", () => {
+    const dir = makeDir();
+    try {
+      // 30 streams; only the oldest (i = 0, beyond the newest 25) has a workspace.
+      fillFiltered(dir, 30, (i) => (i === 0 ? { workspace: "docs" } : {}));
+      const poller = makePoller(dir);
+      for (let i = 0; i < 3; i++) poller.pass();
+      expect(poller.list().choices.repos).toContain("docs");
+      expect(poller.list().choices.repos).toEqual(["docs"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("forgets an old stream once its file is gone", () => {
+    const dir = makeDir();
+    try {
+      const names = fillFiltered(dir, 30, (i) => (i === 0 ? { workspace: "docs" } : {}));
+      const poller = makePoller(dir);
+      for (let i = 0; i < 3; i++) poller.pass();
+      expect(poller.list().choices.repos).toEqual(["docs"]);
+      rmSync(join(dir, names[29]));
+      poller.pass();
+      expect(poller.list().choices.repos).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("a finished turn's thinking", () => {
   const NAME = "20261001T120000.000-a.jsonl";
 

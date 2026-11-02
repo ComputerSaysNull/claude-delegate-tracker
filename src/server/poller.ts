@@ -1,17 +1,21 @@
 // Polls the transcript folder: keeps one StreamReader per listed stream and
 // turns the folder listing into the rows the UI shows. A followed stream is also
 // read on its own, faster interval, and sends patches of its view.
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { listNewest, StreamReader } from "./folder.ts";
 import type { Listing } from "./folder.ts";
 import { newStreamState, applyLine, listRow, parseAt } from "./streams.ts";
 import type { StreamState, ListRow } from "./streams.ts";
+import { NO_FILTER, rowMatches, slimState } from "./catalog.ts";
+import type { RowFilter } from "./catalog.ts";
 import { newViewState, applyViewEvent, buildView, diffView, turnThinking } from "./view.ts";
 import type { ViewState, StreamView, ViewPatch } from "./view.ts";
 
 export const PICK_BY_NAME = 25; // names listed before ordering by start.at
 export const LIST_LIMIT = 20;
 export const RETRY_MAX_SECONDS = 30; // folder retries back off 1, 2, 4 … this
+export const CACHE_PER_PASS = 200; // cache a few old streams each pass, so a first full read spreads out
 
 export interface ListResponse {
   rows: ListRow[];
@@ -21,6 +25,7 @@ export interface ListResponse {
   folderReadable: boolean;
   badLines: number;
   schemaFailures: number;
+  choices: { kinds: string[]; models: string[]; repos: string[] };
 }
 
 // A page of older streams: read on request, never polled.
@@ -55,7 +60,7 @@ interface Entry {
 }
 
 function emptyList(): ListResponse {
-  return { rows: [], capped: false, total: 0, unstamped: 0, folderReadable: false, badLines: 0, schemaFailures: 0 };
+  return { rows: [], capped: false, total: 0, unstamped: 0, folderReadable: false, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] } };
 }
 
 function compareRows(a: ListRow, b: ListRow): number {
@@ -69,6 +74,7 @@ function compareRows(a: ListRow, b: ListRow): number {
 export class Poller {
   private readonly deps: PollerDeps;
   private readonly entries = new Map<string, Entry>();
+  private readonly cache = new Map<string, { state: StreamState; size: number }>();
   private readonly listeners = new Set<(list: ListResponse) => void>();
   private known = new Set<string>();
   private ordered: string[] = []; // every listed name, newest first, unstamped last
@@ -114,6 +120,7 @@ export class Poller {
       // A followed stream stays while a page follows it, listed or not.
       if (!listed.has(name) && entry.followers.size === 0) this.entries.delete(name);
     }
+    this.maintainCache();
 
     for (const name of [...this.entries.keys()]) this.readEntry(name);
 
@@ -134,6 +141,7 @@ export class Poller {
       folderReadable: true,
       badLines: kept.reduce((sum, b) => sum + b.badLines, 0),
       schemaFailures: kept.reduce((sum, b) => sum + b.schemaFailures, 0),
+      choices: this.choices(),
     });
     for (const name of this.entries.keys()) this.sendIfChanged(name);
   }
@@ -171,27 +179,28 @@ export class Poller {
     return () => this.listeners.delete(listener);
   }
 
-  // The streams listed after `before`, a page at a time; null for a name the listing did not
-  // hold. Each is read whole once and kept nowhere, so nothing polls it.
-  history(before: string): HistoryPage | null {
+  // The streams listed after `before` that match the filter, a page at a time; null for
+  // a name the listing did not hold. Each is read whole once, then kept slimmed in the
+  // catalog, so nothing polls it.
+  history(before: string, filter: RowFilter = NO_FILTER): HistoryPage | null {
     const { dir, now, quietAfterSeconds } = this.deps;
     if (dir === null || !this.known.has(before)) return null;
     const start = this.ordered.indexOf(before) + 1;
-    const names = this.ordered.slice(start, start + LIST_LIMIT);
     const at = now();
     const rows: ListRow[] = [];
-    for (const name of names) {
-      const state = newStreamState();
-      try {
-        for (const line of new StreamReader(join(dir, name)).read().lines) applyLine(state, line);
-      } catch {
-        continue; // gone since it was listed
-      }
-      rows.push(listRow(name, state, at, quietAfterSeconds));
+    let lastWalked: string | null = null;
+    for (let i = start; i < this.ordered.length; i++) {
+      const name = this.ordered[i];
+      lastWalked = name;
+      const state = this.stateFor(name);
+      if (state === null) continue; // gone since it was listed
+      const row = listRow(name, state, at, quietAfterSeconds);
+      if (rowMatches(row, filter)) rows.push(row);
+      if (rows.length >= LIST_LIMIT) break;
     }
     rows.sort(compareRows);
-    const more = start + LIST_LIMIT < this.ordered.length;
-    return { rows, nextBefore: more && names.length > 0 ? names[names.length - 1] : null };
+    const nextBefore = lastWalked !== null && this.ordered.indexOf(lastWalked) + 1 < this.ordered.length ? lastWalked : null;
+    return { rows, nextBefore };
   }
 
   // One stream's whole view, or null for a name the folder listing did not hold.
@@ -278,6 +287,72 @@ export class Poller {
       if (!this.readEntry(name)) return null;
     }
     return entry;
+  }
+
+  // The state a row is built from: a live entry's own state, else the cached slimmed
+  // state of an old stream, re-read only when its file changed and it has not ended.
+  private stateFor(name: string): StreamState | null {
+    const { dir } = this.deps;
+    if (dir === null) return null;
+    const entry = this.entries.get(name);
+    if (entry !== undefined) return entry.state;
+    const cached = this.cache.get(name);
+    if (cached !== undefined && cached.state.end !== null) return cached.state;
+    let size: number;
+    try {
+      size = statSync(join(dir, name)).size;
+    } catch {
+      return null;
+    }
+    if (cached !== undefined && cached.size === size) return cached.state;
+    const state = newStreamState();
+    try {
+      for (const line of new StreamReader(join(dir, name)).read().lines) applyLine(state, line);
+    } catch {
+      return null;
+    }
+    const slim = slimState(state);
+    this.cache.set(name, { state: slim, size });
+    return slim;
+  }
+
+  // Drop cache names the listing no longer holds, then read a few uncached, unlisted
+  // names so the first full read of the folder spreads over several passes.
+  private maintainCache(): void {
+    const { dir } = this.deps;
+    if (dir === null) return;
+    for (const name of this.cache.keys()) {
+      if (!this.known.has(name)) this.cache.delete(name);
+    }
+    let added = 0;
+    for (const name of this.known) {
+      if (added >= CACHE_PER_PASS) break;
+      if (this.entries.has(name) || this.cache.has(name)) continue;
+      if (this.stateFor(name) !== null) added += 1;
+    }
+  }
+
+  // The distinct kinds, models and workspaces over the cached catalog plus the live
+  // entries, sorted for a stable option list.
+  private choices(): ListResponse["choices"] {
+    const { now, quietAfterSeconds } = this.deps;
+    const at = now();
+    const kinds = new Set<string>();
+    const models = new Set<string>();
+    const repos = new Set<string>();
+    const add = (name: string, state: StreamState): void => {
+      const row = listRow(name, state, at, quietAfterSeconds);
+      if (row.kind !== null && row.kind !== "") kinds.add(row.kind);
+      if (row.model !== null && row.model !== "") models.add(row.model);
+      if (row.workspace !== null && row.workspace !== "") repos.add(row.workspace);
+    };
+    for (const [name, cached] of this.cache) add(name, cached.state);
+    for (const [name, entry] of this.entries) add(name, entry.state);
+    return {
+      kinds: [...kinds].sort(),
+      models: [...models].sort(),
+      repos: [...repos].sort(),
+    };
   }
 
   // Returns false when the file is gone (the entry is then dropped).
