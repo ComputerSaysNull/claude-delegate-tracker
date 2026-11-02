@@ -37,6 +37,9 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     asks: 0,
     questions: 0,
     mcpTask: null,
+    messages: null,
+    undelivered: null,
+    messageWaits: null,
     ...overrides,
   };
 }
@@ -271,7 +274,7 @@ describe("HistoryPage hover cards on a phone screen", () => {
       return { ...box, right: box.left + box.width, top: 0, bottom: 130, height: 130, x: box.left, y: 0, toJSON() {} };
     });
     Object.defineProperty(column, "clientWidth", { configurable: true, get: () => SCREEN - SCROLLBAR });
-    const heading = await screen.findByRole("heading", { name: "Questions to the caller" });
+    const heading = await screen.findByRole("heading", { name: "Caller involvement" });
     const card = heading.closest<HTMLElement>("div")!;
     const columns = within(card).getAllByRole("button");
     const last = columns[columns.length - 1];

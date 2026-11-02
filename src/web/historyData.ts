@@ -32,6 +32,9 @@ export interface Totals {
   asks: number | null;
   asked: number;
   askedMoreThanOnce: number;
+  messaged: number;
+  messages: number | null;
+  undelivered: number | null;
   inline: number;
   said: number;
 }
@@ -52,6 +55,11 @@ export function totals(runs: RunRecord[]): Totals {
   let anyAsks = false;
   let asked = 0;
   let askedMoreThanOnce = 0;
+  let messaged = 0;
+  let messageSum = 0;
+  let anyMessages = false;
+  let undeliveredSum = 0;
+  let anyUndelivered = false;
   let inline = 0;
   let said = 0;
   for (const r of runs) {
@@ -81,6 +89,15 @@ export function totals(runs: RunRecord[]): Totals {
       if (r.asks > 0) asked++;
       if (r.asks > 1) askedMoreThanOnce++;
     }
+    if (r.messages !== null) {
+      anyMessages = true;
+      messageSum += r.messages;
+      if (r.messages > 0) messaged++;
+    }
+    if (r.undelivered !== null) {
+      anyUndelivered = true;
+      undeliveredSum += r.undelivered;
+    }
     if (r.mcpTask !== null) {
       said++;
       if (r.mcpTask === false) inline++;
@@ -98,6 +115,9 @@ export function totals(runs: RunRecord[]): Totals {
     asks: anyAsks ? askSum : null,
     asked,
     askedMoreThanOnce,
+    messaged,
+    messages: anyMessages ? messageSum : null,
+    undelivered: anyUndelivered ? undeliveredSum : null,
     inline,
     said,
   };
@@ -114,6 +134,12 @@ export interface Day {
   output: number;
   questions: number | null;
   asks: number | null;
+  asked: number;
+  messaged: number;
+  both: number;
+  messages: number | null;
+  undelivered: number | null;
+  waits: number[];
   inline: number;
   said: number;
 }
@@ -125,7 +151,7 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
   for (let i = 0; i < days; i++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
     byDay.set(d.getTime(), i);
-    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, inline: 0, said: 0 });
+    result.push({ label: `${d.getDate()} ${MONTHS[d.getMonth()]}`, ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
   }
   for (const r of runs) {
     if (r.startedAt === null) continue;
@@ -144,6 +170,17 @@ export function perDay(runs: RunRecord[], days: Range, now: Date): Day[] {
     day.output += r.outputTokens ?? 0;
     if (r.questions !== null) day.questions = (day.questions ?? 0) + r.questions;
     if (r.asks !== null) day.asks = (day.asks ?? 0) + r.asks;
+    // A run that never said how many messages it got is left out of the involvement counts;
+    // one that did adds its messages and waits and is sorted into asked/messaged/both.
+    if (r.messages !== null) {
+      day.messages = (day.messages ?? 0) + r.messages;
+      day.undelivered = (day.undelivered ?? 0) + (r.undelivered ?? 0);
+      if (r.messageWaits !== null) day.waits.push(...r.messageWaits);
+      const askedRun = r.asks !== null && r.asks > 0;
+      if (askedRun && r.messages === 0) day.asked++;
+      else if (!askedRun && r.messages > 0) day.messaged++;
+      else if (askedRun && r.messages > 0) day.both++;
+    }
     if (r.mcpTask !== null) {
       day.said++;
       if (r.mcpTask === false) day.inline++;
@@ -238,4 +275,12 @@ export function groupBy(runs: RunRecord[], field: "repo" | "model"): Group[] {
 export function dayMonthYear(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getDate()).padStart(2, "0")}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`;
+}
+
+// The middle value of the waits a day collected; null when there is nothing to take.
+export function median(xs: number[]): number | null {
+  if (xs.length === 0) return null;
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
