@@ -210,6 +210,9 @@ export function DelegationList({
     filterKeyRef.current = filterKey;
   }, [filterKey]);
   const loading = loadingKey === filterKey;
+  const loadOlderRef = useRef<() => Promise<void>>(async () => {});
+  const endRef = useRef<HTMLDivElement>(null);
+  const canLoadMore = list !== null && list.capped && !(started && cursor === null) && !error;
 
   // A change of filter drops the previous filter's older rows (reset while rendering, as
   // React advises for state that follows a prop) and loads the first page for the new one.
@@ -224,7 +227,7 @@ export function DelegationList({
   const firstBefore = live[live.length - 1]?.name ?? null;
   const autoLoad = isFiltering(filter) && list !== null && list.capped && firstBefore !== null;
   useEffect(() => {
-    // With no filter nothing is fetched on its own; the Older button pages.
+    // With no filter nothing is fetched on its own; the scroll marker pages.
     if (autoLoad) void loadOlder(firstBefore);
   }, [filterKey]); // eslint-disable-line react-hooks/exhaustive-deps -- once per filter, not per live update
 
@@ -249,6 +252,31 @@ export function DelegationList({
   if (filter.repo !== null) {
     chips.push({ label: `repo ${filter.repo}`, remove: () => setFilter((prev) => ({ ...prev, repo: null })) });
   }
+
+  // The observer and the event listener call this ref so neither ever uses a stale closure.
+  useEffect(() => {
+    loadOlderRef.current = loadOlder;
+  });
+
+  // Recreated after each page, so a marker still in view loads the next one.
+  useEffect(() => {
+    if (!(canLoadMore && !loading)) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const end = endRef.current;
+    if (end === null) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) void loadOlderRef.current();
+    }, { rootMargin: "0px 0px 200px 0px" });
+    observer.observe(end);
+    return () => observer.disconnect();
+  }, [canLoadMore, loading, cursor, filterKey]);
+
+  // The keyboard asks for the next page when j runs past the last card.
+  useEffect(() => {
+    const onMore = () => void loadOlderRef.current();
+    window.addEventListener("delegations:more", onMore);
+    return () => window.removeEventListener("delegations:more", onMore);
+  }, []);
 
   if (list === null) {
     return <p className="text-muted">Waiting for the first list…</p>;
@@ -276,6 +304,7 @@ export function DelegationList({
   };
 
   async function loadOlder(beforeArg?: string | null): Promise<void> {
+    if (list === null || !list.capped) return; // an uncapped list is already complete
     const requestKey = filterKey; // the filter this request is made for
     if (loadingKey === requestKey) return; // a page for this filter is already on its way
     const before = beforeArg !== undefined ? beforeArg : started ? cursor : live[live.length - 1]?.name ?? null;
@@ -507,20 +536,21 @@ export function DelegationList({
           {error && (
             <p className="text-sm text-warn">Could not load older delegations.</p>
           )}
-          {started && cursor === null && !loading ? (
-            <p className="text-sm text-muted">That is the oldest.</p>
-          ) : (
+          {error && (
             <button
               type="button"
-              disabled={loading}
               onClick={() => {
                 void loadOlder();
               }}
               className="rounded border border-line px-3 py-1 text-sm text-text hover:bg-line/50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Loading…" : "Show older"}
+              Try again
             </button>
           )}
+          <p role="status" className="text-sm text-muted">
+            {loading ? "Loading…" : started && cursor === null && !loading ? "No older delegations" : ""}
+          </p>
+          <div ref={endRef} data-testid="list-end" aria-hidden="true" className="h-px" />
         </div>
       )}
     </section>

@@ -237,7 +237,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 ### The list
 
 - Order by `start.at`, newest first, never by last activity.
-- Say when the list is capped at 20, and offer older ones a page at a time; older pages are a snapshot, not live.
+- Say when the list is capped at 20. Scrolling to its end loads the next 20 by itself, "Loading…" while they come, "No older delegations" at the end, and a Try again after a failure; older pages are a snapshot, not live.
 - Search and filters (title words, state, kind, model, repo) apply to the live rows and to older pages the backend filters itself, so a match far back is found without paging through the rest; setting a filter loads its first older page at once. They say how many rows they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
@@ -257,7 +257,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 
 ### Keyboard
 
-- j and k move the focus down and up the delegations, stopping at the ends; Enter opens the focused one; Esc closes the open delegation, or the list of keys first when it shows; / jumps to the search box; ? shows the keys. A key typed into a field, or pressed with Ctrl, Alt or Cmd, is left to the browser.
+- j and k move the focus down and up the delegations, stopping at the ends, where j loads the next page; Enter opens the focused one; Esc closes the open delegation, or the list of keys first when it shows; / jumps to the search box; ? shows the keys. A key typed into a field, or pressed with Ctrl, Alt or Cmd, is left to the browser.
 
 ### A background tab
 
