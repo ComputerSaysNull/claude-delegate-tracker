@@ -10,9 +10,10 @@ export interface RowFilter {
   kind: string | null;
   model: string | null;
   repo: string | null;
+  messaged: boolean;            // only runs the caller sent a `message` (format 1.14)
 }
 
-export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: null, repo: null };
+export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: false };
 
 // A row is kept when ALL of the following hold:
 //   - the trimmed text is empty, or every whitespace-separated word of it appears,
@@ -20,7 +21,8 @@ export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: n
 //   - the state set is empty or contains the row's state;
 //   - kind is null or equals the row's kind;
 //   - model is null or equals the row's model;
-//   - repo is null or equals the row's workspace.
+//   - repo is null or equals the row's workspace;
+//   - messaged is off, or the caller sent the run a message.
 // The rows keep their original order.
 export function rowMatches(row: ListRow, f: RowFilter): boolean {
   const query = f.text.trim().toLowerCase();
@@ -33,11 +35,12 @@ export function rowMatches(row: ListRow, f: RowFilter): boolean {
   if (f.kind !== null && row.kind !== f.kind) return false;
   if (f.model !== null && row.model !== f.model) return false;
   if (f.repo !== null && row.workspace !== f.repo) return false;
+  if (f.messaged && !row.messaged) return false;
   return true;
 }
 
 export function isFiltering(f: RowFilter): boolean {
-  return f.text.trim() !== "" || f.states.length > 0 || f.kind !== null || f.model !== null || f.repo !== null;
+  return f.text.trim() !== "" || f.states.length > 0 || f.kind !== null || f.model !== null || f.repo !== null || f.messaged;
 }
 
 // The query the list page and /api/streams share. A state the page does not know
@@ -52,6 +55,7 @@ export function filterFromParams(q: URLSearchParams): RowFilter {
     kind: q.get("kind") || null,
     model: q.get("model") || null,
     repo: q.get("repo") || null,
+    messaged: q.get("messaged") === "1",
   };
 }
 
@@ -61,6 +65,7 @@ export function filterToParams(f: RowFilter, q: URLSearchParams): void {
   if (f.kind !== null) q.set("kind", f.kind);
   if (f.model !== null) q.set("model", f.model);
   if (f.repo !== null) q.set("repo", f.repo);
+  if (f.messaged) q.set("messaged", "1");
 }
 
 // The slimmed state a cached catalog keeps: a summary of every stream stays small

@@ -1,4 +1,6 @@
 // One test per rendering rule in docs/ARCHITECTURE.md "Rendering rules".
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   applyLine,
@@ -395,6 +397,29 @@ describe("unknownFormat", () => {
   it("missing format and 1.1 give null", () => {
     expect(listRow("x", build([start({ format: undefined })]), NOW, QUIET).unknownFormat).toBeNull();
     expect(listRow("x", build([start({ format: "1.1" })]), NOW, QUIET).unknownFormat).toBeNull();
+  });
+});
+
+describe("messaged by the caller (message events, format 1.14)", () => {
+  const samplesDir = join(import.meta.dirname, "../../contract/samples");
+
+  function loadSample(file: string): StreamState {
+    const s = newStreamState();
+    for (const line of readFileSync(join(samplesDir, file), "utf8").split("\n")) {
+      if (line.trim() !== "") applyLine(s, line);
+    }
+    return s;
+  }
+
+  it("the message sample's row is messaged", () => {
+    const s = loadSample("message.jsonl");
+    expect(s.messages).toBe(2);
+    expect(listRow("message.jsonl", s, NOW, QUIET).messaged).toBe(true);
+  });
+
+  it("a stream with no message event is not messaged", () => {
+    expect(listRow("x", build([start()]), NOW, QUIET).messaged).toBe(false);
+    expect(listRow("x", build([start(), { t: "end", at: at(0), ok: true, finish_reason: "stop", turns: 1 }]), NOW, QUIET).messaged).toBe(false);
   });
 });
 

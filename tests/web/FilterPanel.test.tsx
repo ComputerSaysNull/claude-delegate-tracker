@@ -26,7 +26,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
-    workspace: null, mcpTask: null,
+    workspace: null, mcpTask: null, messaged: false,
     ...overrides,
   };
 }
@@ -63,7 +63,7 @@ describe("DelegationList filter panel", () => {
     render(
       <DelegationList
         list={list([row({ name: "a" })])}
-        filter={{ text: "auth", states: ["failed"], kind: "delegate", model: null, repo: null }}
+        filter={{ text: "auth", states: ["failed"], kind: "delegate", model: null, repo: null, messaged: false }}
         onFilterChange={() => {}}
       />,
     );
@@ -144,7 +144,7 @@ describe("DelegationList filter panel", () => {
 
   it("shows a chip per active state, kind and model filter and removes just that one on click", () => {
     const onFilterChange = vi.fn();
-    const filter: RowFilter = { text: "", states: ["failed"], kind: "delegate", model: "flash", repo: null };
+    const filter: RowFilter = { text: "", states: ["failed"], kind: "delegate", model: "flash", repo: null, messaged: false };
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
 
     const failedChip = screen.getByRole("button", { name: "Remove filter: Failed" });
@@ -175,7 +175,7 @@ describe("DelegationList filter panel", () => {
     render(
       <DelegationList
         list={list([row({ name: "a" })])}
-        filter={{ text: "auth", states: [], kind: null, model: null, repo: null }}
+        filter={{ text: "auth", states: [], kind: null, model: null, repo: null, messaged: false }}
         onFilterChange={() => {}}
       />,
     );
@@ -185,7 +185,7 @@ describe("DelegationList filter panel", () => {
 
   it("removes only its own state when two states are on", () => {
     const onFilterChange = vi.fn();
-    const filter: RowFilter = { text: "", states: ["failed", "stopped"], kind: null, model: null, repo: null };
+    const filter: RowFilter = { text: "", states: ["failed", "stopped"], kind: null, model: null, repo: null, messaged: false };
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
     fireEvent.click(screen.getByRole("button", { name: "Remove filter: Failed" }));
     expect(onFilterChange).toHaveBeenLastCalledWith(expect.objectContaining({ states: ["stopped"] }));
@@ -207,5 +207,32 @@ describe("DelegationList filter panel", () => {
     expect(options("Kind")).toContain("delegate");
     expect(options("Model")).toContain("rare");
     expect(options("Repo")).toContain("repo-x");
+  });
+
+  it("ticking Messaged by the caller sets messaged true", () => {
+    const onFilterChange = vi.fn();
+    render(
+      <DelegationList
+        list={list([row({ name: "a" })])}
+        filter={NO_FILTER}
+        onFilterChange={onFilterChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Messaged by the caller" }));
+    expect(onFilterChange).toHaveBeenCalledTimes(1);
+    expect(onFilterChange).toHaveBeenCalledWith(expect.objectContaining({ messaged: true }));
+  });
+
+  it("shows a removable chip for messaged and counts it in the Filters button", () => {
+    const onFilterChange = vi.fn();
+    const filter: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: true };
+    render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
+    expect(screen.getByRole("button", { name: "Filters (1)" })).toBeTruthy();
+    const chip = screen.getByRole("button", { name: "Remove filter: messaged by the caller" });
+    expect(chip.textContent).toContain("messaged by the caller");
+    expect(chip.textContent).toContain("×");
+    fireEvent.click(chip);
+    expect(onFilterChange).toHaveBeenLastCalledWith(expect.objectContaining({ messaged: false }));
   });
 });
