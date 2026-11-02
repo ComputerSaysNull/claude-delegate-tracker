@@ -586,7 +586,7 @@ describe("history with a filter", () => {
     return names.reverse(); // newest first
   }
 
-  const RARE = { text: "", states: [], kind: null, model: "rare", repo: null, messaged: false };
+  const RARE = { text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null };
 
   it("returns only the matching streams after the cursor, and stops at the oldest", () => {
     const dir = makeDir();
@@ -701,6 +701,25 @@ describe("history with a filter", () => {
       expect(page).not.toBeNull();
       expect(page!.rows.map((r) => r.name)).toEqual([oldest]);
       expect(page!.rows[0].messaged).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns exactly the streams whose start.at lies in [from, to)", () => {
+    const dir = makeDir();
+    try {
+      const names = fillFiltered(dir, 30, () => ({}));
+      const poller = makePoller(dir);
+      poller.pass();
+      const live = poller.list().rows.map((r) => r.name);
+      // Streams start one minute apart from 10:00; i = 3 is exactly from, i = 9 is to.
+      const from = Date.UTC(2026, 9, 1, 10, 3);
+      const to = Date.UTC(2026, 9, 1, 10, 9);
+      const page = poller.history(live[live.length - 1], { ...NO_FILTER, from, to });
+      expect(page).not.toBeNull();
+      expect(page!.rows.map((r) => r.name)).toEqual([names[21], names[22], names[23], names[24], names[25], names[26]]);
+      expect(page!.nextBefore).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

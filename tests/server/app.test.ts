@@ -132,7 +132,7 @@ describe("history", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(page);
     expect(seen).toEqual([
-      { before: "20261001T120000.000-a.jsonl", filter: { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "rare", repo: "docs", messaged: false } },
+      { before: "20261001T120000.000-a.jsonl", filter: { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "rare", repo: "docs", messaged: false, from: null, to: null, caller: null } },
     ]);
   });
 
@@ -143,7 +143,7 @@ describe("history", () => {
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "not found" });
     expect(history).toHaveBeenCalledTimes(1);
-    expect(history.mock.calls[0][1]).toEqual({ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false });
+    expect(history.mock.calls[0][1]).toEqual({ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null });
   });
 });
 
@@ -246,7 +246,7 @@ function makeRow(name: string): ListRow {
     name, state: "ok", why: null, age: null, kind: "delegate",
     model: null, effort: null, title: "", startedAt: null,
     elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, workspace: null, mcpTask: null,
-    messaged: false,
+    messaged: false, asked: false,
   };
 }
 

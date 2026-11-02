@@ -23,6 +23,9 @@ describe("reading the address", () => {
       model: "flash",
       repo: null,
       messaged: false,
+      from: null,
+      to: null,
+      caller: null,
     });
   });
 
@@ -70,7 +73,7 @@ describe("writing the address", () => {
   });
 
   it("reads back what it wrote", () => {
-    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash", repo: null, messaged: false }, section: "list" as const };
+    const address = { selected: "s 1", filter: { text: "auth", states: ["queued" as const], kind: "one-shot", model: "flash", repo: null, messaged: false, from: null, to: null, caller: null }, section: "list" as const };
     const url = new URL(addressFor(address), "http://x");
     expect(readAddress(url.pathname, url.search)).toEqual(address);
   });
@@ -87,6 +90,33 @@ describe("writing the address", () => {
     const address = { selected: null, filter: { ...NO_FILTER, messaged: true }, section: "list" as const };
     expect(addressFor(address)).toBe("/?messaged=1");
     const url = new URL(addressFor(address), "http://x");
+    expect(readAddress(url.pathname, url.search)).toEqual(address);
+  });
+
+  it("reads the from, to and caller filters with a state", () => {
+    const from = Date.UTC(2026, 9, 3, 0, 0);
+    const to = Date.UTC(2026, 9, 10, 0, 0);
+    expect(readAddress("/", `?from=${from}&to=${to}&caller=asked&state=failed`).filter).toEqual({
+      text: "",
+      states: ["failed"],
+      kind: null,
+      model: null,
+      repo: null,
+      messaged: false,
+      from,
+      to,
+      caller: "asked",
+    });
+  });
+
+  it("writes the from, to and caller filters and reads them back", () => {
+    const from = Date.UTC(2026, 9, 3, 0, 0);
+    const to = Date.UTC(2026, 9, 10, 0, 0);
+    const address = { selected: null, filter: { ...NO_FILTER, states: ["failed" as const], from, to, caller: "asked" as const }, section: "list" as const };
+    const url = new URL(addressFor(address), "http://x");
+    expect(url.search).toContain(`from=${from}`);
+    expect(url.search).toContain(`to=${to}`);
+    expect(url.search).toContain(`caller=asked`);
     expect(readAddress(url.pathname, url.search)).toEqual(address);
   });
 

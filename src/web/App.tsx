@@ -285,7 +285,9 @@ export default function App() {
         >
           {address.section === "history" ? (
             <div className="lg:pt-4">
-              <HistoryPage />
+              <HistoryPage
+                onOpenList={(filter) => go({ ...address, selected: null, section: "list", filter }, true)}
+              />
             </div>
           ) : selected === null ? (
             <p className="text-muted lg:pt-4">Choose a delegation on the left to follow it.</p>
