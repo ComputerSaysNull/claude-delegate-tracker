@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
+import { bottomInView, installIntersectionObserver } from "./intersection.ts";
 import type { ListResponse } from "../../src/server/poller.ts";
 import type { ListRow } from "../../src/server/streams.ts";
 
@@ -29,6 +30,7 @@ const header = (name: RegExp) => screen.getByRole("button", { name });
 
 describe("DelegationList grouped by date", () => {
   beforeEach(() => {
+    installIntersectionObserver();
     process.env.TZ = "Europe/Amsterdam";
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
@@ -65,7 +67,7 @@ describe("DelegationList grouped by date", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row("live", { startedAt: YESTERDAY })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     await screen.findByRole("link", { name: "Delegation old" });
     expect(screen.getAllByRole("button", { name: /Yesterday · 3 Oct/ })).toHaveLength(1);
     expect(header(/Yesterday · 3 Oct/).textContent).toContain("2");

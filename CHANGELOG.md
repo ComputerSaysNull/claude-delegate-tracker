@@ -9,6 +9,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #85 — 2026-11-02 — feat: load older delegations by scrolling to the end of the list
+
+### Changed
+
+- **Scrolling to the end of the list loads the next 20 by itself.** Older delegations came
+  only through a Show older button, one click per page, so reading back meant clicking again
+  and again. The button is gone: when the end of the list comes into view the next page loads,
+  "Loading…" while it comes and "No older delegations" at the very end; a failed page offers
+  Try again. On a desktop, j on the last delegation loads the next page too.
+
 ## #84 — 2026-11-02 — feat: list filters search every delegation, not only the loaded ones
 
 ### Changed

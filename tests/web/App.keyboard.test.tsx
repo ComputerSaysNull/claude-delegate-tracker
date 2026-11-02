@@ -37,7 +37,10 @@ const link = (name: string) => screen.getByRole("link", { name });
 
 describe("desktop keyboard", () => {
   beforeEach(() => window.history.replaceState(null, "", "/"));
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("j moves down the list and k moves up", () => {
     render(<App />);
@@ -105,5 +108,29 @@ describe("desktop keyboard", () => {
     press("j", document.body, { ctrlKey: true });
     press("j", document.body, { metaKey: true });
     expect(document.activeElement).toBe(document.body);
+  });
+
+  it("j on the last card asks for the next page", () => {
+    render(<App />);
+    const spy = vi.spyOn(window, "dispatchEvent").mockImplementation(() => true);
+    press("j");
+    press("j");
+    press("j");
+    expect(document.activeElement).toBe(link("Third delegation"));
+    spy.mockClear();
+    press("j");
+    expect(document.activeElement).toBe(link("Third delegation"));
+    expect(spy.mock.calls.some((c) => (c[0] as CustomEvent).type === "delegations:more")).toBe(true);
+  });
+
+  it("j on any card but the last does not ask for the next page", () => {
+    render(<App />);
+    const spy = vi.spyOn(window, "dispatchEvent").mockImplementation(() => true);
+    press("j");
+    press("j");
+    expect(document.activeElement).toBe(link("Second delegation"));
+    press("j");
+    expect(document.activeElement).toBe(link("Third delegation"));
+    expect(spy.mock.calls.some((c) => (c[0] as CustomEvent).type === "delegations:more")).toBe(false);
   });
 });

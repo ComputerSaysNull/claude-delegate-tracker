@@ -24,6 +24,10 @@ function moveFocus(step: 1 | -1): void {
   const next = at === -1 ? 0 : Math.min(links.length - 1, Math.max(0, at + step));
   links[next].focus();
   links[next].scrollIntoView?.({ block: "nearest" });
+  // The list loads its next page, so j past the last card keeps working.
+  if (step === 1 && at === links.length - 1) {
+    window.dispatchEvent(new CustomEvent("delegations:more"));
+  }
 }
 
 export function useKeyboard(onClose: () => void): { helpOpen: boolean; closeHelp: () => void } {

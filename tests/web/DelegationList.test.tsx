@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { bottomInView, installIntersectionObserver, observerCounts } from "./intersection.ts";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
 import { localTime } from "../../src/web/time.ts";
 import { STATE_LABEL } from "../../src/web/states.tsx";
@@ -50,6 +51,10 @@ function page(overrides: Partial<HistoryPage> = {}): HistoryPage {
 }
 
 describe("DelegationList", () => {
+  beforeEach(() => {
+    installIntersectionObserver();
+  });
+
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
@@ -158,9 +163,12 @@ describe("DelegationList", () => {
     expect(screen.getByText("format 2.0: shown as best it can be")).toBeTruthy();
   });
 
-  it("shows no Show older button when the list is not capped", () => {
+  it("shows no list-end marker and fetches nothing when the list is not capped", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "live" })])} />);
-    expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
+    expect(screen.queryByTestId("list-end")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("requests the next page from the last live row's name and renders the returned rows", async () => {
@@ -169,7 +177,7 @@ describe("DelegationList", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     expect(await screen.findByText("An older delegation")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledWith("/api/streams?before=last%20live");
   });
@@ -185,34 +193,34 @@ describe("DelegationList", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     await screen.findByText("First older");
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     await screen.findByText("Second older");
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/streams?before=last%20live");
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/streams?before=older-2");
   });
 
-  it("shows the oldest note and no button when nextBefore is null", async () => {
+  it("shows 'No older delegations' and no button when nextBefore is null", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "Last older" })], nextBefore: null })), { status: 200 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
-    expect(await screen.findByText("That is the oldest.")).toBeTruthy();
+    bottomInView();
+    expect(await screen.findByText("No older delegations")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
   });
 
-  it("shows an amber note and keeps the button when the fetch fails with a non-200", async () => {
+  it("shows an amber note and keeps the Try again button when the fetch fails with a non-200", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ error: "not found" }), { status: 404 }),
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     expect(await screen.findByText("Could not load older delegations.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Show older" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
   it("does not render an older row whose name is already shown", async () => {
@@ -221,7 +229,7 @@ describe("DelegationList", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     render(<DelegationList list={list([row({ name: "dup", title: "Already shown" })], { capped: true, total: 21 })} />);
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     await screen.findByText("Already shown");
     expect(screen.getAllByText("Already shown")).toHaveLength(1);
   });
@@ -340,7 +348,7 @@ describe("DelegationList", () => {
       />,
     );
     await screen.findByText("Older rare");
-    fireEvent.click(screen.getByRole("button", { name: "Show older" }));
+    bottomInView();
     await screen.findByText("Second older");
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const url = new URL(fetchMock.mock.calls[1][0], "http://localhost");
@@ -435,17 +443,25 @@ describe("DelegationList", () => {
     expect(screen.queryByText("Older rare")).toBeNull();
   });
 
-  it("offers Show older again when the filter is cleared while its page is still loading", async () => {
+  it("fetches the unfiltered page when the filter is cleared while its page is still loading", async () => {
     const never = new Promise<Response>(() => {});
-    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(never));
+    const fetchMock = vi
+      .fn()
+      .mockReturnValueOnce(never)
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "An older delegation" })], nextBefore: null })), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
     const capped = list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 });
     const { rerender } = render(
       <DelegationList list={capped} filter={{ text: "", states: [], kind: null, model: "rare", repo: null }} onFilterChange={() => {}} />,
     );
-    expect(await screen.findByRole("button", { name: "Loading…" })).toBeTruthy();
+    expect((await screen.findByRole("status")).textContent).toBe("Loading…");
     rerender(<DelegationList list={capped} filter={NO_FILTER} onFilterChange={() => {}} />);
-    const button = await screen.findByRole("button", { name: "Show older" });
-    expect((button as HTMLButtonElement).disabled).toBe(false);
+    bottomInView();
+    expect(await screen.findByText("An older delegation")).toBeTruthy();
+    const url = new URL(fetchMock.mock.calls[1][0], "http://localhost");
+    expect(url.searchParams.has("model")).toBe(false);
   });
 
   it("fetches nothing by itself when no filter is set", () => {
@@ -459,5 +475,98 @@ describe("DelegationList", () => {
       />,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches once per report, and a second report while a page is still loading fetches nothing", async () => {
+    let resolvePage!: (r: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolvePage = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValueOnce(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
+    bottomInView();
+    bottomInView();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      resolvePage(
+        new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "Older page" })], nextBefore: null })), { status: 200 }),
+      );
+    });
+    expect(await screen.findByText("Older page")).toBeTruthy();
+  });
+
+  it("shows 'No older delegations' after the last page and fetches nothing on a further report", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page({ rows: [row({ name: "last-old", title: "Last older" })], nextBefore: null })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
+    bottomInView();
+    await screen.findByText("No older delegations");
+    expect(screen.getByText("Last older")).toBeTruthy();
+    bottomInView();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the failure message and Try again refetches the page", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "not found" }), { status: 404 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "Retried older" })], nextBefore: null })), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
+    bottomInView();
+    await screen.findByText("Could not load older delegations.");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Retried older");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("has no Show older button when the list is capped", () => {
+    render(<DelegationList list={list([row({ name: "a" })], { capped: true, total: 21 })} />);
+    expect(screen.queryByRole("button", { name: "Show older" })).toBeNull();
+    expect(screen.getByTestId("list-end")).toBeTruthy();
+  });
+
+  it("watches the end with a fresh observer after each page, the old one disconnected", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "First older" })], nextBefore: "older-1" })), { status: 200 }),
+      ),
+    );
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
+    expect(observerCounts()).toEqual({ made: 1, live: 1 });
+    bottomInView();
+    expect(await screen.findByText("First older")).toBeTruthy();
+    const after = observerCounts();
+    expect(after.made).toBeGreaterThan(1);
+    expect(after.live).toBe(1);
+  });
+
+  it("loads nothing on delegations:more when the list is not capped", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: false, total: 1 })} />);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("delegations:more"));
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("loads the next page when the delegations:more event is dispatched on window", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page({ rows: [row({ name: "older-1", title: "More older" })], nextBefore: null })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent("delegations:more"));
+    });
+    expect(await screen.findByText("More older")).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
