@@ -12,6 +12,8 @@ import type { NodeFigures } from "./nodes.ts";
 import type { Limits } from "./settings.ts";
 import type { ClusterHistory } from "./history.ts";
 import type { HistoryPage, ListResponse } from "./poller.ts";
+import { filterFromParams } from "./catalog.ts";
+import type { RowFilter } from "./catalog.ts";
 import type { RunRecord, RunsStatus } from "./runs.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
@@ -28,7 +30,7 @@ export interface AppDeps {
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
   // A finished turn's thinking text; null for a name the backend did not list itself or a turn still open.
   thinking: (name: string, turn: number) => string | null;
-  history: (before: string) => HistoryPage | null;
+  history: (before: string, filter: RowFilter) => HistoryPage | null;
   cluster: () => Cluster;
   clusterHistory: () => ClusterHistory;
   subscribeCluster: (listener: (cluster: Cluster) => void) => () => void;
@@ -91,7 +93,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get("/api/streams", (c) => {
     const before = c.req.query("before");
     if (before === undefined) return c.json(streams());
-    const page = history(before);
+    const page = history(before, filterFromParams(new URL(c.req.url).searchParams));
     return page === null ? c.json({ error: "not found" }, 404) : c.json(page);
   });
 

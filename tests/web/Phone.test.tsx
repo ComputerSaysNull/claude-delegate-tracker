@@ -17,7 +17,7 @@ function row(name: string, title: string): ListRow {
 
 const LIST: ListResponse = {
   rows: [row("s1", "First delegation"), row("s2", "Second delegation")],
-  capped: false, total: 2, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
+  capped: false, total: 2, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] },
 };
 
 const CLUSTER_FULL = {

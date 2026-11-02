@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #84 — 2026-11-02 — feat: list filters search every delegation, not only the loaded ones
+
+### Changed
+
+- **A filter finds a match however far back it is.** The list holds the newest 20 and
+  filtered only the rows loaded so far, so a filter with no recent match showed nothing until
+  Older was clicked, sometimes many times. The backend now filters the older pages itself and
+  returns the next 20 *matching* delegations; setting a filter loads its first page at once,
+  and a page for a filter already changed is dropped. To do that it keeps a small summary of
+  every stream (about 1.6 KB each, measured over the real folder), read once and again only
+  while a stream has not ended and its file grew, a few hundred per poll. The filter's choices
+  of kind, model and repo now come from every stream, not only the loaded ones. The match rule
+  and the query format moved to one place the page and the backend share.
+
 ## #83 — 2026-11-02 — feat: vendor server v0.16.0 and show a caller's unasked message
 
 ### Added

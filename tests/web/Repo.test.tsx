@@ -46,7 +46,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 }
 
 function list(rows: ListRow[]): ListResponse {
-  return { rows, capped: false, total: rows.length, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0 };
+  return { rows, capped: false, total: rows.length, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] } };
 }
 
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {

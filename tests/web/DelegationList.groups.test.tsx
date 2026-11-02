@@ -22,7 +22,7 @@ function row(name: string, overrides: Partial<ListRow> = {}): ListRow {
 }
 
 function list(rows: ListRow[], overrides: Partial<ListResponse> = {}): ListResponse {
-  return { rows, capped: false, total: rows.length, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, ...overrides };
+  return { rows, capped: false, total: rows.length, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] }, ...overrides };
 }
 
 const header = (name: RegExp) => screen.getByRole("button", { name });

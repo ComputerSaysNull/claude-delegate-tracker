@@ -37,7 +37,7 @@ const MODEL: ModelFigures = {
 };
 
 const LIST: ListResponse = {
-  rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
+  rows: [], capped: false, total: 0, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] },
 };
 
 type RunsPayload = { status: RunsStatus; runs: RunRecord[] };
@@ -117,6 +117,33 @@ describe("history", () => {
     const res = await makeApp({ history }).request("/api/streams", goodHost);
     expect(await res.json()).toEqual(LIST);
     expect(history).not.toHaveBeenCalled();
+  });
+
+  it("passes the parsed filter query to history with the cursor", async () => {
+    const seen: { before: string; filter: unknown }[] = [];
+    const page = { rows: [makeRow("older.jsonl")], nextBefore: null };
+    const app = makeApp({
+      history: (before, filter) => { seen.push({ before, filter }); return page; },
+    });
+    const res = await app.request(
+      "/api/streams?before=20261001T120000.000-a.jsonl&q=auth+module&state=live,ok&kind=one-shot&model=rare&repo=docs",
+      goodHost,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual(page);
+    expect(seen).toEqual([
+      { before: "20261001T120000.000-a.jsonl", filter: { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "rare", repo: "docs" } },
+    ]);
+  });
+
+  it("still answers 404 for an unknown cursor when a filter is given", async () => {
+    const history = vi.fn<(before: string, filter: unknown) => null>(() => null);
+    const app = makeApp({ history });
+    const res = await app.request("/api/streams?before=..%2Fx.jsonl&model=rare", goodHost);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: "not found" });
+    expect(history).toHaveBeenCalledTimes(1);
+    expect(history.mock.calls[0][1]).toEqual({ text: "", states: [], kind: null, model: "rare", repo: null });
   });
 });
 

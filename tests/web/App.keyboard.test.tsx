@@ -15,7 +15,7 @@ function row(name: string, title: string): ListRow {
 
 const LIST: ListResponse = {
   rows: [row("s1", "First delegation"), row("s2", "Second delegation"), row("s3", "Third delegation")],
-  capped: false, total: 3, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0,
+  capped: false, total: 3, unstamped: 0, folderReadable: true, badLines: 0, schemaFailures: 0, choices: { kinds: [], models: [], repos: [] },
 };
 
 vi.mock("../../src/web/useLiveList.ts", () => ({
