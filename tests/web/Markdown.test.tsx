@@ -61,7 +61,7 @@ describe("Markdown", () => {
 function row(): ListRow {
   return {
     name: "s", state: "ok", why: null, age: null, kind: "?", model: null, effort: null, title: "t",
-    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, messaged: false, workspace: null, mcpTask: null,
+    startedAt: null, elapsed: null, turns: null, unknownFormat: null, left: null, queueOf: null, messaged: false, asked: false, workspace: null, mcpTask: null,
   };
 }
 

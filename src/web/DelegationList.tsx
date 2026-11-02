@@ -16,6 +16,13 @@ const SELECT_CLASS =
 const CLEAR_CLASS =
   "rounded border border-line px-2 py-1 text-sm text-text hover:bg-line/50";
 
+// A span chip's label, in the list's own short-month style ("3 Nov").
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const dayShort = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+};
+
 // A live run's turns as "N of M"; null when the row is not that shape.
 function turnsRange(row: ListRow): { n: number; m: number } | null {
   if (row.turns === null) return null;
@@ -254,6 +261,28 @@ export function DelegationList({
   }
   if (filter.messaged) {
     chips.push({ label: "messaged by the caller", remove: () => setFilter((prev) => ({ ...prev, messaged: false })) });
+  }
+  if (filter.from !== null || filter.to !== null) {
+    let label: string;
+    if (filter.from !== null && filter.to !== null) {
+      const from = new Date(filter.from);
+      const to = new Date(filter.to);
+      // One local day when the day after `from` at local midnight is `to`; else the last
+      // shown day is the local day before `to`.
+      const next = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 1);
+      if (next.getTime() === filter.to) label = dayShort(filter.from);
+      else {
+        const last = new Date(to.getFullYear(), to.getMonth(), to.getDate() - 1).getTime();
+        label = `${dayShort(filter.from)} – ${dayShort(last)}`;
+      }
+    } else {
+      label = dayShort(filter.from ?? filter.to!);
+    }
+    chips.push({ label, remove: () => setFilter((prev) => ({ ...prev, from: null, to: null })) });
+  }
+  if (filter.caller !== null) {
+    const label = filter.caller === "asked" ? "asked" : filter.caller === "messaged" ? "messaged" : "asked and messaged";
+    chips.push({ label, remove: () => setFilter((prev) => ({ ...prev, caller: null })) });
   }
 
   // The observer and the event listener call this ref so neither ever uses a stale closure.

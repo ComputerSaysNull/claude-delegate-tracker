@@ -27,7 +27,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
     unknownFormat: null,
     left: null,
     queueOf: null,
-    workspace: null, mcpTask: null, messaged: false,
+    workspace: null, mcpTask: null, messaged: false, asked: false,
     ...overrides,
   };
 }
@@ -343,7 +343,7 @@ describe("DelegationList", () => {
     render(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -364,7 +364,7 @@ describe("DelegationList", () => {
     render(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -388,7 +388,7 @@ describe("DelegationList", () => {
     const { rerender } = render(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -396,7 +396,7 @@ describe("DelegationList", () => {
     rerender(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -423,14 +423,14 @@ describe("DelegationList", () => {
     const { rerender } = render(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
     rerender(
       <DelegationList
         list={list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 })}
-        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null, messaged: false }}
+        filter={{ text: "", states: [], kind: "delegate", model: null, repo: null, messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );
@@ -454,7 +454,7 @@ describe("DelegationList", () => {
     vi.stubGlobal("fetch", fetchMock);
     const capped = list([row({ name: "last live", model: "rare", title: "Live rare" })], { capped: true, total: 21 });
     const { rerender } = render(
-      <DelegationList list={capped} filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false }} onFilterChange={() => {}} />,
+      <DelegationList list={capped} filter={{ text: "", states: [], kind: null, model: "rare", repo: null, messaged: false, from: null, to: null, caller: null }} onFilterChange={() => {}} />,
     );
     expect((await screen.findByRole("status")).textContent).toBe("Loading…");
     rerender(<DelegationList list={capped} filter={NO_FILTER} onFilterChange={() => {}} />);

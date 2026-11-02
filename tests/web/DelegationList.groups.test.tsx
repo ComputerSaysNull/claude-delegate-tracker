@@ -18,7 +18,7 @@ function row(name: string, overrides: Partial<ListRow> = {}): ListRow {
   return {
     name, state: "ok", why: null, age: null, kind: "claude-code", model: null, effort: null,
     title: `Delegation ${name}`, startedAt: TODAY, elapsed: null, turns: null, unknownFormat: null,
-    left: null, queueOf: null, messaged: false, workspace: null, mcpTask: null, ...overrides,
+    left: null, queueOf: null, messaged: false, asked: false, workspace: null, mcpTask: null, ...overrides,
   };
 }
 

@@ -1,13 +1,13 @@
 // The History tab: the run records the backend keeps, over the last 7/30/90 days. The
 // figures come from historyData.ts (pure); this page only fetches the records and draws them.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HourBucket } from "../server/busy.ts";
 import type { PowerBucket } from "../server/power.ts";
 import type { RunRecord, RunsStatus } from "../server/runs.ts";
 import { ChartTooltip, PlacedCard } from "./ChartTooltip.tsx";
 import { addressFor } from "./address.ts";
 import { busiest, busyIn, kvPerDay, load, weekLoad } from "./busyData.ts";
-import { NO_FILTER } from "./filter.ts";
+import { NO_FILTER, type RowFilter } from "./filter.ts";
 import { compactCount } from "./format.ts";
 import { powerPerDay, type PowerDay } from "./powerData.ts";
 import { StateIcon } from "./states.tsx";
@@ -68,7 +68,7 @@ function chartLabels(days: { label: string }[]): string[] {
 
 const RANGES: Range[] = [7, 30, 90, "all"];
 
-export function HistoryPage() {
+export function HistoryPage({ onOpenList }: { onOpenList?: (filter: RowFilter) => void }) {
   const [data, setData] = useState<RunsResponse | null>(null);
   const [busy, setBusy] = useState<BusyResponse | null>(null);
   const [power, setPower] = useState<PowerResponse | null>(null);
@@ -143,7 +143,7 @@ export function HistoryPage() {
       ) : (
         <>
           {error && <p className="text-muted">Could not refresh the history.</p>}
-          <HistoryBody data={data} busy={busy} power={power} range={range} />
+          <HistoryBody data={data} busy={busy} power={power} range={range} onOpenList={onOpenList} />
         </>
       )}
     </section>
@@ -170,6 +170,7 @@ function DayChart({
   totalFor,
   barsFor,
   extraRows,
+  onOpen,
 }: {
   days: Day[];
   pct: (v: number) => number;
@@ -178,8 +179,18 @@ function DayChart({
   totalFor: (d: Day) => { label: string; value: string };
   barsFor: (d: Day) => Bar[];
   extraRows?: (d: Day) => { label: string; value: string; swatch: string }[];
+  // Clicking a column (or a bar within it) drills from the History tab into the filtered list;
+  // the part names the clicked bar's key, null for a click on the column itself.
+  onOpen?: (index: number, part: string | null) => void;
 }) {
   const [active, setActive] = useState<number | null>(null);
+  // The pointer that produced the last pointerdown, so a touch tap first shows the hover card
+  // and only a second tap opens the list. jsdom cannot tell what is under the mouse, so the
+  // tests drive this through pointerType.
+  const lastPointer = useRef<string>("");
+  // Whether the column was already showing its card when the tap began: a phone fires an
+  // emulated mouse enter between pointerdown and click, which would open it a step early.
+  const wasActive = useRef(false);
   const n = days.length;
   const day = active === null ? null : days[active];
   // The card's anchor: the middle of the active column, as a share of the chart's width.
@@ -199,11 +210,27 @@ function DayChart({
               onMouseLeave={() => setActive(null)}
               onFocus={() => setActive(i)}
               onBlur={() => setActive(null)}
+              onPointerDown={(e) => {
+                lastPointer.current = e.pointerType;
+                wasActive.current = active === i;
+              }}
+              onClick={(e) => {
+                if (lastPointer.current === "touch" && !wasActive.current) {
+                  setActive(i);
+                  return;
+                }
+                const part = (e.target as HTMLElement).closest("[data-part]")?.getAttribute("data-part") ?? null;
+                onOpen?.(i, part);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onOpen?.(i, null);
+              }}
               className={`flex h-full flex-1 flex-col-reverse gap-[2px] ${active !== null && active !== i ? "opacity-60" : ""}`}
             >
               {bars.map((b, j) => (
                 <div
                   key={b.key}
+                  data-part={b.key}
                   className={`${b.swatch} ${j === bars.length - 1 ? "rounded-t-[3px]" : ""}`}
                   style={{ height: `${pct(b.value)}%` }}
                 />
@@ -425,7 +452,7 @@ function BusyGrid({ grid }: { grid: (number | null)[][] }) {
   );
 }
 
-function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: BusyResponse | null; power: PowerResponse | null; range: Range }) {
+function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsResponse; busy: BusyResponse | null; power: PowerResponse | null; range: Range; onOpenList?: (filter: RowFilter) => void }) {
   const now = new Date();
   const span = spanOf(range, data.runs, now);
   const runs = inRange(data.runs, span);
@@ -523,6 +550,15 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
                 { key: "limits", label: "timed out or cut off", value: d.limits, swatch: "bg-chart-limits", text: String(d.limits) },
                 { key: "failed", label: "failed", value: d.failed, swatch: "bg-chart-failed", text: String(d.failed) },
               ]}
+              onOpen={(i, part) =>
+                onOpenList?.({
+                  ...NO_FILTER,
+                  from: span.buckets[i].startMs,
+                  to: span.buckets[i].endMs,
+                  states:
+                    part === "done" ? ["ok"] : part === "stopped" ? ["stopped"] : part === "limits" ? ["timed out", "cut off"] : part === "failed" ? ["failed"] : [],
+                })
+              }
             />
             <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
               {labels.map((l) => (
@@ -558,6 +594,14 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
                 { key: "messaged", label: "messaged", value: d.messaged, swatch: "bg-chart-messaged", text: String(d.messaged) },
                 { key: "both", label: "both", value: d.both, swatch: "bg-chart-both", text: String(d.both) },
               ]}
+              onOpen={(i, part) =>
+                onOpenList?.({
+                  ...NO_FILTER,
+                  from: span.buckets[i].startMs,
+                  to: span.buckets[i].endMs,
+                  caller: part === "asked" || part === "messaged" || part === "both" ? part : null,
+                })
+              }
               extraRows={(d) => [
                 { label: "Questions", value: fig(d.questions), swatch: "bg-line" },
                 { label: "Messages", value: fig(d.messages), swatch: "bg-line" },

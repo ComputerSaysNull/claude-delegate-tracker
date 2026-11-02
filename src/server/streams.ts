@@ -18,10 +18,11 @@ export interface StreamState {
   endsInSeconds: number | null;  // the newest `alive.ends_in_seconds`: the deadline that ends the run
   askedAtMs: number | null;      // when the open `question` was asked; null once answered
   messages: number;              // the caller's `message` events (format 1.14)
+  questions: number;             // the caller's `question` events
 }
 
 export function newStreamState(): StreamState {
-  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null, askedAtMs: null, messages: 0 };
+  return { start: null, end: null, lastAtMs: null, lastSignal: null, waitedSeconds: null, maxTurn: 0, ofTurns: null, badLines: 0, waitOfSeconds: null, endsInSeconds: null, askedAtMs: null, messages: 0, questions: 0 };
 }
 
 // Normalise a 6-digit (or any) fraction to at most 3 digits before Date.parse.
@@ -54,7 +55,7 @@ export function applyLine(s: StreamState, line: string): Record<string, unknown>
     s.lastSignal = t;
     if (typeof evt.turn === "number") s.maxTurn = Math.max(s.maxTurn, evt.turn);
     if (typeof evt.of_turns === "number") s.ofTurns = evt.of_turns;
-  } else if (t === "question") s.askedAtMs = atMs ?? s.lastAtMs;
+  } else if (t === "question") { s.questions += 1; s.askedAtMs = atMs ?? s.lastAtMs; }
   else if (t === "answer") s.askedAtMs = null;
   else if (t === "message") s.messages += 1;
   else if (t === "alive") {
@@ -159,6 +160,7 @@ export function listRow(name: string, s: StreamState, now: Date, quietAfterSecon
     // A limit of 0 is no limit.
     queueOf: state === "queued" && s.waitOfSeconds !== null && s.waitOfSeconds > 0 ? formatAge(s.waitOfSeconds) : null,
     messaged: s.messages > 0,
+    asked: s.questions > 0,
   };
 }
 
@@ -171,6 +173,7 @@ export interface ListRow {
   left: string | null;          // a running delegation's time left
   queueOf: string | null;       // a queued delegation's longest wait
   messaged: boolean;            // the caller sent it a `message` (format 1.14)
+  asked: boolean;               // the caller asked it a `question`
 }
 
 export function formatAge(seconds: number): string {

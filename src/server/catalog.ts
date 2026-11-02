@@ -11,9 +11,12 @@ export interface RowFilter {
   model: string | null;
   repo: string | null;
   messaged: boolean;            // only runs the caller sent a `message` (format 1.14)
+  from: number | null;          // only runs started at or after this local time (ms)
+  to: number | null;            // only runs started before this local time (ms)
+  caller: "asked" | "messaged" | "both" | null;  // how the caller was involved (format 1.14)
 }
 
-export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: false };
+export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: false, from: null, to: null, caller: null };
 
 // A row is kept when ALL of the following hold:
 //   - the trimmed text is empty, or every whitespace-separated word of it appears,
@@ -22,7 +25,10 @@ export const NO_FILTER: RowFilter = { text: "", states: [], kind: null, model: n
 //   - kind is null or equals the row's kind;
 //   - model is null or equals the row's model;
 //   - repo is null or equals the row's workspace;
-//   - messaged is off, or the caller sent the run a message.
+//   - messaged is off, or the caller sent the run a message;
+//   - from and to bound the run's start: from is inclusive, to exclusive (either may be null);
+//   - caller is null, or the row's asked/messaged flags match it (asked/messaged exclude the
+//     other, both requires them together).
 // The rows keep their original order.
 export function rowMatches(row: ListRow, f: RowFilter): boolean {
   const query = f.text.trim().toLowerCase();
@@ -36,11 +42,22 @@ export function rowMatches(row: ListRow, f: RowFilter): boolean {
   if (f.model !== null && row.model !== f.model) return false;
   if (f.repo !== null && row.workspace !== f.repo) return false;
   if (f.messaged && !row.messaged) return false;
+  if (typeof f.from === "number" || typeof f.to === "number") {
+    if (row.startedAt === null) return false;
+    const t = Date.parse(row.startedAt);
+    if (Number.isNaN(t)) return false;
+    if (typeof f.from === "number" && t < f.from) return false;
+    if (typeof f.to === "number" && t >= f.to) return false;
+  }
+  if (f.caller === "asked" && !(row.asked && !row.messaged)) return false;
+  if (f.caller === "messaged" && !(row.messaged && !row.asked)) return false;
+  if (f.caller === "both" && !(row.asked && row.messaged)) return false;
   return true;
 }
 
 export function isFiltering(f: RowFilter): boolean {
-  return f.text.trim() !== "" || f.states.length > 0 || f.kind !== null || f.model !== null || f.repo !== null || f.messaged;
+  return f.text.trim() !== "" || f.states.length > 0 || f.kind !== null || f.model !== null || f.repo !== null || f.messaged ||
+    typeof f.from === "number" || typeof f.to === "number" || f.caller === "asked" || f.caller === "messaged" || f.caller === "both";
 }
 
 // The query the list page and /api/streams share. A state the page does not know
@@ -49,6 +66,9 @@ export function filterFromParams(q: URLSearchParams): RowFilter {
   const states = [...new Set((q.get("state") ?? "").split(","))].filter((s): s is State =>
     (STATES as readonly string[]).includes(s),
   );
+  const fromRaw = q.get("from");
+  const toRaw = q.get("to");
+  const callerRaw = q.get("caller");
   return {
     text: q.get("q") ?? NO_FILTER.text,
     states,
@@ -56,6 +76,9 @@ export function filterFromParams(q: URLSearchParams): RowFilter {
     model: q.get("model") || null,
     repo: q.get("repo") || null,
     messaged: q.get("messaged") === "1",
+    from: fromRaw !== null && /^\d+$/.test(fromRaw) ? Number(fromRaw) : null,
+    to: toRaw !== null && /^\d+$/.test(toRaw) ? Number(toRaw) : null,
+    caller: callerRaw === "asked" || callerRaw === "messaged" || callerRaw === "both" ? callerRaw : null,
   };
 }
 
@@ -66,6 +89,9 @@ export function filterToParams(f: RowFilter, q: URLSearchParams): void {
   if (f.model !== null) q.set("model", f.model);
   if (f.repo !== null) q.set("repo", f.repo);
   if (f.messaged) q.set("messaged", "1");
+  if (typeof f.from === "number") q.set("from", String(f.from));
+  if (typeof f.to === "number") q.set("to", String(f.to));
+  if (f.caller === "asked" || f.caller === "messaged" || f.caller === "both") q.set("caller", f.caller);
 }
 
 // The slimmed state a cached catalog keeps: a summary of every stream stays small

@@ -41,7 +41,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
   return {
     name: "stream-1", state: "live", why: null, age: null, kind: "delegate", model: null, effort: null,
     title: "Refactor the auth module", startedAt: null, elapsed: null, turns: null, unknownFormat: null,
-    left: null, queueOf: null, workspace: null, mcpTask: null, messaged: false, ...overrides,
+    left: null, queueOf: null, workspace: null, mcpTask: null, messaged: false, asked: false, ...overrides,
   };
 }
 
@@ -129,7 +129,7 @@ describe("the Repo filter", () => {
 
   it("shows a chip for an active repo filter and removes just it on click", () => {
     const onFilterChange = vi.fn();
-    const filter: RowFilter = { text: "", states: [], kind: null, model: null, repo: "web-shop", messaged: false };
+    const filter: RowFilter = { text: "", states: [], kind: null, model: null, repo: "web-shop", messaged: false, from: null, to: null, caller: null };
     render(<DelegationList list={list([row({ name: "a" })])} filter={filter} onFilterChange={onFilterChange} />);
     const chip = screen.getByRole("button", { name: "Remove filter: repo web-shop" });
     expect(chip.textContent).toContain("repo web-shop");
@@ -142,7 +142,7 @@ describe("the Repo filter", () => {
     render(
       <DelegationList
         list={list([row({ name: "a" })])}
-        filter={{ text: "", states: [], kind: null, model: null, repo: "web-shop", messaged: false }}
+        filter={{ text: "", states: [], kind: null, model: null, repo: "web-shop", messaged: false, from: null, to: null, caller: null }}
         onFilterChange={() => {}}
       />,
     );

@@ -11,7 +11,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
   return {
     name: "stream-1", state: "live", why: null, age: null, kind: "read_file", model: "flash", effort: null,
     title: "Find every caller of load_config", startedAt: null, elapsed: null, turns: null, unknownFormat: null,
-    left: null, queueOf: null, messaged: false, workspace: null, mcpTask: null, ...overrides,
+    left: null, queueOf: null, messaged: false, asked: false, workspace: null, mcpTask: null, ...overrides,
   };
 }
 

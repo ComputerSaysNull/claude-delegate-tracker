@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #90 — 2026-11-02 — feat: open the delegations behind a History bar
+
+### Added
+
+- **Clicking a part of a History bar opens the delegations behind it.** History showed how
+  many delegations failed, or were steered, on a day, but finding which meant searching the
+  list by hand. In Delegations per day and Caller involvement, clicking a part of a column
+  opens the list filtered to that day (or week) and that part, such as the day's failed runs
+  or its messaged ones; Enter opens a focused column's day, and on a phone the first tap shows
+  the card and a second opens it. The list gained the filters this needs: a time span, kept
+  as two instants so the viewer's own days survive the trip to the backend, and whether a run
+  asked, was messaged, or both, each shown as a chip that removes it.
+
 ## #89 — 2026-11-02 — feat: give the History charts more room in labelled groups
 
 ### Changed

@@ -88,6 +88,7 @@ describe("rowMatches", () => {
       workspace: null,
       mcpTask: null,
       messaged: false,
+      asked: false,
       ...overrides,
     };
   }
@@ -134,7 +135,7 @@ describe("rowMatches", () => {
 
   it("combines all filters with AND", () => {
     const r = row({ state: "live", kind: "claude-code", model: "claude-sonnet-4", title: "auth module" });
-    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null, messaged: false };
+    const f: RowFilter = { text: "auth", states: ["live"], kind: "claude-code", model: "claude-sonnet-4", repo: null, messaged: false, from: null, to: null, caller: null };
     expect(rowMatches(r, f)).toBe(true);
     expect(rowMatches(r, { ...f, states: ["ok"] })).toBe(false);
   });
@@ -146,11 +147,68 @@ describe("rowMatches", () => {
     expect(rowMatches(row({ messaged: true }), { ...NO_FILTER, messaged: false })).toBe(true);
     expect(rowMatches(row({ messaged: false }), { ...NO_FILTER, messaged: false })).toBe(true);
   });
+
+  it("keeps a row whose startedAt is exactly from, drops one at to", () => {
+    const from = Date.parse("2026-10-01T00:00:00.000Z");
+    const to = Date.parse("2026-10-02T00:00:00.000Z");
+    expect(rowMatches(row({ startedAt: "2026-10-01T00:00:00.000Z" }), { ...NO_FILTER, from, to })).toBe(true);
+    expect(rowMatches(row({ startedAt: "2026-10-01T12:00:00.000Z" }), { ...NO_FILTER, from, to })).toBe(true);
+    expect(rowMatches(row({ startedAt: "2026-10-02T00:00:00.000Z" }), { ...NO_FILTER, from, to })).toBe(false);
+  });
+
+  it("drops a row before from", () => {
+    const from = Date.parse("2026-10-01T00:00:00.000Z");
+    expect(rowMatches(row({ startedAt: "2026-09-30T23:59:59.000Z" }), { ...NO_FILTER, from })).toBe(false);
+  });
+
+  it("drops a row with no startedAt when either bound is set", () => {
+    const from = Date.parse("2026-10-01T00:00:00.000Z");
+    const to = Date.parse("2026-10-02T00:00:00.000Z");
+    expect(rowMatches(row({ startedAt: null }), { ...NO_FILTER, from, to })).toBe(false);
+    expect(rowMatches(row({ startedAt: null }), { ...NO_FILTER, from })).toBe(false);
+    expect(rowMatches(row({ startedAt: null }), { ...NO_FILTER, to })).toBe(false);
+  });
+
+  it("caller asked keeps only rows asked and not messaged", () => {
+    expect(rowMatches(row({ asked: true, messaged: false }), { ...NO_FILTER, caller: "asked" })).toBe(true);
+    expect(rowMatches(row({ asked: false, messaged: true }), { ...NO_FILTER, caller: "asked" })).toBe(false);
+    expect(rowMatches(row({ asked: true, messaged: true }), { ...NO_FILTER, caller: "asked" })).toBe(false);
+    expect(rowMatches(row({ asked: false, messaged: false }), { ...NO_FILTER, caller: "asked" })).toBe(false);
+  });
+
+  it("caller messaged keeps only rows messaged and not asked", () => {
+    expect(rowMatches(row({ asked: false, messaged: true }), { ...NO_FILTER, caller: "messaged" })).toBe(true);
+    expect(rowMatches(row({ asked: true, messaged: false }), { ...NO_FILTER, caller: "messaged" })).toBe(false);
+    expect(rowMatches(row({ asked: true, messaged: true }), { ...NO_FILTER, caller: "messaged" })).toBe(false);
+  });
+
+  it("caller both keeps only rows asked and messaged", () => {
+    expect(rowMatches(row({ asked: true, messaged: true }), { ...NO_FILTER, caller: "both" })).toBe(true);
+    expect(rowMatches(row({ asked: true, messaged: false }), { ...NO_FILTER, caller: "both" })).toBe(false);
+    expect(rowMatches(row({ asked: false, messaged: true }), { ...NO_FILTER, caller: "both" })).toBe(false);
+  });
+
+  it("caller null keeps a row whatever its asked and messaged flags", () => {
+    expect(rowMatches(row({ asked: true, messaged: true }), NO_FILTER)).toBe(true);
+    expect(rowMatches(row({ asked: false, messaged: false }), NO_FILTER)).toBe(true);
+  });
 });
 
 describe("isFiltering", () => {
   it("is true when only the messaged filter is on", () => {
     expect(isFiltering({ ...NO_FILTER, messaged: true })).toBe(true);
+  });
+
+  it("is true when only the to bound is set", () => {
+    expect(isFiltering({ ...NO_FILTER, to: 1700000000000 })).toBe(true);
+  });
+
+  it("is true when only the from bound is set", () => {
+    expect(isFiltering({ ...NO_FILTER, from: 1700000000000 })).toBe(true);
+  });
+
+  it("is true when only the caller filter is on", () => {
+    expect(isFiltering({ ...NO_FILTER, caller: "asked" })).toBe(true);
   });
 
   it("is false when nothing is filtering", () => {
@@ -168,6 +226,9 @@ describe("filter params", () => {
       model: "flash",
       repo: "docs",
       messaged: false,
+      from: null,
+      to: null,
+      caller: null,
     });
   });
 
@@ -176,7 +237,7 @@ describe("filter params", () => {
   });
 
   it("round-trips a filter through filterToParams", () => {
-    const f: RowFilter = { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "flash", repo: "docs", messaged: false };
+    const f: RowFilter = { text: "auth module", states: ["live", "ok"], kind: "one-shot", model: "flash", repo: "docs", messaged: false, from: null, to: null, caller: null };
     const q = new URLSearchParams();
     filterToParams(f, q);
     expect(filterFromParams(q)).toEqual(f);
@@ -203,7 +264,7 @@ describe("filter params", () => {
   });
 
   it("round-trips the messaged flag through filterToParams", () => {
-    const f: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: true };
+    const f: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: true, from: null, to: null, caller: null };
     const q = new URLSearchParams();
     filterToParams(f, q);
     expect(q.get("messaged")).toBe("1");
@@ -215,5 +276,40 @@ describe("filter params", () => {
     filterToParams(NO_FILTER, q);
     expect(q.has("messaged")).toBe(false);
     expect(q.toString()).toBe("");
+  });
+
+  it("reads from, to and caller", () => {
+    const q = new URLSearchParams("from=1700000000000&to=1700086400000&caller=both");
+    expect(filterFromParams(q)).toEqual({
+      text: "",
+      states: [],
+      kind: null,
+      model: null,
+      repo: null,
+      messaged: false,
+      from: 1700000000000,
+      to: 1700086400000,
+      caller: "both",
+    });
+  });
+
+  it("reads a non-numeric from or to as null", () => {
+    expect(filterFromParams(new URLSearchParams("from=abc")).from).toBeNull();
+    expect(filterFromParams(new URLSearchParams("to=abc")).to).toBeNull();
+  });
+
+  it("reads an unknown caller as null", () => {
+    expect(filterFromParams(new URLSearchParams("caller=x")).caller).toBeNull();
+    expect(filterFromParams(new URLSearchParams("caller=asked")).caller).toBe("asked");
+  });
+
+  it("round-trips from, to and caller through filterToParams", () => {
+    const f: RowFilter = { text: "", states: [], kind: null, model: null, repo: null, messaged: false, from: 1700000000000, to: 1700086400000, caller: "both" };
+    const q = new URLSearchParams();
+    filterToParams(f, q);
+    expect(q.get("from")).toBe("1700000000000");
+    expect(q.get("to")).toBe("1700086400000");
+    expect(q.get("caller")).toBe("both");
+    expect(filterFromParams(q)).toEqual(f);
   });
 });

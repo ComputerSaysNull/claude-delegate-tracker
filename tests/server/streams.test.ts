@@ -423,6 +423,35 @@ describe("messaged by the caller (message events, format 1.14)", () => {
   });
 });
 
+describe("asked by the caller (question events)", () => {
+  const samplesDir = join(import.meta.dirname, "../../contract/samples");
+
+  function loadSample(file: string): StreamState {
+    const s = newStreamState();
+    for (const line of readFileSync(join(samplesDir, file), "utf8").split("\n")) {
+      if (line.trim() !== "") applyLine(s, line);
+    }
+    return s;
+  }
+
+  it("the asked_the_caller sample's row is asked, counting its question", () => {
+    const s = loadSample("asked_the_caller.jsonl");
+    expect(s.questions).toBe(1);
+    expect(listRow("asked_the_caller.jsonl", s, NOW, QUIET).asked).toBe(true);
+  });
+
+  it("the message sample's row is not asked", () => {
+    const s = loadSample("message.jsonl");
+    expect(s.questions).toBe(0);
+    expect(listRow("message.jsonl", s, NOW, QUIET).asked).toBe(false);
+  });
+
+  it("a run that never asked is not asked", () => {
+    expect(listRow("x", build([start()]), NOW, QUIET).asked).toBe(false);
+    expect(listRow("x", build([start(), { t: "priced", at: at(0), turn: 1 }]), NOW, QUIET).asked).toBe(false);
+  });
+});
+
 describe("parseAt", () => {
   it("handles 6-digit fractions and +00:00", () => {
     expect(parseAt("2026-10-01T13:00:09.000000+00:00")).toBe(Date.parse("2026-10-01T13:00:09Z"));

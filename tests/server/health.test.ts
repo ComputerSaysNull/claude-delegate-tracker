@@ -42,7 +42,7 @@ function row(over: Partial<ListRow> = {}): ListRow {
     turns: null,
     unknownFormat: null,
     left: null,
-    queueOf: null, messaged: false,
+    queueOf: null, messaged: false, asked: false,
     workspace: null, mcpTask: null,
     ...over,
   };

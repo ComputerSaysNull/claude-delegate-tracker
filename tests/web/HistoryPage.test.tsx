@@ -2,6 +2,9 @@
 // The History tab: the range switch, the five tiles, the two day charts' legends, the
 // "why runs did not finish" list, the by-repo and by-model tables and the status line.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { addressFor } from "../../src/web/address.ts";
+import type { Mock } from "vitest";
+import type { RowFilter } from "../../src/server/catalog.ts";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { HistoryPage } from "../../src/web/HistoryPage.tsx";
 import { dayMonthYear } from "../../src/web/historyData.ts";
@@ -768,6 +771,125 @@ describe("HistoryPage", () => {
           expect(valueEl.className).toMatch(/\bwhitespace-nowrap\b/);
         }
       }
+    });
+  });
+
+  // Drilling from a day chart into the delegation list. HistoryPage navigates the way the
+  // "Asked more than once" links (plain anchors) do: it asks the browser to load the list
+  // address built by addressFor, so these tests spy on window.location.assign and assert on
+  // the URL it is handed (its path and query parameters).
+  describe("drilling from History into the list", () => {
+    // HistoryPage hands the filter to App, which opens the list in place (Back returns here).
+    let assign: Mock<(filter: RowFilter) => void>;
+
+    beforeEach(() => {
+      assign = vi.fn<(filter: RowFilter) => void>();
+    });
+
+    // The caller-involvement chart's day column, found by its aria-label.
+    function involvementColumn(label: string): HTMLElement {
+      const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
+      return within(card).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").includes(label))!;
+    }
+
+    // The list address the handed filter opens, parsed against a base for a path and query.
+    function openedURL(): URL {
+      expect(assign).toHaveBeenCalled();
+      return new URL(addressFor({ selected: null, section: "list", filter: assign.mock.calls[0][0] }), "http://localhost");
+    }
+
+    // The default 30-day range puts a "2 Oct" column whose bucket runs from 2 Oct local midnight
+    // to 3 Oct local midnight; a drilled URL's from/to are exactly those two boundaries.
+    const OCT_2_START = String(new Date(2026, 9, 2).getTime());
+    const OCT_2_END = String(new Date(2026, 9, 3).getTime());
+
+    it("clicking a day's failed segment in Delegations per day drills in filtered to that state", async () => {
+      mockFetch(api([run({ name: "f1", startedAt: new Date(2026, 9, 2, 9).getTime(), outcome: "failed", reason: "boom" })]));
+      render(<HistoryPage onOpenList={assign} />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+      const failed = column.querySelector<HTMLElement>('[data-part="failed"]')!;
+      expect(failed).not.toBeNull();
+      fireEvent.click(failed);
+
+      const url = openedURL();
+      expect(url.pathname).toBe("/");
+      expect(url.searchParams.get("state")).toBe("failed");
+      expect(url.searchParams.get("from")).toBe(OCT_2_START);
+      expect(url.searchParams.get("to")).toBe(OCT_2_END);
+    });
+
+    it("clicking a day's limits segment in Delegations per day drills in with the two limit states", async () => {
+      mockFetch(api([run({ name: "t1", startedAt: new Date(2026, 9, 2, 9).getTime(), outcome: "timed out", reason: "timeout" })]));
+      render(<HistoryPage onOpenList={assign} />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const limits = dayColumn("2 Oct").querySelector<HTMLElement>('[data-part="limits"]')!;
+      expect(limits).not.toBeNull();
+      fireEvent.click(limits);
+
+      const url = openedURL();
+      expect(url.pathname).toBe("/");
+      expect(url.searchParams.get("state")).toBe("timed out,cut off");
+      expect(url.searchParams.get("from")).toBe(OCT_2_START);
+      expect(url.searchParams.get("to")).toBe(OCT_2_END);
+    });
+
+    it("clicking a day's messaged segment in Caller involvement drills in with that caller", async () => {
+      mockFetch(api([run({ name: "m1", startedAt: new Date(2026, 9, 2, 9).getTime(), asks: 0, messages: 2 })]));
+      render(<HistoryPage onOpenList={assign} />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+      const column = involvementColumn("2 Oct");
+      const messaged = column.querySelector<HTMLElement>('[data-part="messaged"]')!;
+      expect(messaged).not.toBeNull();
+      fireEvent.click(messaged);
+
+      const url = openedURL();
+      expect(url.pathname).toBe("/");
+      expect(url.searchParams.get("caller")).toBe("messaged");
+      expect(url.searchParams.get("from")).toBe(OCT_2_START);
+      expect(url.searchParams.get("to")).toBe(OCT_2_END);
+      expect(url.searchParams.get("state")).toBeNull();
+    });
+
+    it("pressing Enter on a focused day column drills in with the day's span only", async () => {
+      mockFetch(api([run({ name: "a", startedAt: new Date(2026, 9, 2, 9).getTime(), outcome: "ok" })]));
+      render(<HistoryPage onOpenList={assign} />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+      fireEvent.focus(column);
+      fireEvent.keyDown(column, { key: "Enter" });
+
+      const url = openedURL();
+      expect(url.pathname).toBe("/");
+      expect(url.searchParams.get("from")).toBe(OCT_2_START);
+      expect(url.searchParams.get("to")).toBe(OCT_2_END);
+      expect(url.searchParams.get("state")).toBeNull();
+      expect(url.searchParams.get("caller")).toBeNull();
+    });
+
+    it("a first touch tap on a day column shows its hover card without navigating; a second tap opens it", async () => {
+      mockFetch(api([run({ name: "a", startedAt: new Date(2026, 9, 2, 9).getTime(), outcome: "ok" })]));
+      render(<HistoryPage onOpenList={assign} />);
+      await waitFor(() => expect(dayColumn("2 Oct")).toBeTruthy());
+      const column = dayColumn("2 Oct");
+
+      // A phone fires pointerdown, then an emulated mouse enter, then click.
+      fireEvent.pointerDown(column, { pointerType: "touch" });
+      fireEvent.mouseEnter(column);
+      fireEvent.click(column);
+      expect(screen.getByRole("tooltip")).toBeTruthy();
+      expect(assign).not.toHaveBeenCalled();
+
+      fireEvent.pointerDown(column, { pointerType: "touch" });
+      fireEvent.mouseEnter(column);
+      fireEvent.click(column);
+      expect(assign).toHaveBeenCalledTimes(1);
+      const url = openedURL();
+      expect(url.pathname).toBe("/");
+      expect(url.searchParams.get("from")).toBe(OCT_2_START);
+      expect(url.searchParams.get("to")).toBe(OCT_2_END);
+      expect(url.searchParams.get("state")).toBeNull();
+      expect(url.searchParams.get("caller")).toBeNull();
     });
   });
 });
