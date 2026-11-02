@@ -282,7 +282,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Every History hover card stays where it can be seen: inside the window and inside any scrolling column around it, short of its scrollbar. It is centred over its column, then moved in to 8px from the edge it would cross, and kept at the left edge when it is wider than that room.
 - GPU power per day (per-node Wh as stacked columns, Wh per 1k output tokens of the runs started that day, the range figure counting only days with a power figure; GPU power only, not wall power).
 - Why runs did not finish: each reason with its outcome's icon and count, most first; "Every run finished." when there are none.
-- By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—".
+- By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—". Under the totals, three labelled groups: Delegations (per day, caller involvement, tokens per day, why runs did not finish), Cluster (KV-cache, GPU power, when the cluster is busy, busy and idle), and By repo and by model; at most two cards side by side, one per row on a phone. On a phone each repo or model is a block, its name over its six figures, and no figure wraps.
 - Under it, how the records stand: how many are kept, when they were checked against the folder and how many disagreed, how many streams are gone, and any error saving them.
 
 ### Absent is not zero
