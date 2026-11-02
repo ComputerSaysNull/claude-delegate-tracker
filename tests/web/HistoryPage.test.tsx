@@ -201,6 +201,41 @@ describe("HistoryPage", () => {
     expect(tileText("Done")).toContain("50%");
   });
 
+  it("offers an All time range after the 90-day button", async () => {
+    mockFetch(api(RUNS));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "30 days" })).toBeTruthy());
+    const group = screen.getByRole("group", { name: "Range" });
+    expect(within(group).getAllByRole("button").map((b) => b.textContent)).toEqual([
+      "7 days",
+      "30 days",
+      "90 days",
+      "All time",
+    ]);
+  });
+
+  it("counts runs older than 90 days in an All time range and draws weekly columns", async () => {
+    const oldRun = run({ name: "old", startedAt: NOW - 120 * DAY, outcome: "ok" });
+    const recentRun = run({ name: "recent", startedAt: NOW - DAY, outcome: "ok" });
+    mockFetch(api([oldRun, recentRun]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(tileText("Delegations")).toContain("1"));
+
+    const allTime = screen.getByRole("button", { name: "All time" });
+    fireEvent.click(allTime);
+    await waitFor(() => expect(allTime.getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(tileText("Delegations")).toContain("2"));
+    const columns = within(delegationsCard()).getAllByRole("button");
+    expect(columns.some((c) => (c.getAttribute("aria-label") ?? "").includes("week of"))).toBe(true);
+
+    const ninety = screen.getByRole("button", { name: "90 days" });
+    fireEvent.click(ninety);
+    await waitFor(() => expect(ninety.getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(tileText("Delegations")).toContain("1"));
+    const columns90 = within(delegationsCard()).getAllByRole("button");
+    expect(columns90.some((c) => (c.getAttribute("aria-label") ?? "").includes("week of"))).toBe(false);
+  });
+
   it("shows a dash for a null figure", async () => {
     mockFetch(api([]));
     render(<HistoryPage />);

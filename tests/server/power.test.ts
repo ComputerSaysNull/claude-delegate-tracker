@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { PowerStore } from "../../src/server/power.ts";
 import type { PowerBucket } from "../../src/server/power.ts";
-import { KEEP_DAYS } from "../../src/server/busy.ts";
 import type { NodeFigures } from "../../src/server/nodes.ts";
 
 const HOUR = 3_600_000;
@@ -161,22 +160,26 @@ describe("PowerStore", () => {
     expectPowerBucket(buckets[1], T0, "n2", (20 * 8) / 3600, 8, 20);
   });
 
-  it("drops buckets older than KEEP_DAYS on push", () => {
+  it("a bucket 200 days old survives a push", () => {
     const store = new PowerStore(null, () => T0, 100_000);
-    const oldHour = hourOf(T0 - (KEEP_DAYS + 1) * DAY);
+    const oldHour = hourOf(T0 - 200 * DAY);
     store.push(oldHour + 1000, [figures({ gpuPowerW: 36 })]);
     store.push(oldHour + 2000, [figures({ gpuPowerW: 36 })]);
-    expect(store.buckets()).toEqual([]);
+    // An outage in between, so the long gap is not credited to the hours after the old one.
+    store.push(oldHour + 3000, [figures({ gpuPowerW: null })]);
+    store.push(T0 + 1000, [figures({ gpuPowerW: 36 })]);
+    store.push(T0 + 2000, [figures({ gpuPowerW: 36 })]);
+    expect(store.buckets().map((b) => b.hour)).toEqual([oldHour, T0]);
   });
 
-  it("drops buckets older than KEEP_DAYS on load", () => {
+  it("a bucket 200 days old survives a load", () => {
     const dir = makeDir();
     const file = join(dir, "power.json");
-    const oldHour = hourOf(T0 - (KEEP_DAYS + 1) * DAY);
+    const oldHour = hourOf(T0 - 200 * DAY);
     writeFileSync(file, JSON.stringify({ version: 1, buckets: [goodBucket(oldHour), goodBucket(T0)] }));
     const store = new PowerStore(file, () => T0, 60);
     store.load();
-    expect(store.buckets()).toEqual([goodBucket(T0)]);
+    expect(store.buckets()).toEqual([goodBucket(oldHour), goodBucket(T0)]);
   });
 
   it("saves the buckets so a second store loading the file sees the same", () => {

@@ -19,6 +19,7 @@ import {
   median,
   perDay,
   reasons,
+  spanOf,
   totals,
   type Day,
   type Group,
@@ -65,7 +66,7 @@ function chartLabels(days: { label: string }[]): string[] {
   );
 }
 
-const RANGES: Range[] = [7, 30, 90];
+const RANGES: Range[] = [7, 30, 90, "all"];
 
 export function HistoryPage() {
   const [data, setData] = useState<RunsResponse | null>(null);
@@ -129,7 +130,7 @@ export function HistoryPage() {
             onClick={() => setRange(d)}
             className={range === d ? "rounded px-2 py-0.5 bg-card font-semibold" : "rounded px-2 py-0.5 text-muted"}
           >
-            {d} days
+            {d === "all" ? "All time" : `${d} days`}
           </button>
         ))}
       </div>
@@ -426,20 +427,21 @@ function BusyGrid({ grid }: { grid: (number | null)[][] }) {
 
 function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: BusyResponse | null; power: PowerResponse | null; range: Range }) {
   const now = new Date();
-  const runs = inRange(data.runs, range, now);
+  const span = spanOf(range, data.runs, now);
+  const runs = inRange(data.runs, span);
   const t = totals(runs);
-  const days = perDay(runs, range, now);
+  const days = perDay(runs, span);
   const why = reasons(runs);
   const repoGroups = groupBy(runs, "repo");
   const modelGroups = groupBy(runs, "model");
-  const kvBuckets = busy === null ? [] : busyIn(busy.buckets, range, now);
-  const kv = busy === null ? [] : kvPerDay(busy.buckets, range, now);
-  const busyLoad = load(runs, range, now);
-  const grid = weekLoad(runs, range, now);
+  const kvBuckets = busy === null ? [] : busyIn(busy.buckets, span);
+  const kv = busy === null ? [] : kvPerDay(busy.buckets, span);
+  const busyLoad = load(runs, span);
+  const grid = weekLoad(runs, span);
   const hottest = busiest(grid);
   const noBusy = kvBuckets.length === 0;
   const busyWriteError = busy === null ? null : busy.writeError;
-  const powerDays = power === null ? [] : powerPerDay(power.buckets, data.runs, range, now);
+  const powerDays = power === null ? [] : powerPerDay(power.buckets, data.runs, span);
   const powerWriteError = power === null ? null : power.writeError;
   const kvPeak = kv.reduce<{ peak: number; label: string } | null>((best, k) => {
     if (k.peak === null) return best;
