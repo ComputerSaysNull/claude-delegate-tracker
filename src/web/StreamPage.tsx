@@ -6,7 +6,7 @@
 // the hook.
 import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
-import type { StreamView, TurnView, CallView, SummaryView, AnswerView } from "../server/view.ts";
+import type { StreamView, TurnView, CallView, SummaryView, AnswerView, MessageView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
 import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
@@ -189,6 +189,11 @@ export function StreamViewBody({ view }: { view: StreamView }) {
           )}
           {view.turns.map((turn) => (
             <Fragment key={turn.n}>
+              {view.messages.map((message, i) =>
+                message.delivered === true && message.turn === turn.n
+                  ? <CallerMessage key={i} message={message} />
+                  : null,
+              )}
               <DelegationMessage
                 turn={turn}
                 name={view.name}
@@ -206,6 +211,11 @@ export function StreamViewBody({ view }: { view: StreamView }) {
               ))}
             </Fragment>
           ))}
+          {view.messages.map((message, i) =>
+            message.delivered !== true || message.turn === null || !view.turns.some((t) => t.n === message.turn)
+              ? <CallerMessage key={i} message={message} />
+              : null,
+          )}
           {view.summary !== null && view.summary.finished && (
             <SummaryItem summary={view.summary} state={row.state} />
           )}
@@ -253,6 +263,25 @@ function CallerAnswer({ answer, workspace }: { answer: AnswerView; workspace: st
       </p>
       {answer.bestReading && <p className="text-sm text-muted">The caller left the choice to the delegation:</p>}
       <Markdown text={answer.text} />
+    </li>
+  );
+}
+
+// A message the caller sent mid-run, on the caller's side like the task and an answer.
+function CallerMessage({ message }: { message: MessageView }) {
+  return (
+    <li
+      data-from="caller"
+      className="ml-auto flex max-w-[88%] flex-col gap-2 rounded-2xl rounded-br-sm border border-line bg-card px-3 py-2"
+    >
+      <p className="text-xs text-muted">Message from the caller</p>
+      <Markdown text={message.text} />
+      {message.delivered === true && message.queuedSeconds !== null && (
+        <p className="text-xs text-muted">waited {Math.round(message.queuedSeconds)}s for the turn to end</p>
+      )}
+      {message.delivered === false && (
+        <p className="text-xs text-muted">Not delivered — the run ended first</p>
+      )}
     </li>
   );
 }

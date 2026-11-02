@@ -26,6 +26,14 @@ export interface CallView {
 
 export type AnswerView = { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null };
 
+export interface MessageView {
+  text: string;                 // the message as written; "" when absent
+  turn: number | null;          // the turn it was meant for; null when the run ended first
+  queuedSeconds: number | null; // how long it waited for that turn; null when absent
+  delivered: boolean | null;    // whether the turn saw it; null when unknown
+  at: string | null;            // when the caller sent it, as an ISO time
+}
+
 export interface TurnView {
   n: number;
   heading: string;              // "turn N of M" when of_turns is present, else "turn N"
@@ -75,6 +83,7 @@ export interface StreamView {
   task: string | null;          // start.task in full
   files: FileView[];            // files_read, then files_skipped
   waiting: string | null;       // "queued 3m of 10m" / "queued 3m"; only while the state is queued
+  messages: MessageView[];      // the caller's messages, in the order they were sent
   turns: TurnView[];
   summary: SummaryView | null;
 }
@@ -85,6 +94,7 @@ export interface ViewPatch {
   seq: number;                  // the page refetches the whole view when this isn't its seq + 1
   row: ListRow;
   waiting: string | null;
+  messages: MessageView[];      // the caller's messages, in the order they were sent
   // Only turns that changed since the previous seq. With `append`, the turn's `partial`
   // holds only the text added since then, for the page to add to what it holds.
   turns: { index: number; turn: TurnView; append?: true }[];
@@ -96,6 +106,7 @@ export interface ViewState {
   seq: number;
   turns: Map<number, TurnSlot>;
   waiting: Record<string, unknown> | null;
+  messages: Record<string, unknown>[]; // the caller's message events, in stream order
 }
 
 export interface TurnSlot {
@@ -110,7 +121,7 @@ function newSlot(): TurnSlot {
 }
 
 export function newViewState(): ViewState {
-  return { seq: 0, turns: new Map(), waiting: null };
+  return { seq: 0, turns: new Map(), waiting: null, messages: [] };
 }
 
 // Feed one parsed event (start and end too, which StreamState keeps); bumps seq and
@@ -173,6 +184,11 @@ export function applyViewEvent(v: ViewState, evt: Record<string, unknown>): bool
   }
   if (t === "waiting") {
     v.waiting = evt;
+    v.seq += 1;
+    return true;
+  }
+  if (t === "message") {
+    v.messages.push(evt);
     v.seq += 1;
     return true;
   }
@@ -475,6 +491,18 @@ function waitingOf(waiting: Record<string, unknown> | null, state: State): strin
   return s;
 }
 
+function messageOf(e: Record<string, unknown>): MessageView {
+  const turn = e.turn;
+  const atMs = parseAt(e.at);
+  return {
+    text: typeof e.text === "string" ? e.text : "",
+    turn: typeof turn === "number" && Number.isInteger(turn) ? turn : null,
+    queuedSeconds: typeof e.queued_seconds === "number" ? e.queued_seconds : null,
+    delivered: typeof e.delivered === "boolean" ? e.delivered : null,
+    at: atMs === null ? null : new Date(atMs).toISOString(),
+  };
+}
+
 function summaryTurns(s: StreamState): string | null {
   const end = s.end;
   const used = end !== null && typeof end.turns === "number" ? end.turns : s.maxTurn;
@@ -568,6 +596,7 @@ export function buildView(name: string, v: ViewState, s: StreamState, row: ListR
     task: typeof task === "string" ? task : null,
     files: filesOf(s.start),
     waiting: waitingOf(v.waiting, row.state),
+    messages: v.messages.map(messageOf),
     turns,
     summary: buildSummary(s, closedTurns),
   };
@@ -614,5 +643,5 @@ export function diffView(prev: StreamView | null, next: StreamView): ViewPatch {
       }
     });
   }
-  return { name: next.name, seq: next.seq, row: next.row, waiting: next.waiting, turns, summary: next.summary };
+  return { name: next.name, seq: next.seq, row: next.row, waiting: next.waiting, messages: next.messages, turns, summary: next.summary };
 }

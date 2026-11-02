@@ -225,12 +225,12 @@ function makeRow(name: string): ListRow {
 function makeView(name: string): StreamView {
   return {
     name, seq: 1, row: makeRow(name), task: null, files: [],
-    waiting: null, turns: [], summary: null,
+    waiting: null, messages: [], turns: [], summary: null,
   };
 }
 
 function makePatch(name: string, seq: number): ViewPatch {
-  return { name, seq, row: makeRow(name), waiting: null, turns: [], summary: null };
+  return { name, seq, row: makeRow(name), waiting: null, messages: [], turns: [], summary: null };
 }
 
 const goodHost = { headers: { host: "localhost" } };

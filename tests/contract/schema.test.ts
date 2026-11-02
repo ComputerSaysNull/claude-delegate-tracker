@@ -12,7 +12,7 @@ const ajv = new Ajv2020({ strict: false, allErrors: true });
 const validate = ajv.compile(schema);
 const sampleFiles = readdirSync(samplesDir).filter((f) => f.endsWith(".jsonl"));
 
-const KINDS = ["start", "priced", "tools", "partial", "alive", "waiting", "turn", "end"];
+const KINDS = ["start", "priced", "tools", "partial", "alive", "waiting", "message", "turn", "end"];
 
 const allEvents = () =>
   sampleFiles.flatMap((f) =>
@@ -92,6 +92,33 @@ describe("transcript schema", () => {
     };
     expect(validate(withImages(8))).toBe(true);
     expect(validate(withImages("8"))).toBe(false);
+  });
+
+  // The tracker reads message.turn (format 1.14), so the vendored schema must define it as an
+  // integer that may be null, never a string.
+  it("defines a message's turn as an integer or null", () => {
+    const msg = allEvents().find((x) => x.event.t === "message");
+    expect(msg).toBeDefined();
+    expect(validate({ ...msg!.event, turn: 2 })).toBe(true);
+    expect(validate({ ...msg!.event, turn: null })).toBe(true);
+    expect(validate({ ...msg!.event, turn: "2" })).toBe(false);
+  });
+
+  // The tracker reads message.queued_seconds, so the vendored schema must define it as a number.
+  it("defines a message's queued_seconds as a number", () => {
+    const msg = allEvents().find((x) => x.event.t === "message");
+    expect(msg).toBeDefined();
+    expect(validate({ ...msg!.event, queued_seconds: 2.5 })).toBe(true);
+    expect(validate({ ...msg!.event, queued_seconds: "2" })).toBe(false);
+  });
+
+  // The tracker reads message.delivered, so the vendored schema must define it as a boolean.
+  it("defines a message's delivered as a boolean", () => {
+    const msg = allEvents().find((x) => x.event.t === "message");
+    expect(msg).toBeDefined();
+    expect(validate({ ...msg!.event, delivered: true })).toBe(true);
+    expect(validate({ ...msg!.event, delivered: false })).toBe(true);
+    expect(validate({ ...msg!.event, delivered: "yes" })).toBe(false);
   });
 
   it.each(["t", "at"])("rejects an event without its required %s", (field) => {

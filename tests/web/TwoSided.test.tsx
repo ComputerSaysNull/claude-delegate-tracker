@@ -27,7 +27,7 @@ function call(overrides: Partial<CallView> = {}): CallView {
 }
 
 function view(overrides: Partial<StreamView> = {}): StreamView {
-  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, turns: [], summary: null, ...overrides };
+  return { name: "stream-1", seq: 1, row: row(), task: "Find every place that calls load_config()", files: [], waiting: null, messages: [], turns: [], summary: null, ...overrides };
 }
 
 const message = (from: string) => document.querySelectorAll(`[data-from="${from}"]`);

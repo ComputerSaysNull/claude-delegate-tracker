@@ -79,6 +79,7 @@ function view(overrides: Partial<StreamView> = {}): StreamView {
     files: [],
     waiting: null,
     turns: [],
+    messages: [],
     summary: null,
     ...overrides,
   };
@@ -91,6 +92,7 @@ function patch(overrides: Partial<ViewPatch> = {}): ViewPatch {
     row: row(),
     waiting: null,
     turns: [],
+    messages: [],
     summary: null,
     ...overrides,
   };
@@ -205,6 +207,19 @@ describe("applyPatch", () => {
     expect(held.turns[0].partial).toEqual({ reasoning: "thinking", answer: "hello" });
     expect(result.turns).not.toBe(before);
     expect(result.turns[0].partial).toEqual({ reasoning: "thinking hard", answer: "hello world" });
+  });
+
+  it("copies messages from the patch", () => {
+    const held = view({ seq: 1, turns: [] });
+    const result = applyPatch(
+      held,
+      patch({
+        seq: 2,
+        messages: [{ text: "hi", turn: 1, queuedSeconds: 2, delivered: true, at: null }],
+      }),
+    ) as StreamView;
+    expect(result.messages).toEqual([{ text: "hi", turn: 1, queuedSeconds: 2, delivered: true, at: null }]);
+    expect(held.messages).toEqual([]);
   });
 });
 

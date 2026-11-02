@@ -74,7 +74,7 @@ function turn(overrides: Partial<TurnView>): TurnView {
 }
 
 function view(overrides: Partial<StreamView>): StreamView {
-  return { name: "s", seq: 1, row: row(), task: null, files: [], waiting: null, turns: [], summary: null, ...overrides };
+  return { name: "s", seq: 1, row: row(), task: null, files: [], waiting: null, messages: [], turns: [], summary: null, ...overrides };
 }
 
 describe("where Markdown is used", () => {

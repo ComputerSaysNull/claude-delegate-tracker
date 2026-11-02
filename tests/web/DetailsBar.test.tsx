@@ -123,6 +123,7 @@ function view(overrides: Partial<StreamView> = {}): StreamView {
     task: null,
     files: [],
     waiting: null,
+    messages: [],
     turns: [],
     summary: null,
     ...overrides,
