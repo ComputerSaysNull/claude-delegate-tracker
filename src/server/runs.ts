@@ -22,6 +22,9 @@ export interface RunRecord {
   cachedTokens: number | null;   // end.cached_tokens
   asks: number | null;      // question events: how many times it called ask_caller; null on a record saved before this field
   questions: number | null; // the questions those events held (each one's questions array, string entries only)
+  messages: number | null;      // message events the caller sent the run; null on a record saved before this field
+  undelivered: number | null;   // of those, how many never reached the run
+  messageWaits: number[] | null; // the queued_seconds of the delivered ones, in order
 }
 
 export interface RunsStatus {
@@ -78,12 +81,40 @@ function countQuestions(lines: string[]): { asks: number; questions: number } {
   return { asks, questions };
 }
 
+// The message events a stream holds, as summariseRun records them: how many the caller sent,
+// how many never reached the run, and the queued_seconds of the ones that did.
+function countMessages(lines: string[]): { messages: number; undelivered: number; messageWaits: number[] } {
+  let messages = 0;
+  let undelivered = 0;
+  const messageWaits: number[] = [];
+  for (const line of lines) {
+    if (!line.includes("message")) continue;
+    let ev: unknown;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof ev !== "object" || ev === null || Array.isArray(ev)) continue;
+    const e = ev as Record<string, unknown>;
+    if (e.t !== "message") continue;
+    messages += 1;
+    if (e.delivered === false) {
+      undelivered += 1;
+    } else if (typeof e.queued_seconds === "number") {
+      messageWaits.push(e.queued_seconds);
+    }
+  }
+  return { messages, undelivered, messageWaits };
+}
+
 export function summariseRun(name: string, size: number, lines: string[], now: Date): RunRecord | null {
   const s = newStreamState();
   for (const line of lines) applyLine(s, line);
   if (s.end === null) return null;
   const outcome = stateOf(s, now.getTime(), 0) as Outcome;
   const { asks, questions } = countQuestions(lines);
+  const { messages, undelivered, messageWaits } = countMessages(lines);
   return {
     name,
     size,
@@ -100,6 +131,9 @@ export function summariseRun(name: string, size: number, lines: string[], now: D
     cachedTokens: typeof s.end.cached_tokens === "number" ? s.end.cached_tokens : null,
     asks,
     questions,
+    messages,
+    undelivered,
+    messageWaits,
   };
 }
 
@@ -110,6 +144,7 @@ function sortRecords(records: RunRecord[]): RunRecord[] {
 const OUTCOMES: readonly string[] = ["ok", "failed", "stopped", "timed out", "cut off"];
 const numberOrNull = (v: unknown) => v === null || typeof v === "number";
 const stringOrNull = (v: unknown) => v === null || typeof v === "string";
+const numbersOrNull = (v: unknown): v is number[] | null => v === null || (Array.isArray(v) && v.every((x) => typeof x === "number"));
 
 function isRecord(v: unknown): v is RunRecord {
   if (typeof v !== "object" || v === null) return false;
@@ -117,7 +152,8 @@ function isRecord(v: unknown): v is RunRecord {
   return typeof r.name === "string" && typeof r.size === "number" && typeof r.outcome === "string" && OUTCOMES.includes(r.outcome)
     && numberOrNull(r.startedAt) && stringOrNull(r.reason) && stringOrNull(r.repo) && typeof r.repoFromPaths === "boolean" && stringOrNull(r.model)
     && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens)
-    && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean");
+    && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean")
+    && numberOrNull(r.messages) && numberOrNull(r.undelivered) && numbersOrNull(r.messageWaits);
 }
 
 function sameRecord(a: RunRecord, b: RunRecord): boolean {
@@ -239,7 +275,8 @@ export class RunStore {
     const obj = parsed as Record<string, unknown>;
     if (obj.version !== VERSION || !Array.isArray(obj.runs)) return;
     // A record of the wrong shape is dropped: the page reads these fields without checking.
-    // A record saved before asks/questions existed is kept, with those two read as null.
+    // A record saved before asks/questions existed is kept, with those two read as null; the
+    // same holds for mcpTask and for the message counts on a record saved before they existed.
     const runs = (obj.runs as unknown[]).map((r) => {
       if (typeof r !== "object" || r === null) return r;
       const rec = r as Record<string, unknown>;
@@ -248,6 +285,9 @@ export class RunStore {
         asks: rec.asks === undefined ? null : rec.asks,
         questions: rec.questions === undefined ? null : rec.questions,
         mcpTask: rec.mcpTask === undefined ? null : rec.mcpTask,
+        messages: rec.messages === undefined ? null : rec.messages,
+        undelivered: rec.undelivered === undefined ? null : rec.undelivered,
+        messageWaits: rec.messageWaits === undefined ? null : rec.messageWaits,
       };
     });
     this.kept = sortRecords(runs.filter(isRecord));

@@ -31,6 +31,9 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     asks: 0,
     questions: 0,
     mcpTask: null,
+    messages: null,
+    undelivered: null,
+    messageWaits: null,
     ...overrides,
   };
 }
@@ -240,15 +243,17 @@ describe("HistoryPage", () => {
     expect(screen.getAllByText("output").length).toBeGreaterThan(0);
   });
 
-  it("shows the questions card, its figures, and the asked-more-than-once list", async () => {
+  it("shows the caller-involvement card, its figures, and the asked-more-than-once list", async () => {
     mockFetch(api(RUNS));
     render(<HistoryPage />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
-    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
     expect(within(card).getByText("questions")).toBeTruthy();
     expect(within(card).getByText("ask_caller calls")).toBeTruthy();
     expect(within(card).getByText("delegations asked")).toBeTruthy();
     expect(within(card).getByText("asked more than once")).toBeTruthy();
+    expect(within(card).getByText("delegations messaged")).toBeTruthy();
+    expect(within(card).getByText("never delivered")).toBeTruthy();
     expect(within(card).getByText("6")).toBeTruthy(); // questions: 4 + 2 + 0
     expect(within(card).getByText("3")).toBeTruthy(); // ask_caller calls: 2 + 1 + 0
     expect(within(card).getByText("2")).toBeTruthy(); // delegations asked
@@ -259,28 +264,76 @@ describe("HistoryPage", () => {
     expect(links[0].textContent).toContain("4 questions");
   });
 
-  it("shows — on the questions card when no run in the range has the counts", async () => {
+  it("shows — on the caller-involvement card when no run in the range has the counts", async () => {
     mockFetch(api([run({ name: "a", asks: null, questions: null }), run({ name: "b", asks: null, questions: null })]));
     render(<HistoryPage />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
-    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
     const figure = (label: string) => within(card).getByText(label).querySelector(".font-mono")!.textContent;
     expect([figure("questions"), figure("ask_caller calls")]).toEqual(["—", "—"]);
   });
 
-  it("shows a day's questions and its ask_caller calls on hover", async () => {
-    mockFetch(api(RUNS));
+  it("shows a day's questions and its involved delegations on hover", async () => {
+    mockFetch(api([run({ name: "a", startedAt: NOW - 2 * DAY, asks: 1, questions: 3, messages: 0 })]));
     render(<HistoryPage />);
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Questions to the caller" })).toBeTruthy());
-    const card = screen.getByRole("heading", { name: "Questions to the caller" }).closest("div")!;
-    const day = within(card).getAllByRole("button").find((b) => /: [1-9]\d* questions$/.test(b.getAttribute("aria-label") ?? ""))!;
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
+    const day = within(card).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").includes("2 Oct"))!;
     fireEvent.mouseEnter(day);
     const tooltip = within(card).getByRole("tooltip");
-    const rows = [...tooltip.querySelectorAll(".flex.items-center")].map((r) => r.textContent);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatch(/^questions\d+$/);
-    expect(rows[1]).toMatch(/^ask_caller calls\d+$/);
-    expect(tooltip.querySelector(".bg-state-asking")).not.toBeNull();
+    expect(within(tooltip).getByText("Questions")).toBeTruthy();
+    expect(within(tooltip).getByText("3")).toBeTruthy();
+    expect(within(tooltip).getByText("Delegations involved")).toBeTruthy();
+  });
+
+  it("names the caller-involvement chart legends and drops the old heading", async () => {
+    mockFetch(api([run({ name: "a", asks: 1, messages: 0 }), run({ name: "b", messages: 2, messageWaits: [2] })]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    expect(screen.queryByRole("heading", { name: "Questions to the caller" })).toBeNull();
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
+    expect(within(card).getByText("asked")).toBeTruthy();
+    expect(within(card).getByText("messaged")).toBeTruthy();
+    expect(within(card).getByText("both")).toBeTruthy();
+  });
+
+  it("shows a day's median wait and never-delivered figure on hover", async () => {
+    mockFetch(api([
+      run({ name: "a", startedAt: NOW - 2 * DAY, asks: 1, messages: 0 }),
+      run({ name: "b", startedAt: NOW - 2 * DAY, asks: 0, messages: 2, undelivered: 1, messageWaits: [2] }),
+    ]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
+    const day = within(card).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").includes("2 Oct"))!;
+    fireEvent.mouseOver(day);
+    const tooltip = within(card).getByRole("tooltip");
+    expect(within(tooltip).getByText("Delegations involved")).toBeTruthy();
+    expect(within(tooltip).getByText("Median wait")).toBeTruthy();
+    expect(within(tooltip).getByText("2s")).toBeTruthy();
+    expect(within(tooltip).getByText("Never delivered")).toBeTruthy();
+  });
+
+  it("stacks asked, messaged and both, totals all three, and rounds the median wait", async () => {
+    mockFetch(api([
+      run({ name: "a", startedAt: NOW - 2 * DAY, asks: 1, messages: 0, messageWaits: [] }),
+      run({ name: "b", startedAt: NOW - 2 * DAY, asks: 0, messages: 1, undelivered: 0, messageWaits: [1.4] }),
+      run({ name: "c", startedAt: NOW - 2 * DAY, asks: 2, messages: 1, undelivered: 0, messageWaits: [2] }),
+    ]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Caller involvement" })).toBeTruthy());
+    const card = screen.getByRole("heading", { name: "Caller involvement" }).closest("div")!;
+    const day = within(card).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").includes("2 Oct"))!;
+    expect(day.getAttribute("aria-label")).toMatch(/1 asked.*1 messaged.*1 both/);
+    fireEvent.mouseOver(day);
+    const tooltip = within(card).getByRole("tooltip");
+    for (const part of ["asked", "messaged", "both"]) {
+      expect(within(tooltip).getByText(part).parentElement!.textContent).toContain("1");
+    }
+    expect(within(tooltip).getByText("Delegations involved").parentElement!.textContent).toContain("3");
+    // The median of 1.4 and 2 is 1.7, shown in whole seconds.
+    expect(within(tooltip).getByText("Median wait").parentElement!.textContent).toContain("2s");
+    expect(tooltip.textContent).not.toContain("1.7");
   });
 
   it("says every run finished when there is nothing to explain", async () => {

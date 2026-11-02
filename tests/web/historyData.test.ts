@@ -1,7 +1,7 @@
 // The History tab's figures: the pure helpers the page turns the run records into. All the
 // dates are local, so a fixed `now` and local-time constructors keep these green in any zone.
 import { describe, expect, it } from "vitest";
-import { askedMoreThanOnce, dayMonthYear, groupBy, inRange, perDay, reasons, totals } from "../../src/web/historyData.ts";
+import { askedMoreThanOnce, dayMonthYear, groupBy, inRange, median, perDay, reasons, totals } from "../../src/web/historyData.ts";
 import type { RunRecord } from "../../src/server/runs.ts";
 
 // A finished run with every field set; override the ones a test cares about.
@@ -22,6 +22,9 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     asks: 0,
     questions: 0,
     mcpTask: null,
+    messages: null,
+    undelivered: null,
+    messageWaits: null,
     ...overrides,
   };
 }
@@ -67,6 +70,9 @@ describe("totals", () => {
       asks: null,
       asked: 0,
       askedMoreThanOnce: 0,
+      messaged: 0,
+      messages: null,
+      undelivered: null,
       inline: 0,
       said: 0,
     });
@@ -136,10 +142,10 @@ describe("perDay", () => {
       now,
     );
     const byLabel = new Map(days.map((d) => [d.label, d]));
-    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0, inline: 0, said: 0 });
-    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0, inline: 0, said: 0 });
-    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0, inline: 0, said: 0 });
-    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, inline: 0, said: 0 });
+    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
   });
 
   it("never lets a day's fresh figure go below zero", () => {
@@ -287,5 +293,78 @@ describe("questions to the caller", () => {
     const c = run({ name: "c", asks: 1, startedAt: new Date(2026, 9, 2).getTime() });
     const d = run({ name: "d", asks: 0, startedAt: new Date(2026, 9, 4).getTime() });
     expect(askedMoreThanOnce([a, b, c, d]).map((r) => r.name)).toEqual(["b", "a"]);
+  });
+});
+
+describe("caller involvement", () => {
+  const now = new Date(2026, 9, 4, 12);
+
+  it("counts the runs that asked, were messaged, or both on a day", () => {
+    const days = perDay(
+      [
+        run({ name: "asked", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 1, messages: 0 }),
+        run({ name: "messaged", startedAt: new Date(2026, 9, 4, 10).getTime(), asks: 0, messages: 2 }),
+        run({ name: "both", startedAt: new Date(2026, 9, 4, 11).getTime(), asks: 1, messages: 3 }),
+        run({ name: "neither", startedAt: new Date(2026, 9, 4, 12).getTime(), asks: 0, messages: 0 }),
+      ],
+      7,
+      now,
+    );
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect([day.asked, day.messaged, day.both]).toEqual([1, 1, 1]);
+  });
+
+  it("counts a run with messages null in none of the three, even when it asked", () => {
+    const days = perDay([run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 2, messages: null })], 7, now);
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect([day.asked, day.messaged, day.both]).toEqual([0, 0, 0]);
+  });
+
+  it("sums the day's messages and undelivered and collects its delivered waits", () => {
+    const days = perDay(
+      [
+        run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), messages: 2, undelivered: 1, messageWaits: [2, 4] }),
+        run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), messages: 1, undelivered: 0, messageWaits: [3] }),
+        run({ name: "c", startedAt: new Date(2026, 9, 3, 9).getTime(), messages: 1, undelivered: 0, messageWaits: [1] }),
+      ],
+      7,
+      now,
+    );
+    const byLabel = new Map(days.map((d) => [d.label, d]));
+    expect([byLabel.get("4 Oct")!.messages, byLabel.get("4 Oct")!.undelivered]).toEqual([3, 1]);
+    expect(byLabel.get("4 Oct")!.waits).toEqual([2, 4, 3]);
+    expect([byLabel.get("3 Oct")!.messages, byLabel.get("3 Oct")!.undelivered]).toEqual([1, 0]);
+    expect(byLabel.get("3 Oct")!.waits).toEqual([1]);
+  });
+
+  it("leaves a day's messages and undelivered null when its runs do not report them", () => {
+    const days = perDay([run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), messages: null })], 7, now);
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect([day.messages, day.undelivered, day.waits]).toEqual([null, null, []]);
+  });
+
+  it("totals the runs that were messaged and the messages they held", () => {
+    const result = totals([
+      run({ name: "a", messages: 0, undelivered: 0 }),
+      run({ name: "b", messages: 2, undelivered: 1, messageWaits: [2] }),
+      run({ name: "c", messages: null, undelivered: null }),
+    ]);
+    expect(result.messaged).toBe(1);
+    expect(result.messages).toBe(2);
+    expect(result.undelivered).toBe(1);
+  });
+
+  it("leaves totals.messages and totals.undelivered null when no run reports them", () => {
+    const result = totals([run({ name: "a", messages: null, undelivered: null }), run({ name: "b", messages: null, undelivered: null })]);
+    expect(result.messaged).toBe(0);
+    expect(result.messages).toBeNull();
+    expect(result.undelivered).toBeNull();
+  });
+
+  it("medians the middle of an even count and null for empty", () => {
+    expect(median([])).toBeNull();
+    expect(median([3])).toBe(3);
+    expect(median([1, 4])).toBe(2.5);
+    expect(median([5, 1, 3])).toBe(3);
   });
 });

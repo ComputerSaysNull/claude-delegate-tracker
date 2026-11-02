@@ -10,7 +10,7 @@ const NOW = new Date("2026-10-01T13:00:00.000Z");
 const GOOD = {
   name: "20261001T120000.000-a.jsonl", size: 100, startedAt: Date.parse("2026-10-01T12:00:00Z"), outcome: "ok", reason: null,
   repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
-  asks: null, questions: null, mcpTask: null,
+  asks: null, questions: null, mcpTask: null, messages: null, undelivered: null, messageWaits: null,
 };
 const START_AT = "2026-10-01T12:00:00.000000+00:00";
 const END_AT = "2026-10-01T12:01:00.000000+00:00";
@@ -47,6 +47,11 @@ function questionEvent(questions: string[]): Record<string, unknown> {
   return { t: "question", at: END_AT, questions };
 }
 
+// A message event as the contract writes it when the caller sends a note during a run.
+function messageEvent(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { t: "message", at: END_AT, by: "caller", turn: 1, ...over };
+}
+
 function writeStream(dir: string, name: string, events: unknown[]): string {
   const path = join(dir, name);
   writeFileSync(path, events.map(toLine).join("\n") + "\n");
@@ -61,7 +66,7 @@ function okRecord(name: string, size: number): RunRecord {
   return {
     name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
     model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-    asks: 0, questions: 0, mcpTask: null,
+    asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [],
   };
 }
 
@@ -76,7 +81,7 @@ describe("summariseRun", () => {
     expect(summariseRun("a.jsonl", 1200, lines([startEvent(), endEvent({ ended: "finished" })]), NOW)).toEqual({
       name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-      asks: 0, questions: 0, mcpTask: null,
+      asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [],
     });
   });
 
@@ -152,6 +157,21 @@ describe("summariseRun", () => {
   it("a finished stream that never asked gets zero asks and questions", () => {
     const r = recordOf([startEvent(), endEvent()]);
     expect([r.asks, r.questions]).toEqual([0, 0]);
+  });
+
+  it("counts the message events, the undelivered ones, and the delivered waits", () => {
+    const r = recordOf([
+      startEvent(),
+      messageEvent({ text: "The test wants a count, not a deadline", turn: 2, queued_seconds: 2.0, delivered: true }),
+      messageEvent({ text: "Also check the sibling test", turn: null, queued_seconds: 0.5, delivered: false }),
+      endEvent(),
+    ]);
+    expect([r.messages, r.undelivered, r.messageWaits]).toEqual([2, 1, [2]]);
+  });
+
+  it("a finished stream that never received a message gets zero messages and no waits", () => {
+    const r = recordOf([startEvent(), endEvent()]);
+    expect([r.messages, r.undelivered, r.messageWaits]).toEqual([0, 0, []]);
   });
 
   it("records how the run was called: as an MCP task, inline, or not said", () => {
@@ -365,7 +385,7 @@ describe("RunStore", () => {
     writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
-    expect(store.records()).toEqual([{ ...old, asks: null, questions: null, mcpTask: null }]);
+    expect(store.records()).toEqual([{ ...old, asks: null, questions: null, mcpTask: null, messages: null, undelivered: null, messageWaits: null }]);
   });
 
   it("keeps a record saved before mcpTask existed, with it null", () => {
@@ -375,7 +395,29 @@ describe("RunStore", () => {
     writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
-    expect(store.records()).toEqual([{ ...old, mcpTask: null }]);
+    expect(store.records()).toEqual([{ ...old, mcpTask: null, messages: null, undelivered: null, messageWaits: null }]);
+  });
+
+  it("keeps a record saved before messages existed, with them null", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null };
+    writeFileSync(file, JSON.stringify({ version: 1, runs: [old] }));
+    const store = new RunStore(file, null, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([{ ...old, messages: null, undelivered: null, messageWaits: null }]);
+  });
+
+  it("drops a saved record whose message counts or waits have the wrong type", () => {
+    const dir = makeDir();
+    const file = join(dir, "runs.json");
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null };
+    for (const bad of [{ messages: "2" }, { undelivered: true }, { messageWaits: ["2"] }, { messageWaits: 2 }]) {
+      writeFileSync(file, JSON.stringify({ version: 1, runs: [{ ...base, messages: 1, undelivered: 0, messageWaits: [1], ...bad }] }));
+      const store = new RunStore(file, null, () => NOW);
+      store.load();
+      expect(store.records()).toEqual([]);
+    }
   });
 
   it("drops a saved record whose mcpTask is not a boolean or null", () => {

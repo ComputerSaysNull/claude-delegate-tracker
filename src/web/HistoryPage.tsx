@@ -16,6 +16,7 @@ import {
   dayMonthYear,
   groupBy,
   inRange,
+  median,
   perDay,
   reasons,
   totals,
@@ -456,8 +457,8 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
   const peak = days.length === 0 ? null : days.reduce((best, d) => (d.cached + d.fresh + d.output > best.cached + best.fresh + best.output ? d : best), days[0]);
   const peakText = peak === null ? "—" : `peak ${compactCount(peak.cached + peak.fresh + peak.output)} on ${peak.label}`;
   const askRuns = askedMoreThanOnce(runs);
-  const askMax = days.reduce((m, d) => Math.max(m, d.questions ?? 0), 0);
-  const askPct = (v: number) => (askMax === 0 ? 0 : (v / askMax) * 100);
+  const involvedMax = days.reduce((m, d) => Math.max(m, d.asked + d.messaged + d.both), 0);
+  const involvedPct = (v: number) => (involvedMax === 0 ? 0 : (v / involvedMax) * 100);
   const fig = (v: number | null): string => (v === null ? "—" : String(v));
 
   return (
@@ -555,23 +556,37 @@ function HistoryBody({ data, busy, power, range }: { data: RunsResponse; busy: B
         </div>
 
         <div className="flex min-w-0 flex-[1_1_420px] flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-          <h3 className="text-sm font-semibold">Questions to the caller</h3>
+          <h3 className="text-sm font-semibold">Caller involvement</h3>
           <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
             <span className="inline-flex items-baseline gap-1.5">questions<span className="font-mono tabular-nums text-text">{fig(t.questions)}</span></span>
             <span className="inline-flex items-baseline gap-1.5">ask_caller calls<span className="font-mono tabular-nums text-text">{fig(t.asks)}</span></span>
             <span className="inline-flex items-baseline gap-1.5">delegations asked<span className="font-mono tabular-nums text-text">{t.asked}</span></span>
             <span className="inline-flex items-baseline gap-1.5">asked more than once<span className="font-mono tabular-nums text-text">{t.askedMoreThanOnce}</span></span>
+            <span className="inline-flex items-baseline gap-1.5">delegations messaged<span className="font-mono tabular-nums text-text">{t.messaged}</span></span>
+            <span className="inline-flex items-baseline gap-1.5">never delivered<span className="font-mono tabular-nums text-text">{fig(t.undelivered)}</span></span>
+          </div>
+          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-asked" aria-hidden="true" />asked</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-messaged" aria-hidden="true" />messaged</span>
+            <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-chart-both" aria-hidden="true" />both</span>
           </div>
           <DayChart
             days={days}
-            pct={askPct}
+            pct={involvedPct}
             title={(d) => d.label}
-            ariaLabel={(d) => `${d.label}: ${d.questions ?? 0} questions`}
-            // One bar per day, in the colour a question has in the conversation; the calls that
-            // held them are the hover card's total row.
-            totalFor={(d) => ({ label: "ask_caller calls", value: fig(d.asks) })}
+            ariaLabel={(d) => `${d.label}: ${d.asked} asked, ${d.messaged} messaged, ${d.both} both`}
+            // One bar per day for each kind of involvement; the involved count is the total row.
+            totalFor={(d) => ({ label: "Delegations involved", value: String(d.asked + d.messaged + d.both) })}
             barsFor={(d) => [
-              { key: "questions", label: "questions", value: d.questions ?? 0, swatch: "bg-state-asking", text: fig(d.questions) },
+              { key: "asked", label: "asked", value: d.asked, swatch: "bg-chart-asked", text: String(d.asked) },
+              { key: "messaged", label: "messaged", value: d.messaged, swatch: "bg-chart-messaged", text: String(d.messaged) },
+              { key: "both", label: "both", value: d.both, swatch: "bg-chart-both", text: String(d.both) },
+            ]}
+            extraRows={(d) => [
+              { label: "Questions", value: fig(d.questions), swatch: "bg-line" },
+              { label: "Messages", value: fig(d.messages), swatch: "bg-line" },
+              { label: "Median wait", value: median(d.waits) === null ? "—" : `${Math.round(median(d.waits)!)}s`, swatch: "bg-line" },
+              { label: "Never delivered", value: fig(d.undelivered), swatch: "bg-line" },
             ]}
           />
           <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">

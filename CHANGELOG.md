@@ -9,6 +9,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #87 — 2026-11-02 — feat: show in History how often the caller steps in
+
+### Changed
+
+- **History shows how often the caller had to step in, not only how often runs asked.**
+  Since format 1.14 a caller can send a running delegation an unasked `message`, and a rising
+  share of steered runs means tasks are written too thin; History counted only questions. The
+  "Questions to the caller" card is now "Caller involvement": per day, the delegations that
+  asked, were messaged, or both, stacked in three colours checked for colour blindness in both
+  themes; the hover card adds the questions, the messages, the median wait before a delivered
+  message was read, and those never delivered. The run records now keep the message counts,
+  so records saved before are rebuilt from their streams at the next start, and that start
+  counts every record as disagreeing once.
+
 ## #86 — 2026-11-02 — feat: filter the list to delegations the caller messaged
 
 ### Added
