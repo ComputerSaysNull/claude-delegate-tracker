@@ -205,6 +205,10 @@ export function DelegationList({
   };
 
   const live = list?.rows ?? [];
+  // A name that left list.rows keeps its card, drawn from its last live version, until it
+  // returns; prevRows is the rows `departed` was last computed against.
+  const [departed, setDeparted] = useState<Map<string, ListRow>>(new Map());
+  const [prevRows, setPrevRows] = useState<ListRow[]>(live);
   // A string naming the exact filter a request is made for; the effect below reloads the
   // first older page when it changes, and a response for an older key is dropped.
   const filterKey = useMemo(() => {
@@ -230,6 +234,20 @@ export function DelegationList({
     setCursor(null);
     setStarted(false);
     setError(false);
+    setDeparted(new Map());
+    setPrevRows(live);
+  } else {
+    // A name that left list.rows keeps its last live row, until it comes back into list.rows.
+    const liveNames = new Set(live.map((r) => r.name));
+    if (prevRows.length !== live.length || prevRows.some((r, i) => r.name !== live[i].name)) {
+      const next = new Map(departed);
+      for (const row of live) next.delete(row.name);
+      for (const row of prevRows) {
+        if (!liveNames.has(row.name)) next.set(row.name, row);
+      }
+      setDeparted(next);
+      setPrevRows(live);
+    }
   }
   const firstBefore = live[live.length - 1]?.name ?? null;
   const autoLoad = isFiltering(filter) && list !== null && list.capped && firstBefore !== null;
@@ -315,10 +333,28 @@ export function DelegationList({
   }
 
   const now = new Date();
-  const loaded = [...live, ...older];
+  const liveNameSet = new Set(live.map((r) => r.name));
+  // The rows drawn from the older pages: drop any that list.rows now shows live, replace any
+  // that has left list.rows with its last live row, and append departed rows not in the pages
+  // at all. A name is drawn once.
+  const drawnOlder: ListRow[] = [];
+  const drawn = new Set<string>();
+  for (const row of older) {
+    if (liveNameSet.has(row.name)) continue;
+    const shown = departed.get(row.name) ?? row;
+    if (drawn.has(shown.name)) continue;
+    drawn.add(shown.name);
+    drawnOlder.push(shown);
+  }
+  for (const [name, row] of departed) {
+    if (liveNameSet.has(name) || drawn.has(name)) continue;
+    drawn.add(name);
+    drawnOlder.push(row);
+  }
+  const loaded = [...live, ...drawnOlder];
   const filtering = isFiltering(filter);
   const filteredLive = filterRows(live, filter);
-  const filteredOlder = filterRows(older, filter);
+  const filteredOlder = filterRows(drawnOlder, filter);
   const shownCount = filteredLive.length + filteredOlder.length;
   const kindChoices = unionChoices(loaded, "kind", list.choices.kinds);
   const modelChoices = unionChoices(loaded, "model", list.choices.models);

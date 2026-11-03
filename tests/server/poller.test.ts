@@ -790,3 +790,114 @@ describe("a finished turn's thinking", () => {
     }
   });
 });
+
+describe("a running delegation past the newest 20", () => {
+  // 30 streams, one a minute, newest at NOW; all ended except the oldest (i = 1),
+  // which stays running. `oldestAliveAt` is the timestamp of its last event.
+  function runningFolder(dir: string, oldestAliveAt: string): string {
+    let oldest = "";
+    for (let i = 1; i <= 30; i++) {
+      const startAt = new Date(NOW.getTime() - (30 - i) * 60_000).toISOString();
+      const stamp = startAt.replace(/[-:]/g, "").replace("Z", "").replace(/\.(\d{3})$/, ".$1");
+      const name = `${stamp}-s${i}.jsonl`;
+      const events = [startEvent(startAt)];
+      if (i === 1) events.push({ t: "alive", at: oldestAliveAt });
+      else events.push(endEvent(startAt));
+      writeStream(dir, name, events);
+      if (i === 1) oldest = name;
+    }
+    return oldest;
+  }
+
+  it("keeps a running stream ranked 21st to 25th, listed but past the newest 20, in the rows", () => {
+    const dir = makeDir();
+    try {
+      // 23 streams: the running one is the 23rd newest, so it is listed (newest 25) but not shown.
+      let running = "";
+      for (let i = 1; i <= 23; i++) {
+        const startAt = new Date(NOW.getTime() - (23 - i) * 60_000).toISOString();
+        const stamp = startAt.replace(/[-:]/g, "").replace("Z", "").replace(/\.(\d{3})$/, ".$1");
+        const name = `${stamp}-r${i}.jsonl`;
+        writeStream(dir, name, i === 1 ? [startEvent(startAt), { t: "alive", at: new Date(NOW.getTime() - 5000).toISOString() }] : [startEvent(startAt), endEvent(startAt)]);
+        if (i === 1) running = name;
+      }
+      const poller = makePoller(dir);
+      poller.pass();
+      const rows = poller.list().rows;
+      expect(rows.find((r) => r.name === running)?.state).toBe("live");
+      expect(rows).toHaveLength(21);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a running stream past the newest 20 in the rows", () => {
+    const dir = makeDir();
+    try {
+      const oldest = runningFolder(dir, new Date(NOW.getTime() - 5000).toISOString());
+      const poller = makePoller(dir);
+      poller.pass();
+      const rows = poller.list().rows;
+      const running = rows.find((r) => r.name === oldest);
+      expect(running).toBeDefined();
+      expect(running!.state).toBe("live");
+      expect(rows).toHaveLength(21);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("shows a kept stream's end once, then drops it from the rows", () => {
+    const dir = makeDir();
+    try {
+      const oldest = runningFolder(dir, new Date(NOW.getTime() - 5000).toISOString());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.list().rows.some((r) => r.name === oldest)).toBe(true);
+      appendFileSync(join(dir, oldest), JSON.stringify(endEvent("2026-10-03T11:59:58.000Z")) + "\n");
+      poller.pass();
+      const ended = poller.list().rows.find((r) => r.name === oldest);
+      expect(ended).toBeDefined();
+      expect(ended!.state).toBe("ok");
+      poller.pass();
+      expect(poller.list().rows.some((r) => r.name === oldest)).toBe(false);
+      expect(poller.list().rows).toHaveLength(20);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("promotes an old running stream into the rows within a few passes", () => {
+    const dir = makeDir();
+    try {
+      const oldest = runningFolder(dir, new Date(NOW.getTime() - 5000).toISOString());
+      const poller = makePoller(dir);
+      let seen = false;
+      for (let i = 0; i < 15 && !seen; i++) {
+        poller.pass();
+        const running = poller.list().rows.find((r) => r.name === oldest);
+        if (running !== undefined) {
+          expect(running.state).toBe("live");
+          seen = true;
+        }
+      }
+      expect(seen).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("never adds an old quiet unfinished stream to the rows", () => {
+    const dir = makeDir();
+    try {
+      const oldest = runningFolder(dir, new Date(NOW.getTime() - 10 * 60_000).toISOString());
+      const poller = makePoller(dir);
+      for (let i = 0; i < 15; i++) {
+        poller.pass();
+        expect(poller.list().rows.some((r) => r.name === oldest)).toBe(false);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

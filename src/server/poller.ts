@@ -5,7 +5,7 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import { listNewest, StreamReader } from "./folder.ts";
 import type { Listing } from "./folder.ts";
-import { newStreamState, applyLine, listRow, parseAt } from "./streams.ts";
+import { newStreamState, applyLine, listRow, parseAt, stateOf } from "./streams.ts";
 import type { StreamState, ListRow } from "./streams.ts";
 import { NO_FILTER, rowMatches, slimState } from "./catalog.ts";
 import type { RowFilter } from "./catalog.ts";
@@ -54,6 +54,8 @@ interface Entry {
   state: StreamState;
   view: ViewState;
   done: boolean;
+  endSent: boolean;
+  shownRunning: boolean; // shown past the newest LIST_LIMIT while running, so its end must be shown once
   schemaFailures: number;
   sent: StreamView | null; // the view as last served or sent; its seq numbers what was sent
   followers: Set<PatchListener>;
@@ -118,13 +120,29 @@ export class Poller {
     }
     for (const [name, entry] of this.entries) {
       // A followed stream stays while a page follows it, listed or not.
-      if (!listed.has(name) && entry.followers.size === 0) this.entries.delete(name);
+      if (listed.has(name) || entry.followers.size > 0) continue;
+      // A running stream stays live past the newest 20: an older page is a snapshot, so
+      // dropping it would freeze its card. Only a finished one whose end was shown, or one
+      // that has gone quiet, is let go.
+      const quiet = stateOf(entry.state, now().getTime(), quietAfterSeconds) === "quiet";
+      if ((entry.done && (entry.endSent || !entry.shownRunning)) || quiet) this.entries.delete(name);
     }
     this.maintainCache();
+
+    // A cached stream that is still running (no end, not quiet) becomes an entry, so the next
+    // readEntry reads it whole and it keeps a live row; it leaves the cache.
+    for (const [name, cached] of [...this.cache]) {
+      if (cached.state.end !== null) continue;
+      if (stateOf(cached.state, now().getTime(), quietAfterSeconds) === "quiet") continue;
+      if (this.entries.has(name)) continue;
+      this.entries.set(name, this.newEntry(dir, name));
+      this.cache.delete(name);
+    }
 
     for (const name of [...this.entries.keys()]) this.readEntry(name);
 
     const at = now();
+    const atMs = at.getTime();
     const built: { row: ListRow; badLines: number; schemaFailures: number }[] = [];
     for (const [name, entry] of this.entries) {
       if (!listed.has(name)) continue;
@@ -133,14 +151,39 @@ export class Poller {
     built.sort((a, b) => compareRows(a.row, b.row));
     const kept = built.slice(0, LIST_LIMIT);
 
+    // Beyond the newest LIST_LIMIT a stream is shown only while it is still running, or once
+    // more when it ends: an older page is a snapshot, so it would freeze the card.
+    const extra: { row: ListRow; badLines: number; schemaFailures: number }[] = [];
+    const shownNames = new Set(kept.map((b) => b.row.name));
+    for (const [name, entry] of this.entries) {
+      // Listed but past the newest LIST_LIMIT counts as not shown: it needs the same rule.
+      if (shownNames.has(name)) continue;
+      const state = stateOf(entry.state, atMs, quietAfterSeconds);
+      const running = entry.state.end === null && state !== "quiet";
+      const keep = running || (entry.done && entry.shownRunning && !entry.endSent);
+      if (!keep) continue;
+      extra.push({ row: listRow(name, entry.state, at, quietAfterSeconds), badLines: entry.state.badLines, schemaFailures: entry.schemaFailures });
+      if (running) entry.shownRunning = true;
+    }
+
+    const shown = [...kept, ...extra];
+    shown.sort((a, b) => compareRows(a.row, b.row));
+    const rows = shown.map((b) => b.row);
+
+    // A kept stream's end is sent once: once its ended row is out, the entry can be dropped.
+    const sent = new Set(rows.map((r) => r.name));
+    for (const [name, entry] of this.entries) {
+      if (entry.done && sent.has(name)) entry.endSent = true;
+    }
+
     this.update({
-      rows: kept.map((b) => b.row),
+      rows,
       capped: listing.total > LIST_LIMIT,
       total: listing.total,
       unstamped: listing.unstamped,
       folderReadable: true,
-      badLines: kept.reduce((sum, b) => sum + b.badLines, 0),
-      schemaFailures: kept.reduce((sum, b) => sum + b.schemaFailures, 0),
+      badLines: shown.reduce((sum, b) => sum + b.badLines, 0),
+      schemaFailures: shown.reduce((sum, b) => sum + b.schemaFailures, 0),
       choices: this.choices(),
     });
     for (const name of this.entries.keys()) this.sendIfChanged(name);
@@ -270,6 +313,8 @@ export class Poller {
       state: newStreamState(),
       view: newViewState(),
       done: false,
+      endSent: false,
+      shownRunning: false,
       schemaFailures: 0,
       sent: null,
       followers: new Set(),
