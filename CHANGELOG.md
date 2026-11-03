@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #91 — 2026-11-03 — fix: a running delegation's card no longer stays blue after it finishes
+
+### Fixed
+
+- **A card no longer stays blue after its delegation finished.** The live rows held only the
+  newest 20, so a delegation still running when 20 more started dropped out of them; since
+  older pages load by themselves, its card then came from an older page, a snapshot that kept
+  saying running. A delegation that has not ended now stays among the live rows past the 20,
+  its end is sent once before it leaves, and one the cache finds still running after a restart
+  joins them. The page draws a delegation once, the live version first, and a row that leaves
+  the live rows keeps its last live state instead of an older snapshot.
+
 ## #90 — 2026-11-02 — feat: open the delegations behind a History bar
 
 ### Added

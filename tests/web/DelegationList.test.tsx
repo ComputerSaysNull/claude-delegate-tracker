@@ -569,4 +569,72 @@ describe("DelegationList", () => {
     expect(await screen.findByText("More older")).toBeTruthy();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("keeps a card whose row leaves list.rows, showing its last live version", () => {
+    const { rerender } = render(
+      <DelegationList
+        list={list([
+          row({ name: "run", title: "Still running", state: "live" }),
+          row({ name: "other", title: "Other task", state: "ok" }),
+        ])}
+      />,
+    );
+    expect(screen.getByText("Still running")).toBeTruthy();
+    rerender(<DelegationList list={list([row({ name: "other", title: "Other task", state: "ok" })])} />);
+    expect(screen.getByText("Still running")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Running" })).toBeTruthy();
+  });
+
+  it("draws an older-page row that is also in list.rows once, as the live row", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page({ rows: [row({ name: "run", title: "Same task", state: "live" })], nextBefore: null })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <DelegationList list={list([row({ name: "other", title: "Other task", state: "failed" })], { capped: true, total: 21 })} />,
+    );
+    bottomInView();
+    expect(await screen.findByText("Same task")).toBeTruthy();
+    rerender(
+      <DelegationList
+        list={list(
+          [
+            row({ name: "run", title: "Same task", state: "ok" }),
+            row({ name: "other", title: "Other task", state: "failed" }),
+          ],
+          { capped: true, total: 21 },
+        )}
+      />,
+    );
+    expect(screen.getAllByText("Same task")).toHaveLength(1);
+    expect(screen.getByRole("img", { name: "Done" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Running" })).toBeNull();
+  });
+
+  it("shows a row's last live version, not a stale older-page snapshot, once it leaves list.rows", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(page({ rows: [row({ name: "run", title: "Same task", state: "live" })], nextBefore: null })), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { rerender } = render(
+      <DelegationList list={list([row({ name: "other", title: "Other task", state: "failed" })], { capped: true, total: 21 })} />,
+    );
+    bottomInView();
+    expect(await screen.findByText("Same task")).toBeTruthy();
+    rerender(
+      <DelegationList
+        list={list(
+          [
+            row({ name: "run", title: "Same task", state: "ok" }),
+            row({ name: "other", title: "Other task", state: "failed" }),
+          ],
+          { capped: true, total: 21 },
+        )}
+      />,
+    );
+    rerender(<DelegationList list={list([row({ name: "other", title: "Other task", state: "failed" })], { capped: true, total: 21 })} />);
+    expect(screen.getAllByText("Same task")).toHaveLength(1);
+    expect(screen.getByRole("img", { name: "Done" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Running" })).toBeNull();
+  });
 });

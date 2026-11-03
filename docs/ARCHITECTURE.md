@@ -237,7 +237,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 ### The list
 
 - Order by `start.at`, newest first, never by last activity.
-- Say when the list is capped at 20. Scrolling to its end loads the next 20 by itself, "Loading…" while they come, "No older delegations" at the end, and a Try again after a failure; older pages are a snapshot, not live.
+- Say when the list is capped at 20. Scrolling to its end loads the next 20 by itself, "Loading…" while they come, "No older delegations" at the end, and a Try again after a failure; older pages are a snapshot, not live, so a delegation still running stays among the live rows past the 20 until its end has been sent once, and a row that leaves the live rows keeps its last live state on the page.
 - Search and filters (title words, state, kind, model, repo, and whether the caller sent the run a `message`) apply to the live rows and to older pages the backend filters itself, so a match far back is found without paging through the rest; setting a filter loads its first older page at once. They say how many rows they show.
 - Kind: `?` when `tools` is absent; `one-shot` when `tools` is `[]`; otherwise the tool name.
 - Group the rows by start date in the viewer's own days: "Today · 4 Oct", "Yesterday · 3 Oct", the other days of this week (from Monday) by weekday, "Last week", then months, with the year when it is not this year. Each group folds, starts open and shows its count; older pages join the same groups.
