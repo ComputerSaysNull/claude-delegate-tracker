@@ -128,6 +128,23 @@ function ModelFiguresBody({
     history === undefined ? undefined : (
       <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} span={span} />
     );
+  // The KV-cache caption: the booked and kept shares when the engine gives a kept share, then
+  // the evicted kept-prompt counter after them; the evicted count alone when there is no kept
+  // share; nothing at all for vLLM, which has neither.
+  const evicted = model.keptEvicted === null
+    ? null
+    : <span className="font-mono tabular-nums">{model.keptEvicted.toLocaleString()}</span>;
+  let kvCaption: ReactNode = null;
+  if (model.kvKeptPercent !== null) {
+    kvCaption = (
+      <>
+        booked by running requests · <span className="font-mono tabular-nums">{percent(model.kvKeptPercent)}</span> kept prompts
+        {evicted !== null && <> · {evicted} evicted since the engine started</>}
+      </>
+    );
+  } else if (evicted !== null) {
+    kvCaption = <>{evicted} kept prompts evicted since the engine started</>;
+  }
   return (
     <>
       <ul aria-label="Model server figures" className="mt-2 grid flex-1 grid-cols-1 content-evenly gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
@@ -161,13 +178,7 @@ function ModelFiguresBody({
         <Figure
           label="KV-cache use"
           value={percent(model.kvCachePercent)}
-          unit={
-            model.kvKeptPercent === null ? null : (
-              <span className={captionClass}>
-                booked by running requests · <span className="font-mono tabular-nums">{percent(model.kvKeptPercent)}</span> kept prompts
-              </span>
-            )
-          }
+          unit={kvCaption === null ? null : <span className={captionClass}>{kvCaption}</span>}
           chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
         />
         <Figure

@@ -11,6 +11,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 ## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
 
+### Added
+
+- **The KV-cache cell says how many kept prompts the engine evicted.** When running requests
+  need room, TensorFold throws out saved prompt states, and later turns rebuild those prompts
+  from scratch. The panel showed nothing of this: preemptions count something else (a
+  request giving up its lane). The cell now shows the engine's eviction counter since it
+  started. vLLM has no such counter, so nothing shows there.
+
 ### Fixed
 
 - **KV-cache use on TensorFold is the pool, not one request.** The figure read 38% while the

@@ -27,6 +27,7 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     waiting: null,
     kvCachePercent: null,
     kvKeptPercent: null,
+    keptEvicted: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,
@@ -78,6 +79,49 @@ describe("ModelPanel", () => {
     expect(text).not.toContain("booked");
     expect(text).not.toContain("kept");
     expect(text).not.toContain("0%");
+  });
+
+  // The evicted kept prompts sit after the kept share, in a mono figure like the other counters.
+  it("shows the evicted count after the kept prompts in the KV-cache caption", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 133 })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    const evicted = `${(133).toLocaleString()} evicted since the engine started`;
+    expect(text).toContain(`${(58.4).toLocaleString()}%`);
+    expect(text).toContain("booked by running requests");
+    expect(text).toContain(`${(23.1).toLocaleString()}%`);
+    expect(text).toContain("kept prompts");
+    expect(text).toContain(evicted);
+    expect(text.indexOf("kept prompts")).toBeLessThan(text.indexOf(evicted));
+    const mono = [...kvCell.querySelectorAll(".font-mono.tabular-nums")].map((e) => e.textContent ?? "");
+    expect(mono.some((t) => t.includes((133).toLocaleString()))).toBe(true);
+  });
+
+  it("shows only the evicted caption when there is no kept share", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: null, keptEvicted: 133 })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    expect(text).toContain(`${(58.4).toLocaleString()}%`);
+    expect(text).toContain(`${(133).toLocaleString()} kept prompts evicted since the engine started`);
+    expect(text).not.toContain("booked");
+    expect(text).not.toContain("0%");
+  });
+
+  it("shows a measured 0 evictions as 0", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 0 })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    expect(text).toContain(`${(0).toLocaleString()} evicted since the engine started`);
+    expect(text).not.toContain("— evicted");
+  });
+
+  it("shows nothing about evictions when the count is null", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: null })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    expect(text).toContain(`${(23.1).toLocaleString()}%`);
+    expect(text).toContain("kept prompts");
+    expect(text).not.toContain("evicted");
   });
 
   it("shows decode speed without a line naming its window", () => {

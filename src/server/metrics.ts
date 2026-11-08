@@ -40,19 +40,21 @@ const TF_KV_PART_TWIN = "tensorfold:kv_shard_part_twin_rows";
 const TF_KV_PART_HOLD = "tensorfold:kv_shard_part_hold_rows";
 const TF_KV_PART_KEPT = "tensorfold:kv_shard_part_kept_rows";
 const TF_KV_PART_NAMES = [TF_KV_PART_LIVE, TF_KV_PART_TWIN, TF_KV_PART_HOLD, TF_KV_PART_KEPT];
+// Kept prompt states evicted for room; a counter.
+const TF_KEPT_EVICTED = "tensorfold:prompt_cache_evicted";
 const TF_GEN_TOTAL = "tensorfold:generation_tokens_total";
 const TF_GEN_RUNNING = "tensorfold:generation_tokens_running";
 const TF_PROMPT = "tensorfold:prompt_tokens_total";
 const TF_PROMPT_CACHED = "tensorfold:prompt_tokens_cached_total";
 const TENSORFOLD_NAMES = new Set<string>([
   ...Object.keys(TENSORFOLD_ONCE), TF_KV_PARTS, TF_KV_PART_ROWS, ...TF_KV_PART_NAMES,
-  TF_GEN_TOTAL, TF_GEN_RUNNING, TF_PROMPT, TF_PROMPT_CACHED,
+  TF_KEPT_EVICTED, TF_GEN_TOTAL, TF_GEN_RUNNING, TF_PROMPT, TF_PROMPT_CACHED,
 ]);
 
 // One value per allowlisted name that appeared exactly once with a finite value, keyed by
-// vLLM's name whichever engine published it, plus one tracker-own key: the kept share of the
-// KV pool. Label values are never kept.
-export type Sample = Partial<Record<MetricName | "kv_kept_ratio", number>>;
+// vLLM's name whichever engine published it, plus two tracker-own keys: the kept share of the
+// KV pool and the evicted kept-prompt counter. Label values are never kept.
+export type Sample = Partial<Record<MetricName | "kv_kept_ratio" | "kept_evicted_total", number>>;
 
 export interface Reading {
   atMs: number;
@@ -68,6 +70,7 @@ export interface ModelFigures {
   waiting: number | null;
   kvCachePercent: number | null;       // kv_cache_usage_perc × 100, one decimal
   kvKeptPercent: number | null;        // kept prompt states' share of the KV pool × 100, one decimal; TensorFold only, null otherwise
+  keptEvicted: number | null;          // kept prompt states the engine evicted for room since it started, the counter; TensorFold only, null otherwise
   decodeTokensPerSecond: number | null; // Δ generation_tokens_total ÷ seconds between readings, one decimal
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
@@ -190,6 +193,8 @@ export function parseMetrics(text: string): Sample {
       sample["kv_kept_ratio"] = kept / total;
     }
   }
+  const evicted = once(TF_KEPT_EVICTED);
+  if (evicted !== undefined) sample["kept_evicted_total"] = evicted;
   const genTotal = once(TF_GEN_TOTAL);
   const genRunning = once(TF_GEN_RUNNING);
   if (genTotal !== undefined && genRunning !== undefined) sample["vllm:generation_tokens_total"] = genTotal + genRunning;
@@ -232,7 +237,7 @@ export function prefillRate(prev: Reading | null, cur: Reading | null): { tokens
 export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Reading | null): ModelFigures {
   if (cur === null) {
     return {
-      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, decodeTokensPerSecond: null,
+      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, keptEvicted: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
       mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt: null,
@@ -241,7 +246,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
     return {
-      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, decodeTokensPerSecond: null,
+      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, keptEvicted: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
       mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt,
@@ -251,6 +256,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
   const s = cur.sample;
   const kv = s["vllm:kv_cache_usage_perc"];
   const kept = s["kv_kept_ratio"];
+  const evicted = s["kept_evicted_total"];
   const hits = s["vllm:prefix_cache_hits_total"];
   const queries = s["vllm:prefix_cache_queries_total"];
   const preempt = s["vllm:num_preemptions_total"];
@@ -300,6 +306,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     waiting: s["vllm:num_requests_waiting"] ?? null,
     kvCachePercent: kv === undefined ? null : Math.round(kv * 1000) / 10,
     kvKeptPercent: kept === undefined ? null : Math.round(kept * 1000) / 10,
+    keptEvicted: evicted ?? null,
     decodeTokensPerSecond,
     decodeWindowSeconds,
     prefixHitPercent: hits !== undefined && queries !== undefined && queries > 0
