@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #93 — 2026-11-08 — feat: vendor server v0.17.0 and show the model that answered
+
+### Added
+
+- **A delegation shows which model really answered it.** Format 1.15 records, per turn, the
+  model the engine answered as, beside the one the registry asked for. The tracker showed
+  only the registry key, so an engine serving another model than configured looked like the
+  model asked for. Each turn's heading now names the model that answered, with an amber mark
+  when it is not the one asked for, and the details bar shows it beside the key, marked when
+  the run's end reports a mismatch. The filter and History still group by the key, so one
+  registry entry's runs stay together where its key and engine name differ.
+
 ## #92 — 2026-11-08 — fix: read the model server's figures from the TensorFold engine too
 
 ### Fixed

@@ -76,6 +76,8 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     tokS: null,
     clock: null,
     at: null,
+    model: null,
+    askedFor: null,
     asks: [],
     ...overrides,
   };
@@ -111,6 +113,7 @@ function summary(overrides: Partial<SummaryView> = {}): SummaryView {
     finishReason: null,
     error: null,
     shellCalls: null,
+    modelMismatch: null,
     ...overrides,
   };
 }
@@ -419,5 +422,74 @@ describe("how the delegation was called, in the details bar", () => {
   it("shows no row when the stream does not say", () => {
     render(<StreamViewBody view={view({ row: row({ mcpTask: null }) })} />);
     expect(calledAs()).toBeNull();
+  });
+});
+
+// Format 1.15: the model a turn was answered as, and whether that differs from the one asked
+// for. The bracketed value is the run's own model, the one the caller asked for.
+describe("which model answered", () => {
+  const modelRow = () => {
+    const aside = screen.getByRole("complementary", { name: "Details" });
+    const dt = within(aside).getByText("Model");
+    return { aside, dt, value: dt.nextElementSibling };
+  };
+
+  it("shows the model a turn was answered as, with the one asked for in brackets", () => {
+    const v = view({
+      row: row({ model: "flash" }),
+      turns: [turn(1, { model: "another-model", askedFor: "flash" })],
+    });
+    render(<StreamViewBody view={v} />);
+    const { value } = modelRow();
+    expect(value?.textContent).toBe("another-model (flash)");
+  });
+
+  it("shows the run's own model when no turn names one", () => {
+    const v = view({
+      row: row({ model: "flash" }),
+      turns: [turn(1, { model: null }), turn(2, { model: null })],
+    });
+    render(<StreamViewBody view={v} />);
+    const { value } = modelRow();
+    expect(value?.textContent).toBe("flash");
+  });
+
+  it("marks the run when a turn was answered by another model than the one asked for", () => {
+    const v = view({
+      row: row({ model: "flash" }),
+      turns: [turn(1, { closed: true, model: "another-model", askedFor: "flash" })],
+      summary: summary({ finished: true, modelMismatch: true }),
+    });
+    render(<StreamViewBody view={v} />);
+    const { aside } = modelRow();
+    expect(
+      within(aside).getByRole("status", { name: "Answered by another model than the one asked for" }),
+    ).toBeTruthy();
+  });
+
+  it("leaves the mark off when the models agree", () => {
+    const v = view({
+      row: row({ model: "flash" }),
+      turns: [turn(1, { closed: true, model: "flash" })],
+      summary: summary({ finished: true, modelMismatch: false }),
+    });
+    render(<StreamViewBody view={v} />);
+    const { aside } = modelRow();
+    expect(
+      within(aside).queryByRole("status", { name: "Answered by another model than the one asked for" }),
+    ).toBeNull();
+  });
+
+  it("leaves the mark off when the stream does not say", () => {
+    const v = view({
+      row: row({ model: "flash" }),
+      turns: [turn(1, { closed: true, model: "another-model", askedFor: "flash" })],
+      summary: summary({ finished: true, modelMismatch: null }),
+    });
+    render(<StreamViewBody view={v} />);
+    const { aside } = modelRow();
+    expect(
+      within(aside).queryByRole("status", { name: "Answered by another model than the one asked for" }),
+    ).toBeNull();
   });
 });

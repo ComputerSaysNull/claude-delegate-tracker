@@ -1133,6 +1133,22 @@ describe("contract samples", () => {
     ]);
     expect(v.turns.map((t) => t.n)).toEqual([1, 2]);
   });
+
+  it("renders the served-model sample: each turn's model, what was asked for, the mismatch, and the key kept as the run's model", () => {
+    const v = loadSample("served_model.jsonl");
+    expect(v.turns.map((t) => [t.model, t.askedFor])).toEqual([["another-model", "served-id-1"], ["another-model", "served-id-1"]]);
+    expect(v.summary!.modelMismatch).toBe(true);
+    // The filter and History group by the registry key, so the row keeps it.
+    expect(v.row.model).toBe("flash");
+  });
+
+  it("older samples carry no model, nothing asked for and no mismatch", () => {
+    for (const file of ["agentic.jsonl", "one_shot_failed.jsonl", "message.jsonl", "asked_the_caller.jsonl"]) {
+      const v = loadSample(file);
+      expect(v.turns.every((t) => t.model === null && t.askedFor === null)).toBe(true);
+      expect(v.summary?.modelMismatch ?? null).toBeNull();
+    }
+  });
 });
 
 describe("partial reply", () => {
@@ -1451,5 +1467,60 @@ describe("the thinking repeat marker from the server's reasoning_duplicate_line_
       { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "" },
     ]).turns[0];
     expect(t.thinkingRepeated).toBe("80%");
+  });
+});
+
+describe("which model answered (format 1.15)", () => {
+  const closedTurn = (turnOver: Record<string, unknown> = {}, startOver: Record<string, unknown> = {}) =>
+    viewOf([
+      start(startOver),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", ...turnOver },
+    ]).turns[0];
+
+  it("reads the model that answered from the closing turn event", () => {
+    expect(closedTurn({ model: "another-model" }).model).toBe("another-model");
+  });
+
+  it("leaves the model null when the turn carries none", () => {
+    expect(closedTurn({}).model).toBeNull();
+    expect(closedTurn({ model: null }).model).toBeNull();
+  });
+
+  it("says what was asked for when the served model differs from the answering model", () => {
+    expect(closedTurn({ model: "another-model" }, { served_model_id: "served-id-1" }).askedFor).toBe("served-id-1");
+  });
+
+  it("says nothing was asked for when the served model is the answering model", () => {
+    expect(closedTurn({ model: "m-a" }, { served_model_id: "m-a" }).askedFor).toBeNull();
+  });
+
+  it("says nothing was asked for when the turn names no model", () => {
+    expect(closedTurn({ model: null }, { served_model_id: "served-id-1" }).askedFor).toBeNull();
+  });
+
+  it("says nothing was asked for without a served model on the start", () => {
+    expect(closedTurn({ model: "another-model" }).askedFor).toBeNull();
+  });
+
+  const summaryWith = (over: Record<string, unknown>) =>
+    viewOf([start(), { t: "end", at: at(0), ok: true, turns: 1, elapsed_seconds: 10, ...over }]).summary!;
+
+  it("reads the model mismatch flag from end", () => {
+    expect(summaryWith({ model_mismatch: true }).modelMismatch).toBe(true);
+    expect(summaryWith({ model_mismatch: false }).modelMismatch).toBe(false);
+    expect(summaryWith({}).modelMismatch).toBeNull();
+  });
+
+  it("keeps each turn's asked-for model apart", () => {
+    const v = viewOf([
+      start({ served_model_id: "m-a" }),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, text: "", model: "m-a" },
+      { t: "priced", at: at(0), turn: 2, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 2, of_turns: 4, text: "", model: "m-b" },
+    ]);
+    expect(v.turns[0].askedFor).toBeNull();
+    expect(v.turns[1].askedFor).toBe("m-a");
   });
 });

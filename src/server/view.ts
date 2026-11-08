@@ -55,6 +55,8 @@ export interface TurnView {
   tokensIn: number | null;      // closed turn: input_tokens
   tokensOut: number | null;     // closed turn: output_tokens
   tokS: number | null;          // closed turn: out_tok_s, the decode speed
+  model: string | null;         // closed turn: turn.model, the model the engine answered as (format 1.15); null when it named none
+  askedFor: string | null;      // start.served_model_id, only when model is a string and differs from it
   clock: { elapsed: number; of: number } | null; // open turn: the newest alive's elapsed_seconds of of_seconds
   at: string | null;            // when the turn started: its `priced` event's `at`
 }
@@ -74,6 +76,7 @@ export interface SummaryView {
   finishReason: string | null;
   error: string | null;         // end.error in full
   shellCalls: number | null;    // end.bash_calls, only above 0
+  modelMismatch: boolean | null; // end.model_mismatch (format 1.15); null when absent or null
 }
 
 export interface StreamView {
@@ -369,7 +372,7 @@ function repeatShare(text: string): number | null {
   return repeats / lines.length;
 }
 
-function buildTurn(n: number, slot: TurnSlot): TurnView {
+function buildTurn(n: number, slot: TurnSlot, servedModelId: string | null): TurnView {
   const closed = slot.turn !== null;
   const of = ofTurnsOf(slot);
   const reply = slot.turn?.text;
@@ -379,6 +382,8 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
   const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
   const elapsed = num(slot.alive?.elapsed_seconds);
   const budget = num(slot.alive?.of_seconds);
+  const rawModel = slot.turn?.model;
+  const model = typeof rawModel === "string" ? rawModel : null;
   return {
     n,
     heading: of === null ? `turn ${n}` : `turn ${n} of ${of}`,
@@ -409,6 +414,8 @@ function buildTurn(n: number, slot: TurnSlot): TurnView {
     tokensIn: num(slot.turn?.input_tokens),
     tokensOut: num(slot.turn?.output_tokens),
     tokS: num(slot.turn?.out_tok_s),
+    model,
+    askedFor: model !== null && servedModelId !== null && model !== servedModelId ? servedModelId : null,
     clock: !closed && elapsed !== null && budget !== null && budget > 0 ? { elapsed, of: budget } : null,
     // Read through parseAt: the server writes six decimal places, which Date cannot parse.
     at: (() => { const ms = parseAt(slot.priced?.at); return ms === null ? null : new Date(ms).toISOString(); })(),
@@ -571,21 +578,24 @@ function buildSummary(s: StreamState, closedTurns: TurnSlot[]): SummaryView | nu
   const finishReason = end !== null && typeof end.finish_reason === "string" ? end.finish_reason : null;
   const error = end !== null && typeof end.error === "string" && end.error !== "" ? end.error : null;
   const shellCalls = end !== null && typeof end.bash_calls === "number" && end.bash_calls > 0 ? end.bash_calls : null;
+  const modelMismatch = end !== null && typeof end.model_mismatch === "boolean" ? end.model_mismatch : null;
 
   if (elapsed === null && turns === null && cached === null && reuse === null && returned === null &&
       loadVal === null && failures === null && toolTime === null && finishReason === null && error === null &&
-      shellCalls === null) return null;
-  return { finished, ok, elapsed, turns, cached, reuse, returned, load: loadVal, failures, toolTime, finishReason, error, shellCalls };
+      shellCalls === null && modelMismatch === null) return null;
+  return { finished, ok, elapsed, turns, cached, reuse, returned, load: loadVal, failures, toolTime, finishReason, error, shellCalls, modelMismatch };
 }
 
 export function buildView(name: string, v: ViewState, s: StreamState, row: ListRow): StreamView {
   const turns: TurnView[] = [];
   const closedTurns: TurnSlot[] = [];
   const keys = Array.from(v.turns.keys()).sort((a, b) => a - b);
+  const served = s.start?.served_model_id;
+  const servedModelId = typeof served === "string" ? served : null;
   for (const n of keys) {
     const slot = v.turns.get(n);
     if (slot === undefined) continue;
-    turns.push(buildTurn(n, slot));
+    turns.push(buildTurn(n, slot, servedModelId));
     if (slot.turn !== null) closedTurns.push(slot);
   }
   const task = s.start?.task;
