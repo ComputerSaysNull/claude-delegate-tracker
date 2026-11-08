@@ -9,6 +9,22 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #92 — 2026-11-08 — fix: read the model server's figures from the TensorFold engine too
+
+### Fixed
+
+- **The model server panel shows figures again on the TensorFold engine.** Since the head
+  node moved to that engine, every figure read `—` and the status line still said all was
+  well. Cause: the engine names its metrics `tensorfold:*`, and the tracker read only
+  vLLM's names. Fix: its names are read into the same figures. Four differ, measured under
+  load: preemptions are renamed; KV-cache use comes once per stream, so the fullest counts;
+  its finished-token total moves only when a request ends, so decode speed adds the running
+  requests' tokens; and the computed prefill tokens are prompt tokens minus cached ones.
+  vLLM's names still work.
+- **A model server whose metrics the tracker cannot read now says so.** A `/metrics` with
+  none of the known names gives an amber status line and a warning banner, instead of
+  showing an idle server.
+
 ## #91 — 2026-11-03 — fix: a running delegation's card no longer stays blue after it finishes
 
 ### Fixed

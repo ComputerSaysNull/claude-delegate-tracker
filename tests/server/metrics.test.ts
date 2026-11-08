@@ -808,3 +808,166 @@ describe("MetricsPoller", () => {
     expect(decode.at(-1)).toEqual({ tokensPerSecond: null, windowSeconds: null, prefillTokensPerSecond: null });
   });
 });
+
+// The TensorFold engine publishes `tensorfold:*` names (measured 2026-11-08). Its figures are
+// read into the same sample keys as vLLM's, so every rule above applies to both engines.
+function tensorfold(over: Record<string, string> = {}): string {
+  const lines: Record<string, string> = {
+    "tensorfold:num_requests_running": "2",
+    "tensorfold:num_requests_waiting": "1",
+    "tensorfold:requests_running": "2",
+    "tensorfold:requests_waiting": "1",
+    "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.045',
+    "tensorfold:kv_cache_usage_ratio": '{pool="0"} 0.045',
+    "tensorfold:generation_tokens_total": "408352",
+    "tensorfold:generation_tokens_running": "126",
+    "tensorfold:prefix_cache_hits_total": "3504128",
+    "tensorfold:prefix_cache_queries_total": "6600625",
+    "tensorfold:preemptions_total": "4",
+    "tensorfold:spec_decode_num_draft_tokens_total": "337562",
+    "tensorfold:spec_decode_num_accepted_tokens_total": "244815",
+    "tensorfold:mtp_drafted_total": "337562",
+    "tensorfold:mtp_accepted_total": "244815",
+    "tensorfold:prompt_tokens_total": "6600625",
+    "tensorfold:prompt_tokens_cached_total": "3461120",
+    "tensorfold:request_prefill_time_seconds_sum": "1846.589514",
+    "tensorfold:request_prefill_time_seconds_count": "957",
+    "tensorfold:pair_busy_ms": "0",
+    ...over,
+  };
+  return [
+    "# HELP tensorfold:generation_tokens_total Output tokens of finished requests.",
+    "# TYPE tensorfold:generation_tokens_total counter",
+    ...Object.entries(lines).map(([name, rest]) => (rest.startsWith("{") ? `${name}${rest}` : `${name} ${rest}`)),
+  ].join("\n");
+}
+
+describe("TensorFold", () => {
+  it("reads every figure from tensorfold names into the vLLM sample keys", () => {
+    const s = parseMetrics(tensorfold());
+    expect(s["vllm:num_requests_running"]).toBe(2);
+    expect(s["vllm:num_requests_waiting"]).toBe(1);
+    expect(s["vllm:kv_cache_usage_perc"]).toBe(0.045);
+    expect(s["vllm:prefix_cache_hits_total"]).toBe(3504128);
+    expect(s["vllm:prefix_cache_queries_total"]).toBe(6600625);
+    expect(s["vllm:num_preemptions_total"]).toBe(4);
+    expect(s["vllm:spec_decode_num_draft_tokens_total"]).toBe(337562);
+    expect(s["vllm:spec_decode_num_accepted_tokens_total"]).toBe(244815);
+    expect(s["vllm:request_prefill_time_seconds_sum"]).toBe(1846.589514);
+    expect(s["vllm:request_prefill_time_seconds_count"]).toBe(957);
+  });
+
+  it("KV-cache use is the fullest stream's line, not the sum or the last line", () => {
+    const body = tensorfold({ "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.045' }) +
+      '\ntensorfold:kv_cache_usage_perc{stream="1"} 0.02';
+    expect(parseMetrics(body)["vllm:kv_cache_usage_perc"]).toBe(0.045);
+    const reversed = tensorfold({ "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.02' }) +
+      '\ntensorfold:kv_cache_usage_perc{stream="1"} 0.045';
+    expect(parseMetrics(reversed)["vllm:kv_cache_usage_perc"]).toBe(0.045);
+  });
+
+  it("generated tokens are the finished total plus the running gauge", () => {
+    expect(parseMetrics(tensorfold())["vllm:generation_tokens_total"]).toBe(408352 + 126);
+  });
+
+  it("decode speed moves while a request generates, though the finished total stays flat", () => {
+    const prev = reading(T0, parseMetrics(tensorfold({ "tensorfold:generation_tokens_running": "25" })));
+    const cur = reading(T0 + 1000, parseMetrics(tensorfold({ "tensorfold:generation_tokens_running": "126" })));
+    expect(figuresFrom("ok", prev, cur).decodeTokensPerSecond).toBe(101);
+  });
+
+  it("decode speed carries on across a request finishing: the gauge drops as the total jumps", () => {
+    const prev = reading(T0, parseMetrics(tensorfold({ "tensorfold:generation_tokens_running": "1452" })));
+    const cur = reading(T0 + 1000, parseMetrics(tensorfold({
+      "tensorfold:generation_tokens_total": String(408352 + 1462),
+      "tensorfold:generation_tokens_running": "0",
+    })));
+    expect(figuresFrom("ok", prev, cur).decodeTokensPerSecond).toBe(10);
+  });
+
+  it("no generated tokens without both the total and the gauge", () => {
+    const body = tensorfold().split("\n").filter((l) => !l.startsWith("tensorfold:generation_tokens_running")).join("\n");
+    expect(parseMetrics(body)["vllm:generation_tokens_total"]).toBeUndefined();
+  });
+
+  it("computed prefill tokens are prompt tokens minus cached ones", () => {
+    expect(parseMetrics(tensorfold())["vllm:request_prefill_kv_computed_tokens_sum"]).toBe(6600625 - 3461120);
+  });
+
+  it("prefill speed of a finished request is its computed tokens over its prefill seconds", () => {
+    // Measured: a request with 45514 prompt tokens, 43008 of them cached, prefilled in 1.55098 s.
+    const prev = reading(T0, parseMetrics(tensorfold()));
+    const cur = reading(T0 + 1000, parseMetrics(tensorfold({
+      "tensorfold:prompt_tokens_total": String(6600625 + 45514),
+      "tensorfold:prompt_tokens_cached_total": String(3461120 + 43008),
+      "tensorfold:request_prefill_time_seconds_sum": String(1846.589514 + 1.55098),
+      "tensorfold:request_prefill_time_seconds_count": "958",
+    })));
+    expect(prefillRate(prev, cur).tokensPerSecond).toBe(1615.8);
+  });
+
+  it("a fully cached prompt is a measured 0 tok/s, and no finished prompt is —", () => {
+    const prev = reading(T0, parseMetrics(tensorfold()));
+    const cached = reading(T0 + 1000, parseMetrics(tensorfold({
+      "tensorfold:prompt_tokens_total": String(6600625 + 2048),
+      "tensorfold:prompt_tokens_cached_total": String(3461120 + 2048),
+      "tensorfold:request_prefill_time_seconds_sum": String(1846.589514 + 0.1),
+      "tensorfold:request_prefill_time_seconds_count": "958",
+    })));
+    expect(prefillRate(prev, cached).tokensPerSecond).toBe(0);
+    const idle = reading(T0 + 1000, parseMetrics(tensorfold()));
+    expect(prefillRate(prev, idle).tokensPerSecond).toBeNull();
+  });
+
+  it("a duplicated tensorfold counter is left out, as for vLLM", () => {
+    const body = tensorfold() + '\ntensorfold:num_requests_waiting{x="1"} 9';
+    expect(parseMetrics(body)["vllm:num_requests_waiting"]).toBeUndefined();
+  });
+
+  it("a scrape carrying both engines' names gives no figures", () => {
+    const body = tensorfold() + '\nvllm:num_requests_running{engine="0"} 1';
+    expect(parseMetrics(body)).toEqual({});
+  });
+
+  it("the vLLM names still read as before when no tensorfold name is present", () => {
+    const s = parseMetrics('vllm:generation_tokens_total{engine="0"} 42\nvllm:kv_cache_usage_perc{engine="0"} 0.5');
+    expect(s["vllm:generation_tokens_total"]).toBe(42);
+    expect(s["vllm:kv_cache_usage_perc"]).toBe(0.5);
+  });
+
+  it("a vLLM KV gauge on two lines is still left out (two engines), not maxed", () => {
+    const s = parseMetrics('vllm:kv_cache_usage_perc{engine="0"} 0.5\nvllm:kv_cache_usage_perc{engine="1"} 0.7');
+    expect(s["vllm:kv_cache_usage_perc"]).toBeUndefined();
+  });
+});
+
+describe("a 200 with no figures the tracker reads", () => {
+  it("gives the status no known figures, not ok", async () => {
+    const p = makePoller();
+    p.body("someengine:requests_running 3\nsomeengine:tokens_total 100");
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("no known figures");
+    expect(p.poller.figures().running).toBeNull();
+  });
+
+  it("keeps readAt from the last reading that had figures", async () => {
+    const p = makePoller();
+    p.body('vllm:num_requests_running{engine="0"} 3');
+    await p.poller.scrape();
+    const readAt = p.poller.figures().readAt;
+    p.advance(10_000);
+    p.body("someengine:requests_running 3");
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("no known figures");
+    expect(p.poller.figures().readAt).toBe(readAt);
+  });
+
+  it("a tensorfold scrape is ok", async () => {
+    const p = makePoller();
+    p.body(tensorfold());
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().running).toBe(2);
+    expect(p.poller.figures().kvCachePercent).toBe(4.5);
+  });
+});
