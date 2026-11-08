@@ -71,7 +71,7 @@ export interface ModelFigures {
   decodeTokensPerSecond: number | null; // Δ generation_tokens_total ÷ seconds between readings, one decimal
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
-  mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the window, one decimal; null when no drafts
+  mtpAcceptancePercent: number | null; // 100 × Δaccepted ÷ Δdraft over the latest window that had drafts, held by the poller until the next; null before the first or after a counter went down
   mtpAcceptanceSinceStartPercent: number | null; // 100 × accepted ÷ draft totals since the model server started, one decimal; null when no drafts
   prefillTokensPerSecond: number | null; // Δ computed tokens ÷ Δ prefill seconds of the prompts that finished in the window, one decimal; null when none did
   preemptions: number | null;          // the counter, only when above 0
@@ -337,6 +337,9 @@ export class MetricsPoller {
   private fastPrev: Reading | null = null;
   private fastLast: Reading | null = null;
   private heldPrefill: number | null = null;
+  // The last MTP acceptance ratio, held until a window with drafts replaces it and cleared when
+  // a counter went down (the engine restarted).
+  private heldMtp: number | null = null;
   private lastFullAt: number | null = null;
   private intervalSeconds = 1;
   private refreshSeconds = 1;
@@ -481,8 +484,25 @@ export class MetricsPoller {
 
   private apply(status: ModelStatus): void {
     const next = figuresFrom(status, this.prev, this.last);
-    if (JSON.stringify(next) === JSON.stringify(this.current)) return;
-    this.current = next;
-    for (const listener of this.listeners) listener(next);
+    // The reset check reads the pair that was just stored, so the reading that dropped is the
+    // one it sees. A held ratio survives a window without drafts, and an unreachable scrape.
+    const draft = "vllm:spec_decode_num_draft_tokens_total";
+    const accepted = "vllm:spec_decode_num_accepted_tokens_total";
+    const draftPrev = this.prev?.sample[draft];
+    const acceptedPrev = this.prev?.sample[accepted];
+    const draftCur = this.last?.sample[draft];
+    const acceptedCur = this.last?.sample[accepted];
+    if (this.prev !== null && this.last !== null &&
+        draftPrev !== undefined && acceptedPrev !== undefined &&
+        draftCur !== undefined && acceptedCur !== undefined &&
+        (draftCur < draftPrev || acceptedCur < acceptedPrev)) {
+      this.heldMtp = null;
+    } else if (next.mtpAcceptancePercent !== null) {
+      this.heldMtp = next.mtpAcceptancePercent;
+    }
+    const published = status === "ok" ? { ...next, mtpAcceptancePercent: this.heldMtp } : next;
+    if (JSON.stringify(published) === JSON.stringify(this.current)) return;
+    this.current = published;
+    for (const listener of this.listeners) listener(published);
   }
 }

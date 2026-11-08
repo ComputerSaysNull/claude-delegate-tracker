@@ -1064,3 +1064,96 @@ describe("a 200 with no figures the tracker reads", () => {
     expect(p.poller.figures().kvKeptPercent).toBe(23.1);
   });
 });
+
+// The MTP draft counters move only when a request finishes, so a window in which none did
+// carries no drafts and no window ratio. The poller holds the last ratio, as it holds the last
+// prefill speed, and clears it when the engine restarts.
+describe("MTP acceptance held across windows without drafts", () => {
+  function mtpBody(gen: number, draft: number, accepted: number): string {
+    return [
+      `vllm:generation_tokens_total{engine="0"} ${gen}`,
+      `vllm:spec_decode_num_draft_tokens_total{engine="0"} ${draft}`,
+      `vllm:spec_decode_num_accepted_tokens_total{engine="0"} ${accepted}`,
+    ].join("\n");
+  }
+
+  // Two readings that finish a request: 70 accepted of 100 drafted.
+  async function twoReadingsWithDrafts(p: ReturnType<typeof makePoller>): Promise<void> {
+    p.body(mtpBody(1000, 1000, 700));
+    await p.poller.scrape();
+    p.advance(10_000);
+    p.body(mtpBody(1400, 1100, 770));
+    await p.poller.scrape();
+  }
+
+  it("holds the last ratio through a window in which no request finished", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    // The draft counters stay flat while a request runs; only generation tokens move.
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+  });
+
+  it("clears the held ratio when a counter went down (engine restart)", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    p.advance(10_000);
+    p.body(mtpBody(2000, 50, 40));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    // Nothing is held any more: a later window without drafts stays null.
+    p.advance(10_000);
+    p.body(mtpBody(2400, 50, 40));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+  });
+
+  it("a first reading has nothing held", async () => {
+    const p = makePoller();
+    p.body(mtpBody(1000, 1000, 700));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    // The counters were read: the since-start figure is there.
+    expect(p.poller.figures().mtpAcceptanceSinceStartPercent).toBe(70);
+  });
+
+  it("a new window with drafts replaces the held ratio", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    // Another request finishes: 100 accepted of 200 drafted is 50%.
+    p.advance(10_000);
+    p.body(mtpBody(2200, 1300, 870));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(50);
+  });
+
+  it("keeps the held ratio across an unreachable scrape", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    p.advance(10_000);
+    p.status(500);
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("unreachable");
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    p.advance(10_000);
+    p.status(200);
+    p.body(mtpBody(2200, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+  });
+});

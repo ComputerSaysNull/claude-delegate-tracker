@@ -197,7 +197,8 @@ describe("ModelPanel", () => {
     render(<ModelPanel model={figures({ mtpAcceptancePercent: 47.5 })} />);
     const mtpCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "MTP acceptance")!;
     expect(mtpCell.textContent).toContain(`${(47.5).toLocaleString()}%`);
-    expect(mtpCell.textContent).toContain("now");
+    expect(mtpCell.textContent).toContain("last requests to finish");
+    expect(mtpCell.textContent).not.toContain("now");
   });
 
   it("shows the MTP acceptance now figure then the since-start figure", () => {
@@ -207,11 +208,11 @@ describe("ModelPanel", () => {
     const nowPct = `${(52).toLocaleString()}%`;
     const sincePct = `${(47).toLocaleString()}%`;
     expect(text).toContain(nowPct);
-    expect(text).toContain("now");
+    expect(text).toContain("last requests to finish");
     expect(text).toContain(sincePct);
     expect(text).toContain("since start");
-    expect(text.indexOf(nowPct)).toBeLessThan(text.indexOf("now"));
-    expect(text.indexOf("now")).toBeLessThan(text.indexOf(sincePct));
+    expect(text.indexOf(nowPct)).toBeLessThan(text.indexOf("last requests to finish"));
+    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf(sincePct));
     expect(text.indexOf(sincePct)).toBeLessThan(text.indexOf("since start"));
   });
 
@@ -221,10 +222,10 @@ describe("ModelPanel", () => {
     const text = mtpCell.textContent!;
     const sincePct = `${(47).toLocaleString()}%`;
     expect(text).toContain("—");
-    expect(text).toContain("now");
+    expect(text).toContain("last requests to finish");
     expect(text).toContain(sincePct);
     expect(text).toContain("since start");
-    expect(text.indexOf("—")).toBeLessThan(text.indexOf("now"));
+    expect(text.indexOf("—")).toBeLessThan(text.indexOf("last requests to finish"));
   });
 
   it("shows a dash for the MTP since-start figure after the now figure when it is null", () => {
@@ -235,7 +236,8 @@ describe("ModelPanel", () => {
     expect(text).toContain(nowPct);
     expect(text).toContain("—");
     expect(text).toContain("since start");
-    expect(text.indexOf("now")).toBeLessThan(text.indexOf("—"));
+    expect(text).toContain("last requests to finish");
+    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf("—"));
     expect(text.indexOf("—")).toBeLessThan(text.indexOf("since start"));
   });
 

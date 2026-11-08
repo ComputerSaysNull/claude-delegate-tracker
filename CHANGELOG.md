@@ -20,6 +20,11 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   per-part rows, with the share kept prompt states hold beside it. The engine books a
   request's whole reply budget up front, so this runs above vLLM's figure. History hours
   recorded on TensorFold before this fix still hold the fullest request.
+- **MTP acceptance no longer goes blank during a long run.** On TensorFold the "now" figure
+  showed `—` for as long as no request finished. Cause: the engine counts drafts only when a
+  request finishes, so a window without one has no drafts to divide by. Fix: the panel keeps
+  the ratio of the last requests to finish, as prefill speed already does, and clears it
+  when a counter goes down.
 
 ## #93 — 2026-11-08 — feat: vendor server v0.17.0 and show the model that answered
 

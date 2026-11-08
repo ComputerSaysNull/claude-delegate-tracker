@@ -180,7 +180,7 @@ function ModelFiguresBody({
           value={percent(model.mtpAcceptancePercent)}
           unit={
             <span className={captionClass}>
-              now · <span className="font-mono tabular-nums">{percent(model.mtpAcceptanceSinceStartPercent)}</span> since start
+              last requests to finish · <span className="font-mono tabular-nums">{percent(model.mtpAcceptanceSinceStartPercent)}</span> since start
             </span>
           }
         />
