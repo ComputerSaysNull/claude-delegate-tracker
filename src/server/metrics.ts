@@ -17,8 +17,31 @@ export const METRIC_NAMES = [
 ] as const;
 export type MetricName = (typeof METRIC_NAMES)[number];
 
-// One value per allowlisted name that appeared exactly once with a finite value.
-// Label values are never kept.
+// The TensorFold engine's names, read into the vLLM keys above so every rule holds for both
+// engines. Its finished-request counters jump only when a request ends, so generated tokens
+// add the running gauge, and computed prefill tokens are prompt tokens minus cached ones.
+const TENSORFOLD_ONCE = {
+  "tensorfold:num_requests_running": "vllm:num_requests_running",
+  "tensorfold:num_requests_waiting": "vllm:num_requests_waiting",
+  "tensorfold:prefix_cache_hits_total": "vllm:prefix_cache_hits_total",
+  "tensorfold:prefix_cache_queries_total": "vllm:prefix_cache_queries_total",
+  "tensorfold:preemptions_total": "vllm:num_preemptions_total",
+  "tensorfold:spec_decode_num_draft_tokens_total": "vllm:spec_decode_num_draft_tokens_total",
+  "tensorfold:spec_decode_num_accepted_tokens_total": "vllm:spec_decode_num_accepted_tokens_total",
+  "tensorfold:request_prefill_time_seconds_sum": "vllm:request_prefill_time_seconds_sum",
+  "tensorfold:request_prefill_time_seconds_count": "vllm:request_prefill_time_seconds_count",
+} as const satisfies Record<string, MetricName>;
+const TF_KV = "tensorfold:kv_cache_usage_perc"; // one line per stream; the fullest is kept
+const TF_GEN_TOTAL = "tensorfold:generation_tokens_total";
+const TF_GEN_RUNNING = "tensorfold:generation_tokens_running";
+const TF_PROMPT = "tensorfold:prompt_tokens_total";
+const TF_PROMPT_CACHED = "tensorfold:prompt_tokens_cached_total";
+const TENSORFOLD_NAMES = new Set<string>([
+  ...Object.keys(TENSORFOLD_ONCE), TF_KV, TF_GEN_TOTAL, TF_GEN_RUNNING, TF_PROMPT, TF_PROMPT_CACHED,
+]);
+
+// One value per allowlisted name that appeared exactly once with a finite value, keyed by
+// vLLM's name whichever engine published it. Label values are never kept.
 export type Sample = Partial<Record<MetricName, number>>;
 
 export interface Reading {
@@ -26,7 +49,8 @@ export interface Reading {
   sample: Sample;
 }
 
-export type ModelStatus = "ok" | "unreachable" | "not available" | "not configured";
+// "no known figures": a 200 whose text holds none of the names above (another engine, say).
+export type ModelStatus = "ok" | "unreachable" | "not available" | "not configured" | "no known figures";
 
 export interface ModelFigures {
   status: ModelStatus;
@@ -98,25 +122,46 @@ function skipLabels(line: string, start: number): number {
 
 // Parse Prometheus text exposition: `name{labels} value [timestamp]` lines, `#` comments.
 // A name that appears more than once (more than one engine) is left out: these are one
-// engine's figures.
+// engine's figures. TensorFold's per-stream KV-cache gauge is the one exception. A scrape
+// carrying both engines' names gives no figures.
 export function parseMetrics(text: string): Sample {
-  const seen = new Map<MetricName, number>();
-  const values = new Map<MetricName, number>();
+  const seen = new Map<string, number>();
+  const values = new Map<string, number>();
+  let kvMax: number | undefined;
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
     const parsed = parseSampleLine(line);
-    if (parsed === null || !isMetricName(parsed.name)) continue;
+    if (parsed === null || !(isMetricName(parsed.name) || TENSORFOLD_NAMES.has(parsed.name))) continue;
     seen.set(parsed.name, (seen.get(parsed.name) ?? 0) + 1);
     const num = Number(parsed.value);
-    if (Number.isFinite(num) && seen.get(parsed.name) === 1) values.set(parsed.name, num);
+    if (!Number.isFinite(num)) continue;
+    if (parsed.name === TF_KV) kvMax = kvMax === undefined ? num : Math.max(kvMax, num);
+    else if (seen.get(parsed.name) === 1) values.set(parsed.name, num);
   }
+  const once = (name: string): number | undefined => (seen.get(name) === 1 ? values.get(name) : undefined);
+  const hasVllm = METRIC_NAMES.some((m) => seen.has(m));
+  const hasTensorfold = [...TENSORFOLD_NAMES].some((m) => seen.has(m));
   const sample: Sample = {};
-  for (const metric of METRIC_NAMES) {
-    if (seen.get(metric) !== 1) continue;
-    const value = values.get(metric);
+  if (hasVllm && hasTensorfold) return sample;
+  if (hasVllm) {
+    for (const metric of METRIC_NAMES) {
+      const value = once(metric);
+      if (value !== undefined) sample[metric] = value;
+    }
+    return sample;
+  }
+  for (const [tf, metric] of Object.entries(TENSORFOLD_ONCE)) {
+    const value = once(tf);
     if (value !== undefined) sample[metric] = value;
   }
+  if (kvMax !== undefined) sample["vllm:kv_cache_usage_perc"] = kvMax;
+  const genTotal = once(TF_GEN_TOTAL);
+  const genRunning = once(TF_GEN_RUNNING);
+  if (genTotal !== undefined && genRunning !== undefined) sample["vllm:generation_tokens_total"] = genTotal + genRunning;
+  const prompt = once(TF_PROMPT);
+  const cached = once(TF_PROMPT_CACHED);
+  if (prompt !== undefined && cached !== undefined) sample["vllm:request_prefill_kv_computed_tokens_sum"] = prompt - cached;
   return sample;
 }
 
@@ -268,7 +313,8 @@ export class MetricsPoller {
     this.current = figuresFrom(deps.url === null ? "not configured" : "unreachable", null, null);
   }
 
-  // One scrape: 200 → a new reading; 404 → "not available"; anything else → "unreachable".
+  // One scrape: 200 → a new reading, or "no known figures" when it holds none; 404 → "not
+  // available"; anything else → "unreachable".
   async scrape(): Promise<void> {
     const url = this.deps.url;
     if (url === null) return;
@@ -356,7 +402,9 @@ export class MetricsPoller {
     try {
       const res = await doFetch(target, { headers, signal: AbortSignal.timeout(timeoutMs) });
       if (res.status === 200) {
-        return { atMs, reading: { atMs, sample: parseMetrics(await res.text()) }, status: "ok" };
+        const sample = parseMetrics(await res.text());
+        if (Object.keys(sample).length === 0) return { atMs, reading: null, status: "no known figures" };
+        return { atMs, reading: { atMs, sample }, status: "ok" };
       }
       if (res.status === 404) return { atMs, reading: null, status: "not available" };
       return { atMs, reading: null, status: "unreachable" };

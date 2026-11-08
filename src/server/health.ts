@@ -43,6 +43,7 @@ function count(n: number, noun: string): string {
 //  error   Node <name> was refused: its host key does not match the pinned one.   (per node)
 //  warning The model server can't be reached.                (status "unreachable")
 //  warning The model server has no /metrics (404).           (status "not available")
+//  warning The model server's /metrics has no figures this tracker reads.   (status "no known figures")
 //  warning Node <name> can't be reached.                     (per node, status "unreachable")
 //  warning Contract format <f>[, <f>…] is newer than this tracker knows (major <KNOWN_MAJOR>); those streams are shown as best they can be.
 //          (distinct rows[].unknownFormat values, in first-seen order)
@@ -79,6 +80,9 @@ export function buildHealth(input: HealthInput, now: Date): Health {
   }
   if (model.status === "not available") {
     banners.push({ level: "warning", text: "The model server has no /metrics (404)." });
+  }
+  if (model.status === "no known figures") {
+    banners.push({ level: "warning", text: "The model server's /metrics has no figures this tracker reads." });
   }
   for (const node of nodes) {
     if (node.status === "unreachable") {

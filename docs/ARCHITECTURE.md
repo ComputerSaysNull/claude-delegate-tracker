@@ -145,18 +145,18 @@ The tracker reads the folder directly, so it does not use the feed. The feed is 
 
 The figures come from the model server's Prometheus text at `<METRICS_URL>/metrics`. That is the server root, not under `/v1`. Send `Authorization: Bearer <token>` only when a token is configured.
 
-Read only these names. Ignore every other metric: some carry deployment details in their labels, and label values are never shown.
+Read only these names, from vLLM or from the TensorFold engine. Ignore every other metric: some carry deployment details in their labels, and label values are never shown.
 
-| Metric | Kind | Shown as |
-|---|---|---|
-| `vllm:num_requests_running` | gauge | requests running |
-| `vllm:num_requests_waiting` | gauge | requests waiting |
-| `vllm:kv_cache_usage_perc` | gauge (0–1) | KV-cache use, × 100 % |
-| `vllm:generation_tokens_total` | counter (tokens) | decode speed = difference between two scrapes ÷ seconds between them |
-| `vllm:prefix_cache_hits_total`, `vllm:prefix_cache_queries_total` | counters (tokens) | prefix-cache hit rate since the engine started = hits ÷ queries |
-| `vllm:num_preemptions_total` | counter | preemptions (shown when above 0) |
-| `vllm:spec_decode_num_draft_tokens_total`, `vllm:spec_decode_num_accepted_tokens_total` | counters (tokens) | MTP acceptance = Δaccepted ÷ Δdraft between two scrapes, × 100 %; `—` when no drafts. Since-start acceptance = accepted ÷ draft totals from the latest scrape alone, × 100 %; `—` when the draft total is 0 or a counter is missing. The panel shows both, now then since start |
-| `vllm:request_prefill_time_seconds_sum`, `vllm:request_prefill_time_seconds_count`, `vllm:request_prefill_kv_computed_tokens_sum` | histogram sums and count | prefill speed = Δ computed tokens ÷ Δ prefill seconds of the prompts that finished between two scrapes; the model server adds a prompt to these only when its request finishes (its prompt counters jump once, at the first token, so they cannot give a rate); `—` when none finished, never 0 |
+| Metric | TensorFold | Kind | Shown as |
+|---|---|---|---|
+| `vllm:num_requests_running` | `tensorfold:` + the same name | gauge | requests running |
+| `vllm:num_requests_waiting` | `tensorfold:` + the same name | gauge | requests waiting |
+| `vllm:kv_cache_usage_perc` | the largest `tensorfold:kv_cache_usage_perc` line: one per stream, and the fullest stops new work | gauge (0–1) | KV-cache use, × 100 % |
+| `vllm:generation_tokens_total` | `tensorfold:generation_tokens_total` + `tensorfold:generation_tokens_running`: the total moves only when a request finishes, and the gauge drops as it jumps | counter (tokens) | decode speed = difference between two scrapes ÷ seconds between them |
+| `vllm:prefix_cache_hits_total`, `vllm:prefix_cache_queries_total` | `tensorfold:` + the same names | counters (tokens) | prefix-cache hit rate since the engine started = hits ÷ queries |
+| `vllm:num_preemptions_total` | `tensorfold:preemptions_total` | counter | preemptions (shown when above 0) |
+| `vllm:spec_decode_num_draft_tokens_total`, `vllm:spec_decode_num_accepted_tokens_total` | `tensorfold:` + the same names | counters (tokens) | MTP acceptance = Δaccepted ÷ Δdraft between two scrapes, × 100 %; `—` when no drafts. Since-start acceptance = accepted ÷ draft totals from the latest scrape alone, × 100 %; `—` when the draft total is 0 or a counter is missing. The panel shows both, now then since start |
+| `vllm:request_prefill_time_seconds_sum`, `vllm:request_prefill_time_seconds_count`, `vllm:request_prefill_kv_computed_tokens_sum` | `tensorfold:` + the first two; computed tokens = `tensorfold:prompt_tokens_total` − `tensorfold:prompt_tokens_cached_total` | histogram sums and count | prefill speed = Δ computed tokens ÷ Δ prefill seconds of the prompts that finished between two scrapes; the model server adds a prompt to these only when its request finishes (vLLM's prompt counters jump once, at the first token, so they cannot give a rate); `—` when none finished, never 0 |
 
 Rules for every figure (the node figures follow them too):
 
@@ -168,8 +168,8 @@ Rules for every figure (the node figures follow them too):
 Rules for the model server only:
 
 - Its counters count tokens, not requests.
-- A `/metrics` that answers `404` means "not available", not "idle".
-- These are one engine's figures, not a fleet's. A name that appears more than once (a second engine) is left out rather than summed.
+- A `/metrics` that answers `404` means "not available", not "idle". A `200` that gives no figure at all (none of these names, or only ones left out below) means "no known figures": an amber status line and a warning banner, so an engine whose names this tracker does not know is never shown as idle.
+- These are one engine's figures, not a fleet's. A name that appears more than once (a second engine) is left out rather than summed; so is every figure when both engines' names appear.
 - Decode speed is refreshed every `DECODE_REFRESH_SECONDS` over the last pair of scrapes, as its own `decode` event; the full figures, their history and busy time keep the `METRICS_POLL_SECONDS` cadence. The same event carries the speed of the last finished prompt, which the panel keeps, titled "Prefill speed · last prompt", until the next one finishes; its chart draws each finished prompt as a dot.
 
 ## The nodes

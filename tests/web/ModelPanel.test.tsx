@@ -99,6 +99,11 @@ describe("ModelPanel", () => {
     expect(screen.getByText("/metrics is not available (404)")).toBeTruthy();
   });
 
+  it("shows the no-known-figures line", () => {
+    render(<ModelPanel model={figures({ status: "no known figures" })} />);
+    expect(screen.getByText("/metrics has no figures this tracker reads").className).toContain("text-warn");
+  });
+
   it("shows the not-configured line", () => {
     render(<ModelPanel model={figures({ status: "not configured" })} />);
     expect(screen.getByText("METRICS_URL is not set")).toBeTruthy();

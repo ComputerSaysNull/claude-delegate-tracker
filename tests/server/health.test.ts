@@ -146,6 +146,11 @@ describe("buildHealth", () => {
     expect(texts(h)).toContain("The model server has no /metrics (404).");
   });
 
+  it("a model server whose /metrics holds no known names warns, so an engine swap is not silent", () => {
+    const h = buildHealth(input({ model: model({ status: "no known figures" }) }), NOW);
+    expect(h.banners).toContainEqual({ level: "warning", text: "The model server's /metrics has no figures this tracker reads." });
+  });
+
   it("a not configured model server gives no banner", () => {
     const h = buildHealth(input({ model: model({ status: "not configured" }) }), NOW);
     expect(h.banners).toEqual([]);

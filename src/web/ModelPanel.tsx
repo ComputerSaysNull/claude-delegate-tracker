@@ -44,6 +44,8 @@ function statusLine(model: ModelFigures): StatusLine {
       };
     case "not available":
       return { text: "/metrics is not available (404)", color: AMBER };
+    case "no known figures":
+      return { text: "/metrics has no figures this tracker reads", color: AMBER };
     case "not configured":
       return { text: "METRICS_URL is not set", color: SLATE };
   }
