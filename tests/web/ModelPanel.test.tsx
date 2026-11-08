@@ -71,6 +71,21 @@ describe("ModelPanel", () => {
     expect(text).toContain("kept prompts");
   });
 
+  // The number's row cannot shrink, so a caption inside it cannot wrap and runs over the next
+  // cells. The long KV and MTP captions sit on their own line under the number instead.
+  it("puts the long KV-cache and MTP captions on their own line, outside the number's row", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268, mtpAcceptancePercent: 52 })} />);
+    const cells = screen.getAllByRole("listitem");
+    const cell = (label: string) => cells.find((c) => c.firstElementChild!.textContent === label)!;
+    const kvRow = within(cell("KV-cache use")).getByText(`${(58.4).toLocaleString()}%`).parentElement!;
+    expect(cell("KV-cache use").textContent).toContain("booked by running requests");
+    expect(kvRow.textContent).not.toContain("booked");
+    expect(kvRow.textContent).not.toContain("evicted");
+    const mtpRow = within(cell("MTP acceptance")).getByText(`${(52).toLocaleString()}%`).parentElement!;
+    expect(cell("MTP acceptance").textContent).toContain("last requests to finish");
+    expect(mtpRow.textContent).not.toContain("last requests to finish");
+  });
+
   it("shows no booked or kept caption for a model with no kept share", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 7.4, kvKeptPercent: null })} />);
     const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;

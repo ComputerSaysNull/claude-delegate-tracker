@@ -84,7 +84,9 @@ export function ModelPanel({
 // One figure: its label, then on one line the number with its unit or caption, and its chart
 // beside it when it has a history, so the card stays short. `minChars` keeps a number that
 // changes every second at a fixed width, so its chart does not move as the digits change.
-function Figure({ label, value, unit, chart, minChars }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number }) {
+// `note` is a caption too long for the number's row, which cannot shrink: it gets its own
+// line under the number, where it can wrap.
+function Figure({ label, value, unit, chart, minChars, note }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number; note?: ReactNode }) {
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
       <span className="text-[13px] text-muted">{label}</span>
@@ -100,6 +102,7 @@ function Figure({ label, value, unit, chart, minChars }: { label: string; value:
         </div>
         {chart !== undefined && <div className="min-w-0 flex-1">{chart}</div>}
       </div>
+      {note !== undefined && note !== null && <span className="text-xs text-muted">{note}</span>}
     </li>
   );
 }
@@ -178,7 +181,8 @@ function ModelFiguresBody({
         <Figure
           label="KV-cache use"
           value={percent(model.kvCachePercent)}
-          unit={kvCaption === null ? null : <span className={captionClass}>{kvCaption}</span>}
+          unit={null}
+          note={kvCaption}
           chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
         />
         <Figure
@@ -189,10 +193,11 @@ function ModelFiguresBody({
         <Figure
           label="MTP acceptance"
           value={percent(model.mtpAcceptancePercent)}
-          unit={
-            <span className={captionClass}>
+          unit={null}
+          note={
+            <>
               last requests to finish · <span className="font-mono tabular-nums">{percent(model.mtpAcceptanceSinceStartPercent)}</span> since start
-            </span>
+            </>
           }
         />
       </ul>
