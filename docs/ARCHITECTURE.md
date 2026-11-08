@@ -1,4 +1,4 @@
-<!-- BUDGET: 410 -->
+<!-- BUDGET: 411 -->
 
 # Architecture
 
@@ -282,7 +282,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 - Every History hover card stays where it can be seen: inside the window and inside any scrolling column around it, short of its scrollbar. It is centred over its column, then moved in to 8px from the edge it would cross, and kept at the left edge when it is wider than that room.
 - GPU power per day (per-node Wh as stacked columns, Wh per 1k output tokens of the runs started that day, the range figure counting only days with a power figure; GPU power only, not wall power).
 - Why runs did not finish: each reason with its outcome's icon and count, most first; "Every run finished." when there are none.
-- By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run without a repo or model groups as "—". Under the totals, three labelled groups: Delegations (per day, caller involvement, tokens per day, why runs did not finish), Cluster (KV-cache, GPU power, when the cluster is busy, busy and idle), and By repo and by model; at most two cards side by side, one per row on a phone. On a phone each repo or model is a block, its name over its six figures, and no figure wraps.
+- By repo and by model: delegations, done, tokens, cache reuse, the median time, and the last start as 04-Oct-2026. A run groups by its `model_key`, not the model that answered, so a registry entry's runs stay together across formats; without a repo or model it groups as "—". Under the totals, three labelled groups: Delegations (per day, caller involvement, tokens per day, why runs did not finish), Cluster (KV-cache, GPU power, when the cluster is busy, busy and idle), and By repo and by model; at most two cards side by side, one per row on a phone. On a phone each repo or model is a block, its name over its six figures, and no figure wraps.
 - Under it, how the records stand: how many are kept, when they were checked against the folder and how many disagreed, how many streams are gone, and any error saving them.
 
 ### Absent is not zero
@@ -313,6 +313,7 @@ Rule 7 comes before rule 8 on purpose. A queued delegation writes `waiting` abou
 ### Turns and calls
 
 - `priced` opens a turn (heading "turn N of M"); `turn` closes it; heartbeats and calls in between belong to that turn.
+- A turn's heading names the model the engine answered as (`turn.model`, format 1.15), else the run's `model_key`, with an amber mark when it is not `start.served_model_id`. The details bar's Model is the first turn's answered model, the key beside it in brackets when they differ, marked amber when `end.model_mismatch` is true. A null or missing field gives no mark.
 - The budget line names its turn number.
 - Say "of M" only when `of_turns` is present.
 - In an announced turn, show the calls once, with their results. In an unannounced (older) turn, show the calls with their arguments.

@@ -19,7 +19,7 @@ function row(overrides: Partial<ListRow> = {}): ListRow {
 
 function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
   return {
-    n, heading: `turn ${n}`, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null, retries: [],
+    n, heading: `turn ${n}`, model: null, askedFor: null, budget: null, calls: [], reply: null, closed: true, heartbeat: null, partial: null, thinking: null, reasonedFor: null, retries: [],
     toolTime: null, attempts: null, repeated: null, thinkingRepeated: null, evicted: null, tokensIn: null, tokensOut: null, tokS: null,
     clock: null, at: null, asks: [], ...overrides,
   };
@@ -32,7 +32,7 @@ function call(overrides: Partial<CallView> = {}): CallView {
 function summary(overrides: Partial<SummaryView> = {}): SummaryView {
   return {
     finished: true, ok: true, elapsed: "4m02s", turns: "2 of 8", cached: null, reuse: null, returned: null,
-    load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: null, ...overrides,
+    load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: null, modelMismatch: null, ...overrides,
   };
 }
 
@@ -507,5 +507,34 @@ describe("following the reply in a pane that scrolls itself", () => {
     fireEvent.click(screen.getByRole("button", { name: "Jump to latest" }));
     expect(el.scrollTo).toHaveBeenCalledWith({ top: 2000 });
     expect(screen.queryByRole("button", { name: "Jump to latest" })).toBeNull();
+  });
+});
+
+// Format 1.15: the model the engine answered as for a turn, and the one the caller asked for
+// when the two differ.
+describe("which model answered", () => {
+  const at = "2026-10-04T17:04:00.000Z";
+
+  it("names in the turn's heading the model the engine answered as", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { model: "another-model", at })] })} />);
+    const [msg] = message("delegation");
+    expect(msg.textContent).toContain(`another-model · turn 1 · ${localTime(at)}`);
+  });
+
+  it("falls back to the run's model when the turn does not name one", () => {
+    render(<StreamViewBody view={view({ row: row({ model: "flash" }), turns: [turn(1, { model: null, at })] })} />);
+    const [msg] = message("delegation");
+    expect(msg.textContent).toContain(`flash · turn 1 · ${localTime(at)}`);
+  });
+
+  it("marks a turn the engine answered as a different model than the one asked for", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { model: "another-model", askedFor: "served-id-1" })] })} />);
+    const mark = screen.getByRole("status", { name: "Turn 1 was answered by another-model, not served-id-1 as asked" });
+    expect(mark.closest('[data-from="delegation"]')).not.toBeNull();
+  });
+
+  it("leaves the mark off when the turn was answered as asked", () => {
+    render(<StreamViewBody view={view({ turns: [turn(1, { model: "flash", askedFor: null })] })} />);
+    expect(screen.queryByRole("status", { name: /answered by/ })).toBeNull();
   });
 });

@@ -5,7 +5,7 @@
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
 import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
-import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, X } from "lucide-react";
+import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, TriangleAlert, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, SummaryView, AnswerView, MessageView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -358,7 +358,9 @@ function DelegationMessage({
       : turn.partial !== null && turn.partial.answer !== ""
         ? turn.partial.answer
         : null;
-  const head = [model, `turn ${turn.n}`, turn.at !== null ? localTime(turn.at) : null].filter(
+  // The model the engine answered as for this turn, else the run's registry key.
+  const answeredBy = turn.model ?? model;
+  const head = [answeredBy, `turn ${turn.n}`, turn.at !== null ? localTime(turn.at) : null].filter(
     (p): p is string => p !== null,
   );
   const figures = [
@@ -409,6 +411,17 @@ function DelegationMessage({
             >
               retried {turn.attempts - 1}×
             </button>
+          )}
+          {turn.askedFor !== null && (
+            <span
+              role="status"
+              aria-label={`Turn ${turn.n} was answered by ${answeredBy ?? "another model"}, not ${turn.askedFor} as asked`}
+              title={`asked for ${turn.askedFor}`}
+              className="ml-2 inline-flex items-center gap-1 text-warn font-semibold"
+            >
+              <TriangleAlert size={12} aria-hidden="true" />
+              not {turn.askedFor}
+            </span>
           )}
           {repeatMarkers.map((m) => (
             <span

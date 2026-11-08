@@ -3,6 +3,7 @@
 // run's figures so far. The header's Details button folds it away and remembers the choice; on
 // a phone the same details fold open under the title.
 import { useCallback, useState } from "react";
+import { TriangleAlert } from "lucide-react";
 import type { StreamView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { localTime } from "./time.ts";
@@ -76,7 +77,7 @@ export function DetailsFigures({ view }: { view: StreamView }) {
         <Row label="Repo" value={row.workspace} />
         <Row label="Kind" value={row.kind} />
         <Row label="Called as" value={row.mcpTask === null ? null : row.mcpTask ? "MCP task" : "Inline"} />
-        <Row label="Model" value={row.model} />
+        <ModelRow view={view} />
         <Row label="Effort" value={row.effort} />
         <Row label="Started" value={row.startedAt !== null ? localTime(row.startedAt) : null} />
         <Row label="Elapsed" value={row.elapsed} />
@@ -122,6 +123,29 @@ export function DetailsFigures({ view }: { view: StreamView }) {
         )}
       </dl>
     </div>
+  );
+}
+
+// The model the engine answered as (the first turn that names one), else the registry key;
+// the key beside it when they differ, and a mark when the run's end reports a mismatch.
+function ModelRow({ view }: { view: StreamView }) {
+  const key = view.row.model;
+  const answered = view.turns.find((t) => t.model !== null)?.model ?? key;
+  if (answered === null) return null;
+  const mismatch = view.summary?.modelMismatch === true;
+  return (
+    <>
+      <dt className="text-muted">Model</dt>
+      <dd className={`font-mono tabular-nums ${mismatch ? "text-warn" : ""}`}>
+        {answered}
+        {key !== null && key !== answered && <span className="text-muted"> ({key})</span>}
+        {mismatch && (
+          <span role="status" aria-label="Answered by another model than the one asked for" className="ml-1 inline-flex align-middle">
+            <TriangleAlert size={12} aria-hidden="true" />
+          </span>
+        )}
+      </dd>
+    </>
   );
 }
 

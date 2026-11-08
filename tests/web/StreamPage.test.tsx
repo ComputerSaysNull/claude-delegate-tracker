@@ -48,6 +48,8 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
     tokensIn: null,
     tokensOut: null,
     tokS: null,
+    model: null,
+    askedFor: null,
     clock: null,
     at: null,
     asks: [],
@@ -249,6 +251,7 @@ describe("StreamViewBody", () => {
         finishReason: "stop",
         error: null,
         shellCalls: null,
+        modelMismatch: null,
       },
     });
     render(<StreamViewBody view={v} />);
@@ -279,7 +282,7 @@ describe("StreamViewBody", () => {
   it("shows the shell count in the summary when there is one", () => {
     const summary = {
       finished: true, ok: true, elapsed: "5s", turns: null, cached: null, reuse: null, returned: null,
-      load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: 4,
+      load: null, failures: null, toolTime: null, finishReason: null, error: null, shellCalls: 4, modelMismatch: null,
     };
     const aside = () => screen.getByRole("complementary", { name: "Details" });
     const { unmount } = render(<StreamViewBody view={view({ summary })} />);
