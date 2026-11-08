@@ -17,7 +17,7 @@ const hourOf = (ms: number): number => Math.floor(ms / HOUR) * HOUR;
 // A well-formed ok reading, as metrics.ts builds one.
 function figures(over: Partial<ModelFigures> = {}): ModelFigures {
   return {
-    status: "ok", running: 1, waiting: 0, kvCachePercent: null,
+    status: "ok", running: 1, waiting: 0, kvCachePercent: null, kvKeptPercent: null,
     decodeTokensPerSecond: null, decodeWindowSeconds: null, prefixHitPercent: null,
     preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null, prefillTokensPerSecond: null, readAt: null,
     ...over,

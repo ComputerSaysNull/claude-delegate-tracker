@@ -161,7 +161,13 @@ function ModelFiguresBody({
         <Figure
           label="KV-cache use"
           value={percent(model.kvCachePercent)}
-          unit={null}
+          unit={
+            model.kvKeptPercent === null ? null : (
+              <span className={captionClass}>
+                booked by running requests · <span className="font-mono tabular-nums">{percent(model.kvKeptPercent)}</span> kept prompts
+              </span>
+            )
+          }
           chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
         />
         <Figure

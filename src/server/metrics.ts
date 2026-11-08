@@ -31,18 +31,28 @@ const TENSORFOLD_ONCE = {
   "tensorfold:request_prefill_time_seconds_sum": "vllm:request_prefill_time_seconds_sum",
   "tensorfold:request_prefill_time_seconds_count": "vllm:request_prefill_time_seconds_count",
 } as const satisfies Record<string, MetricName>;
-const TF_KV = "tensorfold:kv_cache_usage_perc"; // one line per stream; the fullest is kept
+// The KV pool, per part: parts × part_rows is the pool, and each part reports its rows by
+// state. The per-stream kv_cache_usage_perc is one request's own window, so it is not read.
+const TF_KV_PARTS = "tensorfold:kv_shard_parts";
+const TF_KV_PART_ROWS = "tensorfold:kv_shard_part_rows";
+const TF_KV_PART_LIVE = "tensorfold:kv_shard_part_live_rows";
+const TF_KV_PART_TWIN = "tensorfold:kv_shard_part_twin_rows";
+const TF_KV_PART_HOLD = "tensorfold:kv_shard_part_hold_rows";
+const TF_KV_PART_KEPT = "tensorfold:kv_shard_part_kept_rows";
+const TF_KV_PART_NAMES = [TF_KV_PART_LIVE, TF_KV_PART_TWIN, TF_KV_PART_HOLD, TF_KV_PART_KEPT];
 const TF_GEN_TOTAL = "tensorfold:generation_tokens_total";
 const TF_GEN_RUNNING = "tensorfold:generation_tokens_running";
 const TF_PROMPT = "tensorfold:prompt_tokens_total";
 const TF_PROMPT_CACHED = "tensorfold:prompt_tokens_cached_total";
 const TENSORFOLD_NAMES = new Set<string>([
-  ...Object.keys(TENSORFOLD_ONCE), TF_KV, TF_GEN_TOTAL, TF_GEN_RUNNING, TF_PROMPT, TF_PROMPT_CACHED,
+  ...Object.keys(TENSORFOLD_ONCE), TF_KV_PARTS, TF_KV_PART_ROWS, ...TF_KV_PART_NAMES,
+  TF_GEN_TOTAL, TF_GEN_RUNNING, TF_PROMPT, TF_PROMPT_CACHED,
 ]);
 
 // One value per allowlisted name that appeared exactly once with a finite value, keyed by
-// vLLM's name whichever engine published it. Label values are never kept.
-export type Sample = Partial<Record<MetricName, number>>;
+// vLLM's name whichever engine published it, plus one tracker-own key: the kept share of the
+// KV pool. Label values are never kept.
+export type Sample = Partial<Record<MetricName | "kv_kept_ratio", number>>;
 
 export interface Reading {
   atMs: number;
@@ -57,6 +67,7 @@ export interface ModelFigures {
   running: number | null;
   waiting: number | null;
   kvCachePercent: number | null;       // kv_cache_usage_perc × 100, one decimal
+  kvKeptPercent: number | null;        // kept prompt states' share of the KV pool × 100, one decimal; TensorFold only, null otherwise
   decodeTokensPerSecond: number | null; // Δ generation_tokens_total ÷ seconds between readings, one decimal
   decodeWindowSeconds: number | null;  // the seconds that rate was measured over, whole
   prefixHitPercent: number | null;     // hits ÷ queries × 100 since the engine started, one decimal; null when queries is 0
@@ -122,12 +133,12 @@ function skipLabels(line: string, start: number): number {
 
 // Parse Prometheus text exposition: `name{labels} value [timestamp]` lines, `#` comments.
 // A name that appears more than once (more than one engine) is left out: these are one
-// engine's figures. TensorFold's per-stream KV-cache gauge is the one exception. A scrape
-// carrying both engines' names gives no figures.
+// engine's figures. TensorFold's per-part KV rows are the one exception: their labels are
+// ignored and their values summed. A scrape carrying both engines' names gives no figures.
 export function parseMetrics(text: string): Sample {
   const seen = new Map<string, number>();
   const values = new Map<string, number>();
-  let kvMax: number | undefined;
+  const partSums = new Map<string, { sum: number; lines: number }>();
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (line === "" || line.startsWith("#")) continue;
@@ -136,8 +147,14 @@ export function parseMetrics(text: string): Sample {
     seen.set(parsed.name, (seen.get(parsed.name) ?? 0) + 1);
     const num = Number(parsed.value);
     if (!Number.isFinite(num)) continue;
-    if (parsed.name === TF_KV) kvMax = kvMax === undefined ? num : Math.max(kvMax, num);
-    else if (seen.get(parsed.name) === 1) values.set(parsed.name, num);
+    if (TF_KV_PART_NAMES.includes(parsed.name)) {
+      const part = partSums.get(parsed.name) ?? { sum: 0, lines: 0 };
+      part.sum += num;
+      part.lines += 1;
+      partSums.set(parsed.name, part);
+    } else if (seen.get(parsed.name) === 1) {
+      values.set(parsed.name, num);
+    }
   }
   const once = (name: string): number | undefined => (seen.get(name) === 1 ? values.get(name) : undefined);
   const hasVllm = METRIC_NAMES.some((m) => seen.has(m));
@@ -155,7 +172,24 @@ export function parseMetrics(text: string): Sample {
     const value = once(tf);
     if (value !== undefined) sample[metric] = value;
   }
-  if (kvMax !== undefined) sample["vllm:kv_cache_usage_perc"] = kvMax;
+  // The pool's booked and kept shares, only when every part reported.
+  const parts = once(TF_KV_PARTS);
+  const rowsPerPart = once(TF_KV_PART_ROWS);
+  if (parts !== undefined && rowsPerPart !== undefined && parts > 0 && rowsPerPart > 0) {
+    const total = parts * rowsPerPart;
+    const sumPart = (name: string): number | undefined => {
+      const part = partSums.get(name);
+      return part !== undefined && part.lines === parts ? part.sum : undefined;
+    };
+    const live = sumPart(TF_KV_PART_LIVE);
+    const twin = sumPart(TF_KV_PART_TWIN);
+    const hold = sumPart(TF_KV_PART_HOLD);
+    const kept = sumPart(TF_KV_PART_KEPT);
+    if (live !== undefined && twin !== undefined && hold !== undefined && kept !== undefined) {
+      sample["vllm:kv_cache_usage_perc"] = (live + twin + hold) / total;
+      sample["kv_kept_ratio"] = kept / total;
+    }
+  }
   const genTotal = once(TF_GEN_TOTAL);
   const genRunning = once(TF_GEN_RUNNING);
   if (genTotal !== undefined && genRunning !== undefined) sample["vllm:generation_tokens_total"] = genTotal + genRunning;
@@ -198,7 +232,7 @@ export function prefillRate(prev: Reading | null, cur: Reading | null): { tokens
 export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Reading | null): ModelFigures {
   if (cur === null) {
     return {
-      status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
+      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
       mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt: null,
@@ -207,7 +241,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
   const readAt = new Date(cur.atMs).toISOString();
   if (status !== "ok") {
     return {
-      status, running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null,
+      status, running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, decodeTokensPerSecond: null,
       decodeWindowSeconds: null, prefixHitPercent: null, mtpAcceptancePercent: null,
       mtpAcceptanceSinceStartPercent: null,
       prefillTokensPerSecond: null, preemptions: null, readAt,
@@ -216,6 +250,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
 
   const s = cur.sample;
   const kv = s["vllm:kv_cache_usage_perc"];
+  const kept = s["kv_kept_ratio"];
   const hits = s["vllm:prefix_cache_hits_total"];
   const queries = s["vllm:prefix_cache_queries_total"];
   const preempt = s["vllm:num_preemptions_total"];
@@ -264,6 +299,7 @@ export function figuresFrom(status: ModelStatus, prev: Reading | null, cur: Read
     running: s["vllm:num_requests_running"] ?? null,
     waiting: s["vllm:num_requests_waiting"] ?? null,
     kvCachePercent: kv === undefined ? null : Math.round(kv * 1000) / 10,
+    kvKeptPercent: kept === undefined ? null : Math.round(kept * 1000) / 10,
     decodeTokensPerSecond,
     decodeWindowSeconds,
     prefixHitPercent: hits !== undefined && queries !== undefined && queries > 0

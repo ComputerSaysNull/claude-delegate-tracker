@@ -60,6 +60,7 @@ describe("pointFromModel", () => {
     running: null,
     waiting: null,
     kvCachePercent: null,
+    kvKeptPercent: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,

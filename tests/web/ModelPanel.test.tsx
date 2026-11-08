@@ -26,6 +26,7 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     running: null,
     waiting: null,
     kvCachePercent: null,
+    kvKeptPercent: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,
@@ -57,6 +58,26 @@ describe("ModelPanel", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 7.4, prefixHitPercent: 92 })} />);
     expect(screen.getByText(`${(7.4).toLocaleString()}%`)).toBeTruthy();
     expect(screen.getByText(`${(92).toLocaleString()}%`)).toBeTruthy();
+  });
+
+  it("shows the KV-cache cell's booked share with the kept prompts beside it", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    expect(text).toContain(`${(58.4).toLocaleString()}%`);
+    expect(text).toContain("booked by running requests");
+    expect(text).toContain(`${(23.1).toLocaleString()}%`);
+    expect(text).toContain("kept prompts");
+  });
+
+  it("shows no booked or kept caption for a model with no kept share", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 7.4, kvKeptPercent: null })} />);
+    const kvCell = screen.getAllByRole("listitem").find((c) => c.firstElementChild!.textContent === "KV-cache use")!;
+    const text = kvCell.textContent!;
+    expect(text).toContain(`${(7.4).toLocaleString()}%`);
+    expect(text).not.toContain("booked");
+    expect(text).not.toContain("kept");
+    expect(text).not.toContain("0%");
   });
 
   it("shows decode speed without a line naming its window", () => {

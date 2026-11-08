@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
+
+### Fixed
+
+- **KV-cache use on TensorFold is the pool, not one request.** The figure read 38% while the
+  pool was nearly full and saved prompts were being thrown out. Cause: the engine's
+  `kv_cache_usage_perc` lines are each one request's own window, and the tracker showed the
+  fullest. Fix: the figure is the pool's share booked by running requests, from the engine's
+  per-part rows, with the share kept prompt states hold beside it. The engine books a
+  request's whole reply budget up front, so this runs above vLLM's figure. History hours
+  recorded on TensorFold before this fix still hold the fullest request.
+
 ## #93 — 2026-11-08 — feat: vendor server v0.17.0 and show the model that answered
 
 ### Added

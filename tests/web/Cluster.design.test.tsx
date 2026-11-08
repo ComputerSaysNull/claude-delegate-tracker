@@ -17,7 +17,7 @@ vi.mock("../../src/web/Sparkline.tsx", () => ({
 }));
 
 const MODEL: ModelFigures = {
-  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, decodeTokensPerSecond: 41.2,
+  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, kvKeptPercent: null, decodeTokensPerSecond: 41.2,
   decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
   prefillTokensPerSecond: null, readAt: "2026-10-04T17:42:01.000Z",
 };
