@@ -114,10 +114,11 @@ function Figure({ label, value, valueClass, unit, chart, minChars, help }: { lab
 
 // A figure without a chart: its label above its value, in a row of its own, so the card does
 // not grow. `title` explains a pair of numbers too short to say so themselves.
-function CompactFigure({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
+// The label is not truncated: a help card opens inside it, and hidden overflow would clip it.
+function CompactFigure({ label, value, help }: { label: string; value: ReactNode; help?: ReactNode }) {
   return (
-    <li className="flex min-w-0 flex-col gap-0.5" title={title}>
-      <span className="truncate text-[13px] text-muted">{label}</span>
+    <li className="flex min-w-0 flex-col gap-0.5">
+      <span className="block text-[13px] text-muted">{label}{help === undefined ? null : <span className="ml-1 align-middle">{help}</span>}</span>
       <span className="whitespace-nowrap font-mono tabular-nums text-lg font-medium">{value}</span>
     </li>
   );
@@ -308,7 +309,17 @@ function ModelFiguresBody({
         <CompactFigure
           label="MTP · last / all"
           value={`${percent(model.mtpAcceptancePercent)} / ${percent(model.mtpAcceptanceSinceStartPercent)}`}
-          title="MTP acceptance: the last requests to finish / since the engine started"
+          help={
+            <HelpMark
+              label="About MTP acceptance"
+              title="MTP acceptance"
+              rows={[
+                { label: "Last requests to finish", value: percent(model.mtpAcceptancePercent) },
+                { label: "Since the engine started", value: percent(model.mtpAcceptanceSinceStartPercent) },
+              ]}
+              text="The share of the draft tokens the model's multi-token prediction proposed that the model kept. Last is the latest window in which requests finished; TensorFold counts drafts only when a request finishes, so it holds until the next. All is since the engine started."
+            />
+          }
         />
         <CompactFigure
           label="Prompts rebuilt · today"

@@ -32,8 +32,9 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   chart's dots sat on top of each other. Now decode speed, requests as running / waiting, and
   KV-cache as reserved / kept each show one number with its chart across the column under
   it. A pair draws two lines, keyed by a coloured stroke before each word of the label.
-  Under a divider, prefill, prefix hits, MTP acceptance (last / all) and today's rebuilt
-  prompts each show their label above the number. The prefill chart is gone.
+  Under a divider, prefill, prefix hits, MTP acceptance (last / all, with a ? that explains
+  both, as KV-cache has) and today's rebuilt prompts each show their label above the number.
+  The prefill chart is gone.
 
 ### Fixed
 

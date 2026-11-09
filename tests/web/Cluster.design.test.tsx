@@ -46,6 +46,13 @@ function figure(label: string): HTMLElement {
   return found;
 }
 
+// A label's own words: its text without a help mark's button ("?") beside it.
+function labelText(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll("button").forEach((b) => b.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 function readText(el: Element): string {
   return (el.textContent ?? "").replace(/\s+/g, " ").trim();
 }
@@ -73,7 +80,7 @@ describe("the model server card", () => {
     expect(grid.compareDocumentPosition(compact) & 4).toBe(4);
     const labels = within(compact)
       .getAllByRole("listitem")
-      .map((item) => (item.firstElementChild!.textContent ?? "").trim());
+      .map((item) => labelText(item.firstElementChild!));
     expect(labels).toEqual(["Prefill · last prompt", "Prefix hits · since start", "MTP · last / all", "Prompts rebuilt · today"]);
     for (const item of within(compact).getAllByRole("listitem")) {
       expect(item.className.split(/\s+/)).toContain("flex-col");

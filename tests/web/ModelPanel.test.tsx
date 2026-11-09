@@ -125,6 +125,13 @@ function compactValue(label: string): HTMLElement {
 }
 
 // The text of an element as the page reads it, with runs of whitespace collapsed.
+// A label's own words: its text without a help mark's button ("?") beside it.
+function labelText(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll("button").forEach((b) => b.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 function readText(el: Element): string {
   return (el.textContent ?? "").replace(/\s+/g, " ").trim();
 }
@@ -429,7 +436,7 @@ describe("ModelPanel", () => {
     const compact = compactList();
     const labels = within(compact)
       .getAllByRole("listitem")
-      .map((c) => (c.firstElementChild?.textContent ?? "").trim());
+      .map((c) => labelText(c.firstElementChild!));
     expect(labels).toEqual(["Prefill · last prompt", "Prefix hits · since start", "MTP · last / all", "Prompts rebuilt · today"]);
     const cases: [string, string][] = [
       ["Prefill · last prompt", speed(1200)],
@@ -444,7 +451,7 @@ describe("ModelPanel", () => {
       expect(Array.from(item.children)).toHaveLength(2);
       const labelSpan = item.children[0] as HTMLElement;
       const valueSpan = item.children[1] as HTMLElement;
-      expect(labelSpan.textContent).toBe(label);
+      expect(labelText(labelSpan)).toBe(label);
       expect(labelSpan.className.split(/\s+/)).toContain("text-[13px]");
       expect(labelSpan.className.split(/\s+/)).toContain("text-muted");
       expect(valueSpan.textContent).toContain(value);
@@ -500,10 +507,27 @@ describe("ModelPanel", () => {
     expect(compactValue("MTP · last / all").textContent).toBe(`${(52).toLocaleString()}% / —`);
   });
 
-  it("the compact MTP item explains its two numbers in its title", () => {
+  // A title only shows on hover, which a phone does not have: MTP explains its two numbers with
+  // the same ? mark and card as KV-cache, which a tap opens.
+  it("the compact MTP item explains its two numbers with a help mark, not a title", () => {
     render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })} />);
     const item = compactItem("MTP · last / all");
-    expect(item.getAttribute("title")).toBe("MTP acceptance: the last requests to finish / since the engine started");
+    expect(item.hasAttribute("title")).toBe(false);
+    expect(item.children).toHaveLength(2);
+    // The card opens inside the label: a label that hides its overflow would clip it.
+    const labelClasses = (item.firstElementChild as HTMLElement).className.split(/\s+/);
+    expect(labelClasses).not.toContain("truncate");
+    expect(labelClasses).not.toContain("overflow-hidden");
+    const button = within(item.firstElementChild as HTMLElement).getByRole("button", { name: "About MTP acceptance" });
+    fireEvent.click(button);
+    const card = screen.getByRole("tooltip");
+    expect(card.textContent).toContain("Last requests to finish");
+    expect(card.textContent).toContain(`${(52).toLocaleString()}%`);
+    expect(card.textContent).toContain("Since the engine started");
+    expect(card.textContent).toContain(`${(67.2).toLocaleString()}%`);
+    expect(card.textContent).toContain("draft");
+    fireEvent.click(button);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
   // The prefill speed is a single event between gaps, not a series: it gets no chart.
