@@ -54,6 +54,8 @@ function model(over: Partial<ModelFigures> = {}): ModelFigures {
     running: null,
     waiting: null,
     kvCachePercent: null,
+    kvKeptPercent: null,
+    keptEvicted: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,

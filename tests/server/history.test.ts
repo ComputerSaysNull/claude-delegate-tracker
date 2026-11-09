@@ -16,6 +16,8 @@ const model = (over: Partial<ModelFigures> = {}): ModelFigures => ({
   running: 1,
   waiting: 2,
   kvCachePercent: 50,
+  kvKeptPercent: null,
+  keptEvicted: null,
   decodeTokensPerSecond: 12.5,
   decodeWindowSeconds: 5,
   prefixHitPercent: 50,

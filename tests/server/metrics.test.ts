@@ -404,6 +404,7 @@ describe("figuresFrom", () => {
     expect(f.preemptions).toBeNull();
     expect(f.mtpAcceptancePercent).toBeNull();
     expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
+    expect(f.keptEvicted).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBe(new Date(T0).toISOString());
   });
@@ -811,13 +812,20 @@ describe("MetricsPoller", () => {
 
 // The TensorFold engine publishes `tensorfold:*` names (measured 2026-11-08). Its figures are
 // read into the same sample keys as vLLM's, so every rule above applies to both engines.
-function tensorfold(over: Record<string, string> = {}): string {
-  const lines: Record<string, string> = {
+// `over` replaces a name's lines; an empty array drops that name from the scrape.
+function tensorfold(over: Record<string, string | string[]> = {}): string {
+  const lines: Record<string, string | string[]> = {
     "tensorfold:num_requests_running": "2",
     "tensorfold:num_requests_waiting": "1",
     "tensorfold:requests_running": "2",
     "tensorfold:requests_waiting": "1",
-    "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.045',
+    // One line per running request, each the fill of that request's own window, not the pool.
+    "tensorfold:kv_cache_usage_perc": [
+      '{stream="0"} 0.382196',
+      '{stream="1"} 0.203507',
+      '{stream="2"} 0.038329',
+      '{stream="3"} 0.078279',
+    ],
     "tensorfold:kv_cache_usage_ratio": '{pool="0"} 0.045',
     "tensorfold:generation_tokens_total": "408352",
     "tensorfold:generation_tokens_running": "126",
@@ -830,15 +838,28 @@ function tensorfold(over: Record<string, string> = {}): string {
     "tensorfold:mtp_accepted_total": "244815",
     "tensorfold:prompt_tokens_total": "6600625",
     "tensorfold:prompt_tokens_cached_total": "3461120",
+    "tensorfold:prompt_cache_evicted": "133",
     "tensorfold:request_prefill_time_seconds_sum": "1846.589514",
     "tensorfold:request_prefill_time_seconds_count": "957",
     "tensorfold:pair_busy_ms": "0",
+    // The KV pool, per part: 2 parts of 1050624 rows each. Every part's rows add up to
+    // 1050624 (176128 free + 714752 live + 0 twin + 0 hold + 159744 kept, and likewise
+    // for part 1), which is what makes these the pool's own figures.
+    "tensorfold:kv_shard_parts": "2",
+    "tensorfold:kv_shard_part_rows": "1050624",
+    "tensorfold:kv_shard_part_free_rows": ['{part="0"} 176128', '{part="1"} 212992'],
+    "tensorfold:kv_shard_part_live_rows": ['{part="0"} 714752', '{part="1"} 512000'],
+    "tensorfold:kv_shard_part_twin_rows": ['{part="0"} 0', '{part="1"} 0'],
+    "tensorfold:kv_shard_part_hold_rows": ['{part="0"} 0', '{part="1"} 0'],
+    "tensorfold:kv_shard_part_kept_rows": ['{part="0"} 159744', '{part="1"} 325632'],
     ...over,
   };
   return [
     "# HELP tensorfold:generation_tokens_total Output tokens of finished requests.",
     "# TYPE tensorfold:generation_tokens_total counter",
-    ...Object.entries(lines).map(([name, rest]) => (rest.startsWith("{") ? `${name}${rest}` : `${name} ${rest}`)),
+    ...Object.entries(lines).flatMap(([name, rest]) =>
+      Array.isArray(rest) ? rest.map((r) => `${name}${r}`) : [`${name} ${rest}`],
+    ),
   ].join("\n");
 }
 
@@ -847,7 +868,8 @@ describe("TensorFold", () => {
     const s = parseMetrics(tensorfold());
     expect(s["vllm:num_requests_running"]).toBe(2);
     expect(s["vllm:num_requests_waiting"]).toBe(1);
-    expect(s["vllm:kv_cache_usage_perc"]).toBe(0.045);
+    // The pool's booked share: (714752 + 512000) ÷ (2 × 1050624).
+    expect(s["vllm:kv_cache_usage_perc"]).toBeCloseTo(0.5838, 3);
     expect(s["vllm:prefix_cache_hits_total"]).toBe(3504128);
     expect(s["vllm:prefix_cache_queries_total"]).toBe(6600625);
     expect(s["vllm:num_preemptions_total"]).toBe(4);
@@ -857,13 +879,84 @@ describe("TensorFold", () => {
     expect(s["vllm:request_prefill_time_seconds_count"]).toBe(957);
   });
 
-  it("KV-cache use is the fullest stream's line, not the sum or the last line", () => {
-    const body = tensorfold({ "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.045' }) +
-      '\ntensorfold:kv_cache_usage_perc{stream="1"} 0.02';
-    expect(parseMetrics(body)["vllm:kv_cache_usage_perc"]).toBe(0.045);
-    const reversed = tensorfold({ "tensorfold:kv_cache_usage_perc": '{stream="0"} 0.02' }) +
-      '\ntensorfold:kv_cache_usage_perc{stream="1"} 0.045';
-    expect(parseMetrics(reversed)["vllm:kv_cache_usage_perc"]).toBe(0.045);
+  it("KV-cache use is the pool's booked share, and the kept share is its kept prompts", () => {
+    const s = parseMetrics(tensorfold());
+    // (714752 + 512000) ÷ (2 × 1050624) = 0.5838…
+    expect(s["vllm:kv_cache_usage_perc"]).toBeCloseTo(0.5838, 3);
+    // (159744 + 325632) ÷ (2 × 1050624) = 0.2310…
+    expect(s["kv_kept_ratio"]).toBeCloseTo(0.231, 3);
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.kvCachePercent).toBe(58.4);
+    expect(f.kvKeptPercent).toBe(23.1);
+    // Each per-stream line is one request's own window fill, so it is not the pool.
+    expect(s["vllm:kv_cache_usage_perc"]).not.toBe(0.382196);
+  });
+
+  it("a part's live rows missing leaves both KV figures absent, not a partial sum", () => {
+    const s = parseMetrics(tensorfold({
+      "tensorfold:kv_shard_part_live_rows": ['{part="0"} 714752'],
+    }));
+    expect(s["vllm:kv_cache_usage_perc"]).toBeUndefined();
+    expect(s["kv_kept_ratio"]).toBeUndefined();
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.kvCachePercent).toBeNull();
+    expect(f.kvKeptPercent).toBeNull();
+  });
+
+  it("no kv_shard_part_rows, or a part_rows of 0, gives no KV figures", () => {
+    const missing = parseMetrics(tensorfold({ "tensorfold:kv_shard_part_rows": [] }));
+    expect(missing["vllm:kv_cache_usage_perc"]).toBeUndefined();
+    expect(missing["kv_kept_ratio"]).toBeUndefined();
+    const withoutRows = figuresFrom("ok", null, reading(T0, missing));
+    expect(withoutRows.kvCachePercent).toBeNull();
+    expect(withoutRows.kvKeptPercent).toBeNull();
+    const zero = parseMetrics(tensorfold({ "tensorfold:kv_shard_part_rows": "0" }));
+    expect(zero["vllm:kv_cache_usage_perc"]).toBeUndefined();
+    expect(zero["kv_kept_ratio"]).toBeUndefined();
+    const zeroRows = figuresFrom("ok", null, reading(T0, zero));
+    expect(zeroRows.kvCachePercent).toBeNull();
+    expect(zeroRows.kvKeptPercent).toBeNull();
+  });
+
+  it("no kv_shard lines at all gives no KV figures, rather than the per-stream maximum", () => {
+    const s = parseMetrics(tensorfold({
+      "tensorfold:kv_shard_parts": [],
+      "tensorfold:kv_shard_part_rows": [],
+      "tensorfold:kv_shard_part_free_rows": [],
+      "tensorfold:kv_shard_part_live_rows": [],
+      "tensorfold:kv_shard_part_twin_rows": [],
+      "tensorfold:kv_shard_part_hold_rows": [],
+      "tensorfold:kv_shard_part_kept_rows": [],
+    }));
+    expect(s["vllm:kv_cache_usage_perc"]).toBeUndefined();
+    expect(s["kv_kept_ratio"]).toBeUndefined();
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.kvCachePercent).toBeNull();
+    expect(f.kvKeptPercent).toBeNull();
+    expect(f.running).toBe(2); // the rest of the scrape still reads
+  });
+
+  it("a part's hold rows and twin rows count toward the booked share", () => {
+    const base = figuresFrom("ok", null, reading(T0, parseMetrics(tensorfold())));
+    const held = figuresFrom("ok", null, reading(T0, parseMetrics(tensorfold({
+      "tensorfold:kv_shard_part_hold_rows": ['{part="0"} 10506', '{part="1"} 0'],
+    }))));
+    // 10506 ÷ 2101248 is 0.5 points of the pool.
+    expect(held.kvCachePercent).toBe(58.9);
+    expect(held.kvCachePercent! - base.kvCachePercent!).toBeCloseTo(0.5, 5);
+    const twinned = figuresFrom("ok", null, reading(T0, parseMetrics(tensorfold({
+      "tensorfold:kv_shard_part_twin_rows": ['{part="0"} 0', '{part="1"} 10506'],
+    }))));
+    expect(twinned.kvCachePercent).toBe(58.9);
+  });
+
+  it("a vLLM scrape gives no kept share", () => {
+    const s = parseMetrics('vllm:kv_cache_usage_perc{engine="0"} 0.5');
+    expect(s["vllm:kv_cache_usage_perc"]).toBe(0.5);
+    expect(s["kv_kept_ratio"]).toBeUndefined();
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.kvCachePercent).toBe(50);
+    expect(f.kvKeptPercent).toBeNull();
   });
 
   it("generated tokens are the finished total plus the running gauge", () => {
@@ -939,6 +1032,53 @@ describe("TensorFold", () => {
     const s = parseMetrics('vllm:kv_cache_usage_perc{engine="0"} 0.5\nvllm:kv_cache_usage_perc{engine="1"} 0.7');
     expect(s["vllm:kv_cache_usage_perc"]).toBeUndefined();
   });
+
+  // The kept prompt states the engine had to evict for room, under a tracker-own key.
+  it("the evicted count is the engine's prompt_cache_evicted counter", () => {
+    const s = parseMetrics(tensorfold());
+    expect(s["kept_evicted_total"]).toBe(133);
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.keptEvicted).toBe(133);
+    // The rest of the scrape still reads.
+    expect(f.kvKeptPercent).toBe(23.1);
+  });
+
+  it("a measured 0 evictions is 0, not absent", () => {
+    const s = parseMetrics(tensorfold({ "tensorfold:prompt_cache_evicted": "0" }));
+    expect(s["kept_evicted_total"]).toBe(0);
+    expect(figuresFrom("ok", null, reading(T0, s)).keptEvicted).toBe(0);
+  });
+
+  it("no evicted counter gives no evicted figure", () => {
+    const s = parseMetrics(tensorfold({ "tensorfold:prompt_cache_evicted": [] }));
+    expect(s["kept_evicted_total"]).toBeUndefined();
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.keptEvicted).toBeNull();
+    expect(f.kvKeptPercent).toBe(23.1);
+  });
+
+  it("an evicted counter on two lines is left out", () => {
+    const body = tensorfold() + "\ntensorfold:prompt_cache_evicted 140";
+    const s = parseMetrics(body);
+    expect(s["kept_evicted_total"]).toBeUndefined();
+    expect(figuresFrom("ok", null, reading(T0, s)).keptEvicted).toBeNull();
+  });
+
+  it("a vLLM scrape gives no evicted figure", () => {
+    const s = parseMetrics('vllm:kv_cache_usage_perc{engine="0"} 0.5');
+    expect(s["kept_evicted_total"]).toBeUndefined();
+    const f = figuresFrom("ok", null, reading(T0, s));
+    expect(f.keptEvicted).toBeNull();
+    expect(f.kvCachePercent).toBe(50);
+  });
+
+  it("no evicted figure when the status is not ok", () => {
+    const s = parseMetrics(tensorfold());
+    expect(s["kept_evicted_total"]).toBe(133);
+    const f = figuresFrom("unreachable", null, reading(T0, s));
+    expect(f.keptEvicted).toBeNull();
+    expect(f.readAt).toBe(new Date(T0).toISOString());
+  });
 });
 
 describe("a 200 with no figures the tracker reads", () => {
@@ -968,6 +1108,101 @@ describe("a 200 with no figures the tracker reads", () => {
     await p.poller.scrape();
     expect(p.poller.figures().status).toBe("ok");
     expect(p.poller.figures().running).toBe(2);
-    expect(p.poller.figures().kvCachePercent).toBe(4.5);
+    // The shard pool's booked share, not the fullest stream's 0.382196.
+    expect(p.poller.figures().kvCachePercent).toBe(58.4);
+    expect(p.poller.figures().kvKeptPercent).toBe(23.1);
+  });
+});
+
+// The MTP draft counters move only when a request finishes, so a window in which none did
+// carries no drafts and no window ratio. The poller holds the last ratio, as it holds the last
+// prefill speed, and clears it when the engine restarts.
+describe("MTP acceptance held across windows without drafts", () => {
+  function mtpBody(gen: number, draft: number, accepted: number): string {
+    return [
+      `vllm:generation_tokens_total{engine="0"} ${gen}`,
+      `vllm:spec_decode_num_draft_tokens_total{engine="0"} ${draft}`,
+      `vllm:spec_decode_num_accepted_tokens_total{engine="0"} ${accepted}`,
+    ].join("\n");
+  }
+
+  // Two readings that finish a request: 70 accepted of 100 drafted.
+  async function twoReadingsWithDrafts(p: ReturnType<typeof makePoller>): Promise<void> {
+    p.body(mtpBody(1000, 1000, 700));
+    await p.poller.scrape();
+    p.advance(10_000);
+    p.body(mtpBody(1400, 1100, 770));
+    await p.poller.scrape();
+  }
+
+  it("holds the last ratio through a window in which no request finished", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    // The draft counters stay flat while a request runs; only generation tokens move.
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+  });
+
+  it("clears the held ratio when a counter went down (engine restart)", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    p.advance(10_000);
+    p.body(mtpBody(2000, 50, 40));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    // Nothing is held any more: a later window without drafts stays null.
+    p.advance(10_000);
+    p.body(mtpBody(2400, 50, 40));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+  });
+
+  it("a first reading has nothing held", async () => {
+    const p = makePoller();
+    p.body(mtpBody(1000, 1000, 700));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    // The counters were read: the since-start figure is there.
+    expect(p.poller.figures().mtpAcceptanceSinceStartPercent).toBe(70);
+  });
+
+  it("a new window with drafts replaces the held ratio", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    p.advance(10_000);
+    p.body(mtpBody(1800, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    // Another request finishes: 100 accepted of 200 drafted is 50%.
+    p.advance(10_000);
+    p.body(mtpBody(2200, 1300, 870));
+    await p.poller.scrape();
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(50);
+  });
+
+  it("keeps the held ratio across an unreachable scrape", async () => {
+    const p = makePoller();
+    await twoReadingsWithDrafts(p);
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
+    p.advance(10_000);
+    p.status(500);
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("unreachable");
+    expect(p.poller.figures().mtpAcceptancePercent).toBeNull();
+    p.advance(10_000);
+    p.status(200);
+    p.body(mtpBody(2200, 1100, 770));
+    await p.poller.scrape();
+    expect(p.poller.figures().status).toBe("ok");
+    expect(p.poller.figures().mtpAcceptancePercent).toBe(70);
   });
 });

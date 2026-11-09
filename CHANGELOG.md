@@ -9,6 +9,32 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
+
+### Added
+
+- **The KV-cache cell says how many kept prompts the engine evicted.** When running requests
+  need room, TensorFold throws out saved prompt states, and later turns rebuild those prompts
+  from scratch. The panel showed nothing of this: preemptions count something else (a
+  request giving up its lane). The cell now shows the engine's eviction counter since it
+  started. vLLM has no such counter, so nothing shows there.
+
+### Fixed
+
+- **KV-cache use on TensorFold is the pool, not one request.** The figure read 38% while the
+  pool was nearly full and saved prompts were being thrown out. Cause: the engine's
+  `kv_cache_usage_perc` lines are each one request's own window, and the tracker showed the
+  fullest. Fix: the figure reads reserved / kept, from the engine's per-part rows: the pool's
+  share running requests reserved, then the share kept prompt states hold, with a ? that
+  explains them. The engine reserves a request's whole reply budget up front, so this runs
+  above vLLM's figure. History hours recorded on TensorFold before this fix still hold the
+  fullest request.
+- **MTP acceptance no longer goes blank during a long run.** On TensorFold the "now" figure
+  showed `—` for as long as no request finished. Cause: the engine counts drafts only when a
+  request finishes, so a window without one has no drafts to divide by. Fix: the panel keeps
+  the ratio of the last requests to finish, as prefill speed already does, and clears it
+  when a counter goes down.
+
 ## #93 — 2026-11-08 — feat: vendor server v0.17.0 and show the model that answered
 
 ### Added

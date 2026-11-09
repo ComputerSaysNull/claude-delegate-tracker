@@ -32,7 +32,9 @@ export function visibleBounds(el: HTMLElement): { left: number; right: number } 
 // A hover card over a chart. `at` is the anchor as a share (0 to 1) of the width of the
 // positioned container it sits in. It measures itself before the browser paints and stays
 // where it can be seen; its width does not depend on where it lands (`w-max`), so one measure holds.
-export function PlacedCard({ at, children }: { at: number; children: ReactNode }) {
+// `below` opens it under the anchor instead, for an anchor near the top of the page, and lifts
+// it over the page underneath.
+export function PlacedCard({ at, children, below = false }: { at: number; children: ReactNode; below?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState<number | null>(null);
   useLayoutEffect(() => {
@@ -45,7 +47,7 @@ export function PlacedCard({ at, children }: { at: number; children: ReactNode }
   return (
     <div
       ref={ref}
-      className="absolute bottom-full left-0 mb-2 w-max"
+      className={`absolute left-0 w-max ${below ? "top-full z-30 mt-2" : "bottom-full mb-2"}`}
       style={left === null ? { visibility: "hidden" } : { left: `${left}px` }}
     >
       {children}
