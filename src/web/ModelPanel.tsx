@@ -9,6 +9,12 @@ import { PlacedCard } from "./ChartTooltip.tsx";
 
 const SLATE = "text-muted";
 const AMBER = "text-warn";
+// A short stroke before a word in a label keys it to its line in the chart beside it.
+const STROKE_A = "mr-1 inline-block h-0.5 w-2.5 rounded-full bg-chart-pair-a align-middle";
+const STROKE_B = "mr-1 inline-block h-0.5 w-2.5 rounded-full bg-chart-pair-b align-middle";
+// A label is plain text, not flex items: a word could break in the middle as a flex item.
+// Each stroke-and-word unit stays on one line, so a narrow column wraps only between units.
+const UNIT = "whitespace-nowrap";
 
 function num(n: number | null): string {
   return n === null ? "—" : n.toLocaleString();
@@ -84,28 +90,35 @@ export function ModelPanel({
   );
 }
 
-// One figure: its label, then on one line the number with its unit or caption, and its chart
-// beside it when it has a history, so the card stays short. `minChars` keeps a number that
-// changes every second at a fixed width, so its chart does not move as the digits change.
-// `note` is a caption too long for the number's row, which cannot shrink: it gets its own
-// line under the number, where it can wrap. `help` is a mark beside the label opening a card.
-function Figure({ label, value, unit, chart, minChars, note, help }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number; note?: ReactNode; help?: ReactNode }) {
+// One charted figure: its label (with any legend strokes or help mark), the number with its
+// unit, and under them its chart across the column. `minChars` keeps a number that changes
+// every second at a fixed width, so its chart does not move as the digits change. `help` is a
+// mark beside the label opening a card.
+function Figure({ label, value, valueClass, unit, chart, minChars, help }: { label: ReactNode; value: string; valueClass?: string; unit?: ReactNode; chart?: ReactNode; minChars?: number; help?: ReactNode }) {
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
-      <span className="inline-flex items-center gap-1 text-[13px] text-muted">{label}{help}</span>
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex shrink-0 items-baseline gap-1.5">
-          <span
-            className="font-mono tabular-nums text-2xl font-medium"
-            style={minChars === undefined ? undefined : { minWidth: `${minChars}ch` }}
-          >
-            {value}
-          </span>
-          {unit}
-        </div>
-        {chart !== undefined && <div className="min-w-0 flex-1">{chart}</div>}
+      <span className="block text-[13px] text-muted">{label}{help === undefined ? null : <span className="ml-1 align-middle">{help}</span>}</span>
+      <div className="flex min-w-0 items-baseline gap-1.5">
+        <span
+          className={`font-mono tabular-nums text-2xl font-medium ${valueClass ?? ""}`}
+          style={minChars === undefined ? undefined : { minWidth: `${minChars}ch` }}
+        >
+          {value}
+        </span>
+        {unit}
       </div>
-      {note !== undefined && note !== null && <span className="text-xs text-muted">{note}</span>}
+      <div className="min-w-0 h-8">{chart}</div>
+    </li>
+  );
+}
+
+// A figure without a chart: its label above its value, in a row of its own, so the card does
+// not grow. `title` explains a pair of numbers too short to say so themselves.
+function CompactFigure({ label, value, title }: { label: string; value: ReactNode; title?: string }) {
+  return (
+    <li className="flex min-w-0 flex-col gap-0.5" title={title}>
+      <span className="truncate text-[13px] text-muted">{label}</span>
+      <span className="whitespace-nowrap font-mono tabular-nums text-lg font-medium">{value}</span>
     </li>
   );
 }
@@ -195,45 +208,24 @@ function ModelFiguresBody({
 }) {
   const span = windowSeconds ?? 3600;
   const unitClass = "text-[13px] text-muted";
-  // The compact row's label and value, one line per figure without a chart.
-  const compactLabelClass = "truncate text-[13px] text-muted";
-  const compactValueClass = "whitespace-nowrap font-mono tabular-nums font-medium";
   // The live decode event, when one has arrived and the model is ok, replaces the figure
   // from the last full reading; the sparkline stays on the full cadence. The same event also
   // carries the speed of the last finished prompt, which the panel keeps until the next one.
   const live = decode !== null && decode !== undefined && model.status === "ok";
   const decodeValue = live ? decode.tokensPerSecond : model.decodeTokensPerSecond;
   const prefillValue = live ? decode.prefillTokensPerSecond : model.prefillTokensPerSecond;
-  const chart = (key: string, label: string, fixed?: [number, number]) =>
+  const chart = (keys: string[], label: string, colors?: string[], fixed?: [number, number]) =>
     history === undefined ? undefined : (
-      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} span={span} />
+      <Sparkline data={toUplotData(history, keys)} colors={colors} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} span={span} />
     );
-  // The KV-cache lines: the kept share is labelled under the number, with the free room and
-  // today's rebuilt prompts; only the rebuilt line for vLLM, which has no kept share. The same
-  // figures fill the help card, which appears only when there is a kept share.
+  // The KV-cache figures: the free room and today's rebuilt prompts fill the help card, which
+  // appears only when there is a kept share.
   const free = model.kvKeptPercent !== null && model.kvCachePercent !== null
     ? Math.max(0, Math.round((100 - model.kvCachePercent - model.kvKeptPercent) * 10) / 10)
     : null;
   const freePercent = free === null
     ? "—"
     : `${free.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
-  const rebuiltLine = typeof rebuiltToday === "number" ? (
-    <span className="block">
-      <span className="font-mono tabular-nums">{rebuiltToday.toLocaleString()}</span>{" "}
-      {rebuiltToday === 1 ? "prompt" : "prompts"} rebuilt today
-    </span>
-  ) : null;
-  let kvNote: ReactNode = null;
-  if (model.kvKeptPercent !== null) {
-    kvNote = (
-      <>
-        <span className="block">reserved / kept prompts · <span className="font-mono tabular-nums">{freePercent}</span> free</span>
-        {rebuiltLine}
-      </>
-    );
-  } else if (rebuiltLine !== null) {
-    kvNote = rebuiltLine;
-  }
   const kvRows: { label: string; value: string }[] = [];
   if (model.kvCachePercent !== null) kvRows.push({ label: "Reserved by running requests", value: percent(model.kvCachePercent) });
   if (model.kvKeptPercent !== null) kvRows.push({ label: "Kept prompts", value: percent(model.kvKeptPercent) });
@@ -252,60 +244,76 @@ function ModelFiguresBody({
       }
     />
   ) : undefined;
+  // The pool warns as it fills: amber from 90% booked and kept together, red from 97%.
+  const kvTogether = model.kvCachePercent !== null && model.kvKeptPercent !== null
+    ? model.kvCachePercent + model.kvKeptPercent
+    : null;
+  const kvValueClass = kvTogether === null
+    ? undefined
+    : kvTogether >= 97 ? "text-state-failed" : kvTogether >= 90 ? "text-state-queued" : undefined;
   return (
     <>
-      <ul aria-label="Model server figures" className="mt-2 grid flex-1 grid-cols-1 content-evenly gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
+      <ul aria-label="Model server figures" className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 @md:grid-cols-3">
         <Figure
           label="Decode speed"
           value={rate(decodeValue)}
           minChars={4}
           unit={<span className={unitClass}>tok/s</span>}
-          chart={chart("decodeTokensPerSecond", "Decode speed")}
+          chart={chart(["decodeTokensPerSecond"], "Decode speed")}
         />
         <Figure
-          label="Requests"
-          value={num(model.running)}
-          unit={
+          label={
             <>
-              <span className={unitClass}>running</span>
-              <span className={unitClass}>
-                <span className="font-mono tabular-nums">{num(model.waiting)}</span> waiting
-              </span>
+              {"Requests · "}
+              <span className={UNIT}><span aria-hidden="true" className={STROKE_A} />running /</span>{" "}
+              <span className={UNIT}><span aria-hidden="true" className={STROKE_B} />waiting</span>
             </>
           }
-          chart={chart("running", "Requests")}
+          value={`${num(model.running)} / ${num(model.waiting)}`}
+          chart={chart(["running", "waiting"], "Requests", ["--chart-pair-a", "--chart-pair-b"])}
         />
-        <Figure
-          label="KV-cache use"
-          value={model.kvKeptPercent === null
-            ? percent(model.kvCachePercent)
-            : `${percent(model.kvCachePercent)} / ${percent(model.kvKeptPercent)}`}
-          unit={null}
-          note={kvNote}
-          help={kvHelp}
-          chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
-        />
+        {model.kvKeptPercent === null ? (
+          <Figure
+            label="KV-cache use"
+            value={percent(model.kvCachePercent)}
+            chart={chart(["kvCachePercent"], "KV-cache use", undefined, [0, 100])}
+          />
+        ) : (
+          <Figure
+            label={
+              <>
+                {"KV-cache · "}
+                <span className={UNIT}><span aria-hidden="true" className={STROKE_A} />reserved /</span>{" "}
+                {/* " prompts" does not fit the column of a mid-width card; the help card says it. */}
+                <span className={UNIT}><span aria-hidden="true" className={STROKE_B} />kept<span className="@md:hidden @3xl:inline"> prompts</span></span>
+              </>
+            }
+            value={`${percent(model.kvCachePercent)} / ${percent(model.kvKeptPercent)}`}
+            valueClass={kvValueClass}
+            help={kvHelp}
+            chart={chart(["kvCachePercent", "kvKeptPercent"], "KV-cache reserved / kept prompts", ["--chart-pair-a", "--chart-pair-b"], [0, 100])}
+          />
+        )}
       </ul>
-      <ul aria-label="Model server figures without a chart" className="mt-2.5 grid grid-cols-1 gap-x-6 gap-y-1 border-t border-line pt-2 @md:grid-cols-3">
-        <li className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className={compactLabelClass}>Prefill · last prompt</span>
-          <span className={compactValueClass}>
-            {rate(prefillValue)} <span className="font-sans text-xs font-normal text-muted">tok/s</span>
-          </span>
-        </li>
-        <li className="flex min-w-0 items-baseline justify-between gap-2">
-          <span className={compactLabelClass}>Prefix hits · since start</span>
-          <span className={compactValueClass}>{percent(model.prefixHitPercent)}</span>
-        </li>
-        <li
-          className="flex min-w-0 items-baseline justify-between gap-2"
+      <ul aria-label="Model server figures without a chart" className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-t border-line pt-2.5 @2xl:grid-cols-4">
+        <CompactFigure
+          label="Prefill · last prompt"
+          value={
+            <>
+              {rate(prefillValue)} <span className="font-sans text-xs font-normal text-muted">tok/s</span>
+            </>
+          }
+        />
+        <CompactFigure label="Prefix hits · since start" value={percent(model.prefixHitPercent)} />
+        <CompactFigure
+          label="MTP · last / all"
+          value={`${percent(model.mtpAcceptancePercent)} / ${percent(model.mtpAcceptanceSinceStartPercent)}`}
           title="MTP acceptance: the last requests to finish / since the engine started"
-        >
-          <span className={compactLabelClass}>MTP · last / all</span>
-          <span className={compactValueClass}>
-            {`${percent(model.mtpAcceptancePercent)} / ${percent(model.mtpAcceptanceSinceStartPercent)}`}
-          </span>
-        </li>
+        />
+        <CompactFigure
+          label="Prompts rebuilt · today"
+          value={typeof rebuiltToday === "number" ? rebuiltToday.toLocaleString() : "—"}
+        />
       </ul>
       {model.preemptions !== null && (
         <p className="mt-2 text-xs text-muted">

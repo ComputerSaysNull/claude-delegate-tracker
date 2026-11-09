@@ -30,6 +30,8 @@
   --chart-asked: #4a7fd1; /* caller involvement: validated with the two below, light and dark */
   --chart-messaged: #c96f35;
   --chart-both: #2f9e8f;
+  --chart-pair-a: #4a7fd1; /* the two lines of a panel chart; same values as the validated asked/messaged pair */
+  --chart-pair-b: #c96f35;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,6 +62,8 @@
     --chart-asked: #5288d8;
     --chart-messaged: #d27a40;
     --chart-both: #3aa898;
+    --chart-pair-a: #5288d8;
+    --chart-pair-b: #d27a40;
   }
 }
 
@@ -90,6 +94,8 @@
   --color-chart-asked: var(--chart-asked);
   --color-chart-messaged: var(--chart-messaged);
   --color-chart-both: var(--chart-both);
+  --color-chart-pair-a: var(--chart-pair-a);
+  --color-chart-pair-b: var(--chart-pair-b);
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
 }

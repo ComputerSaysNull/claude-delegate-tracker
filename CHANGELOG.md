@@ -20,17 +20,20 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   least 4096 tokens, unless it trimmed tool results on purpose. A new "Prompts rebuilt" card
   shows those turns per day. The run records gained the count, so they are rebuilt once from
   the streams.
-- **The KV-cache cell says how close the pool is to forcing prompts out.** Beside reserved
-  and kept it shows the free room, the space a new request can book before the engine evicts
-  saved prompts, and on the next line how many prompts were rebuilt today.
+- **The model server block warns as the KV pool fills, and counts today's rebuilt prompts.**
+  Reserved and kept turn amber when together they pass 90% of the pool and red from 97%:
+  near that point a new request may only find room by evicting saved prompts. Today's
+  rebuilt prompts sit in the row under the charts, and the help card adds the free room.
 
 ### Changed
 
-- **The model server block is shorter.** Its new KV lines made it taller, and three of its
-  six figures had no chart. The prefill chart's dots sat on top of each other, so it showed
-  little. Decode speed, requests and KV-cache use keep their charts in the top row. Prefill,
-  prefix hits and MTP acceptance (as last / all) now share one compact line under them, and
-  the prefill chart is gone.
+- **The model server block shows pairs as one number with one two-line chart.** Its KV lines
+  had grown under a small number, three of its six figures had no chart, and the prefill
+  chart's dots sat on top of each other. Now decode speed, requests as running / waiting, and
+  KV-cache as reserved / kept each show one number with its chart across the column under
+  it. A pair draws two lines, keyed by a coloured stroke before each word of the label.
+  Under a divider, prefill, prefix hits, MTP acceptance (last / all) and today's rebuilt
+  prompts each show their label above the number. The prefill chart is gone.
 
 ### Fixed
 

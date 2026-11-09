@@ -71,18 +71,25 @@ describe("pointFromModel", () => {
     ...overrides,
   });
 
-  it("records the four figures at the read time when ok, and no prefill speed", () => {
-    const p = pointFromModel(ok({ running: 2, waiting: 1, kvCachePercent: 7.5, decodeTokensPerSecond: 80, prefillTokensPerSecond: 30 }));
+  it("records the five figures at the read time when ok, and no prefill speed", () => {
+    const p = pointFromModel(ok({ running: 2, waiting: 1, kvCachePercent: 7.5, kvKeptPercent: 3.2, decodeTokensPerSecond: 80, prefillTokensPerSecond: 30 }));
     expect(p).not.toBeNull();
     expect(p!.atMs).toBe(Date.parse("2024-01-15T13:45:00.000Z"));
     expect(p!.values).toEqual({
       running: 2,
       waiting: 1,
       kvCachePercent: 7.5,
+      kvKeptPercent: 3.2,
       decodeTokensPerSecond: 80,
     });
     // The prefill speed has no chart, so the model's point does not carry it.
     expect("prefillTokensPerSecond" in p!.values).toBe(false);
+  });
+
+  it("pointFromModel records kvKeptPercent", () => {
+    const p = pointFromModel(ok({ kvCachePercent: 58.4, kvKeptPercent: 23.1 }));
+    expect(p).not.toBeNull();
+    expect(p!.values["kvKeptPercent"]).toBe(23.1);
   });
 
   it("returns null for an ok model with no read time", () => {
@@ -99,6 +106,7 @@ describe("pointFromModel", () => {
       running: null,
       waiting: null,
       kvCachePercent: null,
+      kvKeptPercent: null,
       decodeTokensPerSecond: null,
     });
   });
@@ -156,16 +164,20 @@ describe("pointFromNode", () => {
 });
 
 describe("toUplotData", () => {
-  it("converts ms to seconds and keeps nulls", () => {
+  it("toUplotData returns the x values then one array per key, in order", () => {
     const s: Series = {
       at: [1000, 2000, 3000],
-      values: { running: [1, null, 3] },
+      values: { running: [1, null, 3], waiting: [4, 5, 6] },
     };
-    expect(toUplotData(s, "running")).toEqual([[1, 2, 3], [1, null, 3]]);
+    expect(toUplotData(s, ["running", "waiting"])).toEqual([
+      [1, 2, 3],
+      [1, null, 3],
+      [4, 5, 6],
+    ]);
   });
 
   it("returns an empty y array for an unknown key", () => {
     const s: Series = { at: [1000], values: { running: [1] } };
-    expect(toUplotData(s, "missing")).toEqual([[1], []]);
+    expect(toUplotData(s, ["missing"])).toEqual([[1], []]);
   });
 });

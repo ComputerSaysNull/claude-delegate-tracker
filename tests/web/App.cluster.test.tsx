@@ -3,7 +3,7 @@
 // that opens the figures in full. The model panel also counts the prompts rebuilt today, which
 // App reads from the runs API since the viewer's local midnight.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const NOW = 10_000_000;
 const SERIES = { at: [NOW - 3_000_000, NOW - 600_000, NOW], values: { decodeTokensPerSecond: [10, 20, 30], cpuPercent: [1, 2, 3] } };
@@ -30,7 +30,7 @@ vi.mock("../../src/web/useClusterHistory.ts", () => ({
 // Record what each chart is handed, instead of drawing it.
 const drawn: { label: string; points: number }[] = [];
 vi.mock("../../src/web/Sparkline.tsx", () => ({
-  Sparkline: ({ data, label }: { data: [number[], unknown[]]; label: string }) => {
+  Sparkline: ({ data, label }: { data: [number[], ...unknown[][]]; label: string }) => {
     drawn.push({ label, points: data[0].length });
     return <div role="img" aria-label={label} />;
   },
@@ -101,6 +101,15 @@ describe("the cluster band", () => {
 
   const lastPoints = (label: RegExp) => drawn.filter((d) => label.test(d.label)).at(-1)!.points;
   const figures = () => screen.getByRole("list", { name: "Model server figures" });
+  const compactFigures = () => screen.getByRole("list", { name: "Model server figures without a chart" });
+  // The value under a compact figure's label: the item's second child.
+  const compactValue = (label: string) => {
+    const item = within(compactFigures())
+      .getAllByRole("listitem")
+      .find((c) => (c.firstElementChild?.textContent ?? "").includes(label));
+    if (item === undefined) throw new Error(`no compact item labelled ${label}`);
+    return item.children[1] as HTMLElement;
+  };
 
   it("shows the live decode speed from the update stream, not the slower poll's", () => {
     render(<App />);
@@ -157,8 +166,7 @@ describe("the cluster band", () => {
   it("the model panel shows today's rebuilt prompts from the runs started since local midnight", async () => {
     stubRuns([run("a", 2), run("b", 1)]);
     render(<App />);
-    const list = figures();
-    await waitFor(() => expect(list.textContent).toContain("3 prompts rebuilt today"));
+    await waitFor(() => expect(compactValue("Prompts rebuilt · today").textContent).toBe("3"));
   });
 
   it("App asks for the runs since the viewer's local midnight", async () => {
@@ -182,21 +190,21 @@ describe("the cluster band", () => {
     ]);
   });
 
-  it("runs that report no cached tokens give no rebuilt line", async () => {
+  it("runs that report no cached tokens show — for today's rebuilt prompts", async () => {
     const fetchMock = stubRuns([run("a", null), run("b", null)]);
     render(<App />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     // Let the answer land before asking what the panel shows.
     await act(async () => {});
-    expect(figures().textContent).not.toContain("rebuilt today");
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe("—");
   });
 
   // Before the first delegation of the day finishes there are no runs: that is a measured 0,
-  // not an unknown, so the line shows 0 rather than disappearing at midnight.
-  it("no runs yet today shows 0 prompts rebuilt today", async () => {
+  // not an unknown, so the figure shows 0 rather than disappearing at midnight.
+  it("no runs yet today shows 0 for today's rebuilt prompts", async () => {
     const fetchMock = stubRuns([]);
     render(<App />);
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    await waitFor(() => expect(figures().textContent).toContain("0 prompts rebuilt today"));
+    await waitFor(() => expect(compactValue("Prompts rebuilt · today").textContent).toBe("0"));
   });
 });
