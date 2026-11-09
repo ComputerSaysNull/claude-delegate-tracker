@@ -9,12 +9,11 @@ import type { Series } from "../../src/server/history.ts";
 // The chart itself is Sparkline's to test; here only the range each chart is given matters.
 vi.mock("../../src/web/Sparkline.tsx", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/web/Sparkline.tsx")>()),
-  Sparkline: ({ label, fixed, dots, span }: { label: string; fixed?: [number, number]; dots?: boolean; span?: number }) => (
+  Sparkline: ({ label, fixed, span }: { label: string; fixed?: [number, number]; span?: number }) => (
     <div
       role="img"
       aria-label={label}
       data-fixed={fixed === undefined ? "" : fixed.join(",")}
-      data-dots={dots === undefined ? "" : String(dots)}
       data-span={span === undefined ? "" : String(span)}
     />
   ),
@@ -83,6 +82,33 @@ function freeText(reserved: number, kept: number): string {
   return (100 - reserved - kept).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
+// A speed as the panel writes it: one decimal, so a whole number is as wide as any other.
+function speed(n: number): string {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// The compact row that follows the charted figures: one line per figure, a label and a value.
+const COMPACT = "Model server figures without a chart";
+
+function compactList(): HTMLElement {
+  return screen.getByRole("list", { name: COMPACT });
+}
+
+function compactItem(label: string): HTMLElement {
+  const found = within(compactList())
+    .getAllByRole("listitem")
+    .find((c) => (c.firstElementChild?.textContent ?? "").includes(label));
+  if (found === undefined) throw new Error(`no compact item labelled ${label}`);
+  return found;
+}
+
+// The span holding a compact item's value: the item's second child, after its label.
+function compactValue(label: string): HTMLElement {
+  const value = compactItem(label).children[1];
+  if (value === undefined) throw new Error(`no value in ${label}`);
+  return value as HTMLElement;
+}
+
 // React derives mouseenter/mouseleave from mouseover/mouseout, and a plain mouseenter does not
 // bubble, so a handler on a wrapper above the button only sees the bubbling pair. Fire both, so
 // the test does not depend on where the handler sits.
@@ -97,6 +123,12 @@ function hoverOut(el: HTMLElement) {
 }
 
 const HELP = "About KV-cache use";
+
+// The history the server keeps: only the figures the charts draw.
+const SERIES: Series = {
+  at: [0, 1000],
+  values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0] },
+};
 
 describe("ModelPanel", () => {
   afterEach(cleanup);
@@ -116,7 +148,107 @@ describe("ModelPanel", () => {
   it("carries a percent sign on KV-cache and prefix figures", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 7.4, prefixHitPercent: 92 })} />);
     expect(screen.getByText(`${(7.4).toLocaleString()}%`)).toBeTruthy();
-    expect(screen.getByText(`${(92).toLocaleString()}%`)).toBeTruthy();
+    expect(compactValue("Prefix hits · since start").textContent).toBe(`${(92).toLocaleString()}%`);
+  });
+
+  // The card stops growing at six figures: the three that have a chart stay in the grid, the
+  // other three drop to one compact line each in a row of their own under it.
+  it("puts only the charted figures in the main grid, in order: Decode speed, Requests, KV-cache use", () => {
+    render(
+      <ModelPanel
+        model={figures({ decodeTokensPerSecond: 41.2, running: 2, waiting: 0, kvCachePercent: 58.4, kvKeptPercent: 23.1, prefixHitPercent: 92, mtpAcceptancePercent: 52, prefillTokensPerSecond: 1200 })}
+        history={SERIES}
+        windowSeconds={3600}
+        rebuiltToday={3}
+      />,
+    );
+    const grid = screen.getByRole("list", { name: "Model server figures" });
+    const cells = within(grid).getAllByRole("listitem");
+    expect(cells).toHaveLength(3);
+    const labels = cells.map((c) => c.firstElementChild!.textContent ?? "");
+    expect(labels[0]).toContain("Decode speed");
+    expect(labels[1]).toContain("Requests");
+    expect(labels[2]).toContain("KV-cache use");
+    // Each is a charted figure still: its number large, with its chart beside it.
+    for (const c of cells) {
+      expect(c.querySelector(".text-2xl")).not.toBeNull();
+      expect(within(c).getByRole("img")).toBeTruthy();
+    }
+    // The KV figure keeps its help mark and its note lines.
+    expect(within(cells[2]).getByRole("button", { name: HELP })).toBeTruthy();
+    expect(cells[2].textContent).toContain("reserved / kept prompts");
+    expect(grid.textContent).not.toContain("Prefill");
+    expect(grid.textContent).not.toContain("Prefix");
+    expect(grid.textContent).not.toContain("MTP");
+  });
+
+  it("puts Prefill, Prefix hits and MTP in one compact row after the main grid, in that order", () => {
+    render(
+      <ModelPanel
+        model={figures({ prefillTokensPerSecond: 1200, prefixHitPercent: 92, mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })}
+      />,
+    );
+    const grid = screen.getByRole("list", { name: "Model server figures" });
+    const compact = compactList();
+    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the compact row comes after the main grid.
+    expect(grid.compareDocumentPosition(compact) & 4).toBe(4);
+    const labels = within(compact).getAllByRole("listitem").map((c) => c.firstElementChild!.textContent);
+    expect(labels).toEqual(["Prefill · last prompt", "Prefix hits · since start", "MTP · last / all"]);
+  });
+
+  it("each compact item is one line: its label and its value, not a large number", () => {
+    render(
+      <ModelPanel
+        model={figures({ prefillTokensPerSecond: 1200, prefixHitPercent: 92, mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })}
+      />,
+    );
+    const cases: [string, string][] = [
+      ["Prefill · last prompt", speed(1200)],
+      ["Prefix hits · since start", `${(92).toLocaleString()}%`],
+      ["MTP · last / all", `${(52).toLocaleString()}% / ${(67.2).toLocaleString()}%`],
+    ];
+    for (const [label, value] of cases) {
+      const item = compactItem(label);
+      // The item is its label and its value, side by side: nothing else, and nothing stacked.
+      expect(item.children).toHaveLength(2);
+      const labelSpan = item.children[0] as HTMLElement;
+      const valueSpan = item.children[1] as HTMLElement;
+      expect(labelSpan.textContent).toBe(label);
+      expect(valueSpan.textContent).toContain(value);
+      expect(valueSpan.className).not.toMatch(/\btext-2xl\b/);
+      expect(item.className.split(/\s+/)).not.toContain("flex-col");
+    }
+  });
+
+  it("the compact MTP item shows last / since start, with a dash for a missing part", () => {
+    const { rerender } = render(
+      <ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })} />,
+    );
+    const both = `${(52).toLocaleString()}% / ${(67.2).toLocaleString()}%`;
+    expect(compactValue("MTP · last / all").textContent).toBe(both);
+    // The visible text is the label and then the two figures: no caption like the old one.
+    const text = compactItem("MTP · last / all").textContent!;
+    expect(text).toContain("MTP · last / all");
+    expect(text.indexOf(both)).toBeGreaterThan(text.indexOf("MTP · last / all"));
+    rerender(<ModelPanel model={figures({ mtpAcceptanceSinceStartPercent: 67.2 })} />);
+    expect(compactValue("MTP · last / all").textContent).toBe(`— / ${(67.2).toLocaleString()}%`);
+    rerender(<ModelPanel model={figures({ mtpAcceptancePercent: 52 })} />);
+    expect(compactValue("MTP · last / all").textContent).toBe(`${(52).toLocaleString()}% / —`);
+  });
+
+  it("the compact MTP item explains its two numbers in its title", () => {
+    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })} />);
+    const item = compactItem("MTP · last / all");
+    expect(item.getAttribute("title")).toBe("MTP acceptance: the last requests to finish / since the engine started");
+  });
+
+  // The prefill speed is a single event between gaps, not a series: it gets no chart.
+  it("Prefill has no chart", () => {
+    render(<ModelPanel model={figures({ prefillTokensPerSecond: 1200 })} history={SERIES} windowSeconds={3600} />);
+    expect(screen.queryByRole("img", { name: /Prefill/ })).toBeNull();
+    expect(within(compactItem("Prefill · last prompt")).queryByRole("img")).toBeNull();
+    const charts = screen.getAllByRole("img").map((c) => c.getAttribute("aria-label"));
+    expect(charts).toHaveLength(3);
   });
 
   // TensorFold gives both a reserved and a kept share; they sit in one number, reserved first.
@@ -289,8 +421,9 @@ describe("ModelPanel", () => {
   });
 
   // The number's row cannot shrink, so a caption inside it cannot wrap and runs over the next
-  // cells. The KV-cache lines and the MTP caption sit on their own line under the number instead.
-  it("puts the long KV-cache and MTP captions on their own line, outside the number's row", () => {
+  // cells. The KV-cache lines sit on their own line under the number instead, and the compact
+  // MTP item carries no caption at all: its explanation is its title.
+  it("puts the KV-cache caption on its own line, outside the number's row, and gives MTP no caption", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, mtpAcceptancePercent: 52 })} rebuiltToday={3} />);
     const kvCell = cell("KV-cache use");
     expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
@@ -299,9 +432,12 @@ describe("ModelPanel", () => {
     const kvRow = numberRow("KV-cache use");
     expect(kvRow.textContent).not.toContain("reserved");
     expect(kvRow.textContent).not.toContain("rebuilt");
-    const mtpCell = cell("MTP acceptance");
-    expect(mtpCell.textContent).toContain("last requests to finish");
-    expect(numberRow("MTP acceptance").textContent).not.toContain("last requests to finish");
+    const mtpItem = compactItem("MTP · last / all");
+    const mtpText = mtpItem.textContent!;
+    expect(mtpText).toContain("MTP · last / all");
+    expect(mtpText).toContain(`${(52).toLocaleString()}% / —`);
+    expect(mtpText.indexOf(`${(52).toLocaleString()}% / —`)).toBeGreaterThan(mtpText.indexOf("MTP · last / all"));
+    expect(mtpText).not.toContain("last requests to finish");
   });
 
   it("shows decode speed without a line naming its window", () => {
@@ -360,39 +496,23 @@ describe("ModelPanel", () => {
   });
 
   it("gives the KV-cache sparkline a fixed 0-100 y range, and the others none", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: {
-        running: [0, 0],
-        waiting: [0, 0],
-        kvCachePercent: [0, 0],
-        decodeTokensPerSecond: [0, 0],
-        prefillTokensPerSecond: [0, 0],
-      },
-    };
-    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
+    render(<ModelPanel model={figures()} history={SERIES} windowSeconds={3600} />);
     expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-fixed")).toBe("0,100");
     expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-fixed")).toBe("");
-    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-fixed")).toBe("");
     expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
   });
 
   // The chart sits beside its number rather than under it, so a figure takes one line.
   it("puts each chart on the same line as its number", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
-    };
     render(
       <ModelPanel
-        model={figures({ decodeTokensPerSecond: 80.5, prefillTokensPerSecond: 120.5, running: 3, kvCachePercent: 7.4 })}
-        history={history}
+        model={figures({ decodeTokensPerSecond: 80.5, running: 3, kvCachePercent: 7.4 })}
+        history={SERIES}
         windowSeconds={3600}
       />,
     );
     const cases: [RegExp, string][] = [
       [/^Decode speed over/, (80.5).toLocaleString()],
-      [/^Prefill speed over/, (120.5).toLocaleString()],
       [/^Requests over/, (3).toLocaleString()],
       [/^KV-cache use over/, `${(7.4).toLocaleString()}%`],
     ];
@@ -405,87 +525,28 @@ describe("ModelPanel", () => {
     }
   });
 
-  it("shows Prefill speed right after Decode speed, with its tok/s unit", () => {
-    render(<ModelPanel model={figures({ prefillTokensPerSecond: 120.5 })} />);
-    const prefillCell = cell("Prefill speed · last prompt");
-    expect(prefillCell.textContent).toContain((120.5).toLocaleString());
-    expect(prefillCell.textContent).toContain("tok/s");
-    const labels = screen.getAllByRole("listitem").map((c) => c.firstElementChild!.textContent);
-    expect(labels).toEqual([
-      "Decode speed", "Prefill speed · last prompt", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance",
-    ]);
-  });
-
-  it("shows MTP acceptance as a percent with its caption", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 47.5 })} />);
-    const mtpCell = cell("MTP acceptance");
-    expect(mtpCell.textContent).toContain(`${(47.5).toLocaleString()}%`);
-    expect(mtpCell.textContent).toContain("last requests to finish");
-    expect(mtpCell.textContent).not.toContain("now");
-  });
-
-  it("shows the MTP acceptance now figure then the since-start figure", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 47 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const nowPct = `${(52).toLocaleString()}%`;
-    const sincePct = `${(47).toLocaleString()}%`;
-    expect(text).toContain(nowPct);
-    expect(text).toContain("last requests to finish");
-    expect(text).toContain(sincePct);
-    expect(text).toContain("since start");
-    expect(text.indexOf(nowPct)).toBeLessThan(text.indexOf("last requests to finish"));
-    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf(sincePct));
-    expect(text.indexOf(sincePct)).toBeLessThan(text.indexOf("since start"));
-  });
-
-  it("shows a dash for the MTP now figure before the since-start figure when it is null", () => {
-    render(<ModelPanel model={figures({ mtpAcceptanceSinceStartPercent: 47 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const sincePct = `${(47).toLocaleString()}%`;
-    expect(text).toContain("—");
-    expect(text).toContain("last requests to finish");
-    expect(text).toContain(sincePct);
-    expect(text).toContain("since start");
-    expect(text.indexOf("—")).toBeLessThan(text.indexOf("last requests to finish"));
-  });
-
-  it("shows a dash for the MTP since-start figure after the now figure when it is null", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const nowPct = `${(52).toLocaleString()}%`;
-    expect(text).toContain(nowPct);
-    expect(text).toContain("—");
-    expect(text).toContain("since start");
-    expect(text).toContain("last requests to finish");
-    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf("—"));
-    expect(text.indexOf("—")).toBeLessThan(text.indexOf("since start"));
-  });
-
-  it("shows a dash for Prefill speed and MTP acceptance when null", () => {
+  it("shows a dash for Prefill and MTP in the compact row when null", () => {
     render(<ModelPanel model={figures()} />);
-    expect(cell("Prefill speed · last prompt").textContent).toContain("—");
-    expect(cell("MTP acceptance").textContent).toContain("—");
+    expect(compactValue("Prefill · last prompt").textContent).toContain("—");
+    expect(compactValue("MTP · last / all").textContent).toBe("— / —");
   });
 
-  it("shows the live prefill speed from the decode event, with last prompt in its title", () => {
+  it("shows the live prefill speed from the decode event in the compact item", () => {
     render(
       <ModelPanel
         model={figures({ prefillTokensPerSecond: null })}
         decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
       />,
     );
-    const prefillCell = cell("Prefill speed · last prompt");
-    // "last prompt" sits in the title, so only the unit stands beside the number and the chart
-    // keeps the same width as Decode speed's.
-    expect(prefillCell.textContent).toBe(`Prefill speed · last prompt${(1453.3).toLocaleString()}tok/s`);
+    const value = compactValue("Prefill · last prompt");
+    expect(value.textContent).toContain(speed(1453.3));
+    expect(value.textContent).toContain("tok/s");
+    expect(value.textContent).not.toContain("—");
   });
 
   it("shows the model's own prefill figure when no decode event has arrived", () => {
     render(<ModelPanel model={figures({ prefillTokensPerSecond: 1200 })} />);
-    expect(cell("Prefill speed · last prompt").textContent).toContain((1200).toLocaleString());
+    expect(compactValue("Prefill · last prompt").textContent).toContain(speed(1200));
   });
 
   it("shows the model's own prefill figure when the model status is not ok, even with a decode event", () => {
@@ -495,9 +556,9 @@ describe("ModelPanel", () => {
         decode={{ tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
       />,
     );
-    const prefillCell = cell("Prefill speed · last prompt");
-    expect(prefillCell.textContent).toContain((1200).toLocaleString());
-    expect(prefillCell.textContent).not.toContain((1453.3).toLocaleString());
+    const value = compactValue("Prefill · last prompt");
+    expect(value.textContent).toContain(speed(1200));
+    expect(value.textContent).not.toContain(speed(1453.3));
   });
 
   it("shows a dash for prefill when both the model and the live decode have none", () => {
@@ -507,25 +568,7 @@ describe("ModelPanel", () => {
         decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: null }}
       />,
     );
-    expect(cell("Prefill speed · last prompt").textContent).toContain("—");
-  });
-
-  it("passes dots only to the Prefill speed chart", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: {
-        running: [0, 0],
-        waiting: [0, 0],
-        kvCachePercent: [0, 0],
-        decodeTokensPerSecond: [0, 0],
-        prefillTokensPerSecond: [0, 0],
-      },
-    };
-    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
-    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-dots")).toBe("true");
-    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-dots")).toBe("");
-    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-dots")).toBe("");
-    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-dots")).toBe("");
+    expect(compactValue("Prefill · last prompt").textContent).toContain("—");
   });
 
   it("shows the live decode value once a decode event has arrived, over the model's own", () => {
@@ -565,24 +608,25 @@ describe("ModelPanel steady charts", () => {
   afterEach(cleanup);
   const twoPoints: Series = {
     at: [0, 10_000],
-    values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
+    values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0] },
   };
 
   it("shows decode and prefill speeds with one decimal, even on a whole number", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 41, prefillTokensPerSecond: 1465 })} />);
-    expect(valueOf("Decode speed").textContent).toBe((41).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
-    expect(valueOf("Prefill speed · last prompt").textContent).toBe((1465).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+    expect(valueOf("Decode speed").textContent).toBe(speed(41));
+    expect(compactValue("Prefill · last prompt").textContent).toContain(speed(1465));
   });
 
-  it("gives the decode and prefill numbers a minimum width in digits", () => {
-    render(<ModelPanel model={figures({ decodeTokensPerSecond: 9.5, prefillTokensPerSecond: 980.2 })} />);
+  it("gives the decode number a minimum width in digits", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 9.5 })} />);
     expect(valueOf("Decode speed").style.minWidth).toBe("4ch");
-    expect(valueOf("Prefill speed · last prompt").style.minWidth).toBe("7ch");
   });
 
   it("hands every chart the chosen range as its time span", () => {
     render(<ModelPanel model={figures()} history={twoPoints} windowSeconds={900} />);
-    for (const img of screen.getAllByRole("img")) expect(img.getAttribute("data-span")).toBe("900");
+    const charts = screen.getAllByRole("img");
+    expect(charts).toHaveLength(3);
+    for (const img of charts) expect(img.getAttribute("data-span")).toBe("900");
   });
 
   it("spreads the figure rows over the card's height", () => {

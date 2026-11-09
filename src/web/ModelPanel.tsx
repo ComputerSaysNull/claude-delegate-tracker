@@ -195,16 +195,18 @@ function ModelFiguresBody({
 }) {
   const span = windowSeconds ?? 3600;
   const unitClass = "text-[13px] text-muted";
-  const captionClass = "text-xs text-muted";
+  // The compact row's label and value, one line per figure without a chart.
+  const compactLabelClass = "truncate text-[13px] text-muted";
+  const compactValueClass = "whitespace-nowrap font-mono tabular-nums font-medium";
   // The live decode event, when one has arrived and the model is ok, replaces the figure
   // from the last full reading; the sparkline stays on the full cadence. The same event also
   // carries the speed of the last finished prompt, which the panel keeps until the next one.
   const live = decode !== null && decode !== undefined && model.status === "ok";
   const decodeValue = live ? decode.tokensPerSecond : model.decodeTokensPerSecond;
   const prefillValue = live ? decode.prefillTokensPerSecond : model.prefillTokensPerSecond;
-  const chart = (key: string, label: string, fixed?: [number, number], dots?: boolean) =>
+  const chart = (key: string, label: string, fixed?: [number, number]) =>
     history === undefined ? undefined : (
-      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} span={span} />
+      <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} span={span} />
     );
   // The KV-cache lines: the kept share is labelled under the number, with the free room and
   // today's rebuilt prompts; only the rebuilt line for vLLM, which has no kept share. The same
@@ -261,13 +263,6 @@ function ModelFiguresBody({
           chart={chart("decodeTokensPerSecond", "Decode speed")}
         />
         <Figure
-          label="Prefill speed · last prompt"
-          value={rate(prefillValue)}
-          minChars={7}
-          unit={<span className={unitClass}>tok/s</span>}
-          chart={chart("prefillTokensPerSecond", "Prefill speed", undefined, true)}
-        />
-        <Figure
           label="Requests"
           value={num(model.running)}
           unit={
@@ -290,21 +285,27 @@ function ModelFiguresBody({
           help={kvHelp}
           chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
         />
-        <Figure
-          label="Prefix-cache hits"
-          value={percent(model.prefixHitPercent)}
-          unit={<span className={captionClass}>since the engine started</span>}
-        />
-        <Figure
-          label="MTP acceptance"
-          value={percent(model.mtpAcceptancePercent)}
-          unit={null}
-          note={
-            <>
-              last requests to finish · <span className="font-mono tabular-nums">{percent(model.mtpAcceptanceSinceStartPercent)}</span> since start
-            </>
-          }
-        />
+      </ul>
+      <ul aria-label="Model server figures without a chart" className="mt-2.5 grid grid-cols-1 gap-x-6 gap-y-1 border-t border-line pt-2 @md:grid-cols-3">
+        <li className="flex min-w-0 items-baseline justify-between gap-2">
+          <span className={compactLabelClass}>Prefill · last prompt</span>
+          <span className={compactValueClass}>
+            {rate(prefillValue)} <span className="font-sans text-xs font-normal text-muted">tok/s</span>
+          </span>
+        </li>
+        <li className="flex min-w-0 items-baseline justify-between gap-2">
+          <span className={compactLabelClass}>Prefix hits · since start</span>
+          <span className={compactValueClass}>{percent(model.prefixHitPercent)}</span>
+        </li>
+        <li
+          className="flex min-w-0 items-baseline justify-between gap-2"
+          title="MTP acceptance: the last requests to finish / since the engine started"
+        >
+          <span className={compactLabelClass}>MTP · last / all</span>
+          <span className={compactValueClass}>
+            {`${percent(model.mtpAcceptancePercent)} / ${percent(model.mtpAcceptanceSinceStartPercent)}`}
+          </span>
+        </li>
       </ul>
       {model.preemptions !== null && (
         <p className="mt-2 text-xs text-muted">

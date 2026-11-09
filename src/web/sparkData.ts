@@ -51,7 +51,7 @@ export function pointFromModel(model: ModelFigures): Point | null {
   if (model.status !== "ok") {
     return {
       atMs: Date.now(),
-      values: { running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null, prefillTokensPerSecond: null },
+      values: { running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null },
     };
   }
   if (model.readAt === null) return null;
@@ -62,7 +62,6 @@ export function pointFromModel(model: ModelFigures): Point | null {
       waiting: model.waiting,
       kvCachePercent: model.kvCachePercent,
       decodeTokensPerSecond: model.decodeTokensPerSecond,
-      prefillTokensPerSecond: model.prefillTokensPerSecond,
     },
   };
 }

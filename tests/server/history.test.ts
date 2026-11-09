@@ -55,7 +55,7 @@ const node = (name: string, over: Partial<NodeFigures> = {}): NodeFigures => ({
 });
 
 describe("FigureHistory", () => {
-  it("records a pushed point with its values aligned to `at`", () => {
+  it("records a pushed point with its values aligned to `at`, and drops a figure the model history no longer keeps", () => {
     const h = new FigureHistory(10, MODEL_KEYS);
     h.push(T0, { running: 1, waiting: 2, kvCachePercent: 50, decodeTokensPerSecond: 12.5, prefillTokensPerSecond: 7.5 });
     const s = h.snapshot();
@@ -64,7 +64,8 @@ describe("FigureHistory", () => {
     expect(s.values["waiting"]).toEqual([2]);
     expect(s.values["kvCachePercent"]).toEqual([50]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([12.5]);
-    expect(s.values["prefillTokensPerSecond"]).toEqual([7.5]);
+    // Prefill speed is a single event between gaps, not a series: it has no chart and no key.
+    expect(s.values["prefillTokensPerSecond"]).toBeUndefined();
   });
 
   it("records a missing key as a gap (null), never 0", () => {
@@ -76,7 +77,7 @@ describe("FigureHistory", () => {
     expect(s.values["waiting"]).toEqual([null]);
     expect(s.values["kvCachePercent"]).toEqual([null]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([null]);
-    expect(s.values["prefillTokensPerSecond"]).toEqual([null]);
+    expect(s.values["prefillTokensPerSecond"]).toBeUndefined();
   });
 
   it("records a value that is not a finite number (NaN, ±Infinity, a string) as a gap, never 0", () => {
@@ -107,7 +108,7 @@ describe("FigureHistory", () => {
     expect(s.values["waiting"]).toEqual([null, null]);
     expect(s.values["kvCachePercent"]).toEqual([null, null]);
     expect(s.values["decodeTokensPerSecond"]).toEqual([null, null]);
-    expect(s.values["prefillTokensPerSecond"]).toEqual([null, null]);
+    expect(s.values["prefillTokensPerSecond"]).toBeUndefined();
   });
 
   it("ignores a point not newer than the last", () => {
@@ -133,7 +134,9 @@ describe("FigureHistory", () => {
 });
 
 describe("ClusterHistoryStore", () => {
-  it("records running/waiting/kvCachePercent/decodeTokensPerSecond/prefillTokensPerSecond when the model is ok", () => {
+  it("records running/waiting/kvCachePercent/decodeTokensPerSecond when the model is ok, and no prefill speed", () => {
+    // The keys the model's charts draw: the prefill speed has no chart, so it is not kept.
+    expect(MODEL_KEYS).toEqual(["running", "waiting", "kvCachePercent", "decodeTokensPerSecond"]);
     const store = new ClusterHistoryStore(10);
     store.pushModel(T0, model({ running: 1, waiting: 2, kvCachePercent: 50, decodeTokensPerSecond: 12.5 }));
     const s = store.snapshot();
@@ -143,7 +146,7 @@ describe("ClusterHistoryStore", () => {
     expect(s.model.values["waiting"]).toEqual([2]);
     expect(s.model.values["kvCachePercent"]).toEqual([50]);
     expect(s.model.values["decodeTokensPerSecond"]).toEqual([12.5]);
-    expect(s.model.values["prefillTokensPerSecond"]).toEqual([8.5]);
+    expect(s.model.values["prefillTokensPerSecond"]).toBeUndefined();
   });
 
   it("records a point of gaps when the model is unreachable", () => {

@@ -24,6 +24,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   and kept it shows the free room, the space a new request can book before the engine evicts
   saved prompts, and on the next line how many prompts were rebuilt today.
 
+### Changed
+
+- **The model server block is shorter.** Its new KV lines made it taller, and three of its
+  six figures had no chart. The prefill chart's dots sat on top of each other, so it showed
+  little. Decode speed, requests and KV-cache use keep their charts in the top row. Prefill,
+  prefix hits and MTP acceptance (as last / all) now share one compact line under them, and
+  the prefill chart is gone.
+
 ### Fixed
 
 - **The KV-cache cell no longer shows an eviction count that meant nothing.** The count from

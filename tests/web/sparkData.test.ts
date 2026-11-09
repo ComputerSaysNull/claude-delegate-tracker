@@ -71,7 +71,7 @@ describe("pointFromModel", () => {
     ...overrides,
   });
 
-  it("records the five figures at the read time when ok", () => {
+  it("records the four figures at the read time when ok, and no prefill speed", () => {
     const p = pointFromModel(ok({ running: 2, waiting: 1, kvCachePercent: 7.5, decodeTokensPerSecond: 80, prefillTokensPerSecond: 30 }));
     expect(p).not.toBeNull();
     expect(p!.atMs).toBe(Date.parse("2024-01-15T13:45:00.000Z"));
@@ -80,8 +80,9 @@ describe("pointFromModel", () => {
       waiting: 1,
       kvCachePercent: 7.5,
       decodeTokensPerSecond: 80,
-      prefillTokensPerSecond: 30,
     });
+    // The prefill speed has no chart, so the model's point does not carry it.
+    expect("prefillTokensPerSecond" in p!.values).toBe(false);
   });
 
   it("returns null for an ok model with no read time", () => {
@@ -99,7 +100,6 @@ describe("pointFromModel", () => {
       waiting: null,
       kvCachePercent: null,
       decodeTokensPerSecond: null,
-      prefillTokensPerSecond: null,
     });
   });
 });
