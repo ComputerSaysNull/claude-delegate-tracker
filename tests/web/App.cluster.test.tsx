@@ -190,4 +190,13 @@ describe("the cluster band", () => {
     await act(async () => {});
     expect(figures().textContent).not.toContain("rebuilt today");
   });
+
+  // Before the first delegation of the day finishes there are no runs: that is a measured 0,
+  // not an unknown, so the line shows 0 rather than disappearing at midnight.
+  it("no runs yet today shows 0 prompts rebuilt today", async () => {
+    const fetchMock = stubRuns([]);
+    render(<App />);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await waitFor(() => expect(figures().textContent).toContain("0 prompts rebuilt today"));
+  });
 });
