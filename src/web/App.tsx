@@ -17,6 +17,7 @@ import { StreamPage } from "./StreamPage.tsx";
 import { useClusterHistory } from "./useClusterHistory.ts";
 import { useLiveList } from "./useLiveList.ts";
 import { useTabStatus } from "./tabStatus.ts";
+import type { RunRecord } from "../server/runs.ts";
 import { KeyboardHelp, useKeyboard } from "./keyboard.tsx";
 import { NotifyButton, useNotifications } from "./notify.tsx";
 import { localTime } from "./time.ts";
@@ -71,6 +72,41 @@ export default function App() {
   const { list, cluster, health, decode, connected } = useLiveList();
   const history = useClusterHistory(cluster);
   useTabStatus(list?.rows ?? null);
+
+  // The model panel's count of prompts rebuilt today, asked for only since local midnight so the
+  // page does not fetch every run record; refreshed each minute, the day recomputed each time.
+  const [rebuiltToday, setRebuiltToday] = useState<number | null>(null);
+  useEffect(() => {
+    let live = true;
+    const load = async (): Promise<void> => {
+      const today = new Date();
+      const since = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString();
+      let count: number | null = null;
+      try {
+        const res = await fetch(`/api/runs?since=${encodeURIComponent(since)}`);
+        if (!live) return;
+        if (res.ok) {
+          const body = (await res.json()) as { runs?: RunRecord[] };
+          const runs = Array.isArray(body.runs) ? body.runs : [];
+          if (runs.length === 0) {
+            count = 0;
+          } else {
+            const rebuilt = runs.map((r) => r.rebuiltTurns).filter((n): n is number => typeof n === "number");
+            count = rebuilt.length === 0 ? null : rebuilt.reduce((a, b) => a + b, 0);
+          }
+        }
+      } catch {
+        count = null;
+      }
+      if (live) setRebuiltToday(count);
+    };
+    void load();
+    const timer = setInterval(() => void load(), 60_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
 
   // The cluster band charts either the last hour or the last 15 minutes, counted back from
   // each series' newest point (not the clock, so a render stays pure), so the labels and the
@@ -260,7 +296,7 @@ export default function App() {
       >
         <h1 className="w-full text-2xl font-bold lg:hidden">Cluster</h1>
         <div className="min-w-0 flex-[5_1_560px]">
-          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} decode={decode} />
+          <ModelPanel model={cluster?.model ?? null} history={modelSeries} windowSeconds={panelWindowSeconds} headerExtra={chartRange} decode={decode} rebuiltToday={rebuiltToday} />
         </div>
         <div className="min-w-0 flex-[4_1_520px]">
           <NodePanel nodes={cluster?.nodes ?? null} limits={cluster?.limits} />

@@ -27,7 +27,6 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     waiting: null,
     kvCachePercent: null,
     kvKeptPercent: null,
-    keptEvicted: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,
@@ -79,6 +78,11 @@ function hasRow(root: HTMLElement, label: string, value: string): boolean {
   );
 }
 
+// What reserved and kept leave of the pool, as one decimal, the way the panel writes it.
+function freeText(reserved: number, kept: number): string {
+  return (100 - reserved - kept).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
 // React derives mouseenter/mouseleave from mouseover/mouseout, and a plain mouseenter does not
 // bubble, so a handler on a wrapper above the button only sees the bubbling pair. Fire both, so
 // the test does not depend on where the handler sits.
@@ -121,46 +125,79 @@ describe("ModelPanel", () => {
     expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
   });
 
-  it("labels the two numbers on the line under them, outside the number's row", () => {
+  it("labels the two numbers and the free room on the line under them", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} />);
     const kvCell = cell("KV-cache use");
-    expect(kvCell.textContent).toContain("reserved / kept prompts");
+    expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
+    const labelLine = innermost(kvCell, "reserved / kept prompts");
+    expect(labelLine.textContent).toContain("reserved / kept prompts");
+    expect(labelLine.textContent).toContain(`${freeText(58.4, 23.1)}% free`);
+    expect(labelLine.textContent!.indexOf("reserved / kept prompts")).toBeLessThan(labelLine.textContent!.indexOf("% free"));
     const row = numberRow("KV-cache use");
     expect(row.textContent).not.toContain("reserved");
-    expect(row.textContent).not.toContain("kept prompts");
-    expect(row.contains(innermost(kvCell, "reserved / kept prompts"))).toBe(false);
+    expect(row.textContent).not.toContain("free");
+    expect(row.contains(labelLine)).toBe(false);
+    // jsdom does no layout: the line is its own line because it displays as a block.
+    expect(labelLine.classList.contains("block")).toBe(true);
+    const freeNumber = [...labelLine.querySelectorAll<HTMLElement>("span")].find((el) =>
+      (el.textContent ?? "").includes(freeText(58.4, 23.1)),
+    );
+    expect(freeNumber).toBeDefined();
+    expect(freeNumber!.className).toMatch(/\bfont-mono\b/);
   });
 
-  it("puts the eviction count on its own line under the label line", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+  it("free room is what reserved and kept leave of the pool, one decimal", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 60, kvKeptPercent: 25 })} />);
+    const kvCell = cell("KV-cache use");
+    expect(valueOf("KV-cache use").textContent).toBe(`${(60).toLocaleString()}% / ${(25).toLocaleString()}%`);
+    expect(kvCell.textContent).toContain(`${freeText(60, 25)}% free`);
+  });
+
+  it("today's rebuilt prompts get their own line under the label line", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const kvCell = cell("KV-cache use");
     const labelLine = innermost(kvCell, "reserved / kept prompts");
-    const evictedLine = innermost(kvCell, "evicted since the engine started");
-    expect(evictedLine.textContent).toContain(`${(1268).toLocaleString()} evicted since the engine started`);
-    expect(evictedLine).not.toBe(labelLine);
-    expect(labelLine.contains(evictedLine)).toBe(false);
-    expect(evictedLine.contains(labelLine)).toBe(false);
-    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the eviction line comes after the label line.
-    expect(labelLine.compareDocumentPosition(evictedLine) & 4).toBe(4);
-    // jsdom does no layout: each line is its own line because it displays as a block.
+    const rebuiltLine = innermost(kvCell, "rebuilt today");
+    expect(rebuiltLine.textContent).toBe("3 prompts rebuilt today");
+    expect(rebuiltLine).not.toBe(labelLine);
+    expect(labelLine.contains(rebuiltLine)).toBe(false);
+    expect(rebuiltLine.contains(labelLine)).toBe(false);
+    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the rebuilt line comes after the label line.
+    expect(labelLine.compareDocumentPosition(rebuiltLine) & 4).toBe(4);
     expect(labelLine.classList.contains("block")).toBe(true);
-    expect(evictedLine.classList.contains("block")).toBe(true);
+    expect(rebuiltLine.classList.contains("block")).toBe(true);
+    expect(numberRow("KV-cache use").textContent).not.toContain("rebuilt");
+    const count = [...rebuiltLine.querySelectorAll<HTMLElement>("span")].find((el) => (el.textContent ?? "").includes("3"));
+    expect(count).toBeDefined();
+    expect(count!.className).toMatch(/\bfont-mono\b/);
   });
 
-  it("shows only the reserved share and the eviction line when there is no kept share", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: null, keptEvicted: 1268 })} />);
+  it("one rebuilt prompt is singular", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={1} />);
+    const line = innermost(cell("KV-cache use"), "rebuilt today");
+    expect(line.textContent).toBe("1 prompt rebuilt today");
+  });
+
+  it("0 rebuilt prompts today shows 0", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={0} />);
+    const line = innermost(cell("KV-cache use"), "rebuilt today");
+    expect(line.textContent).toBe("0 prompts rebuilt today");
+    expect(line.textContent).not.toContain("—");
+  });
+
+  // vLLM has neither a kept share nor a free-room line, so its cell carries only the number and
+  // today's rebuilt prompts; there is no help card to open.
+  it("a vLLM model shows only today's rebuilt prompts under its number, with no help button", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 7.4 })} rebuiltToday={2} />);
     const kvCell = cell("KV-cache use");
-    expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}%`);
-    expect(kvCell.textContent).toContain(`${(1268).toLocaleString()} kept prompts evicted since the engine started`);
+    expect(valueOf("KV-cache use").textContent).toBe(`${(7.4).toLocaleString()}%`);
+    const line = innermost(kvCell, "rebuilt today");
+    expect(line.textContent).toBe("2 prompts rebuilt today");
+    expect(line.classList.contains("block")).toBe(true);
     expect(kvCell.textContent).not.toContain("reserved");
-    expect(kvCell.textContent).not.toContain("booked");
-  });
-
-  it("shows a measured 0 evictions as 0", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 0 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(kvCell.textContent).toContain(`${(0).toLocaleString()} evicted since the engine started`);
-    expect(kvCell.textContent).not.toContain("— evicted");
+    expect(kvCell.textContent).not.toContain("free");
+    expect(numberRow("KV-cache use").textContent).not.toContain("rebuilt");
+    expect(screen.queryByRole("button", { name: HELP })).toBeNull();
   });
 
   it("a vLLM model shows the plain number with no lines under it and no help button", () => {
@@ -168,12 +205,24 @@ describe("ModelPanel", () => {
     const kvCell = cell("KV-cache use");
     expect(valueOf("KV-cache use").textContent).toBe(`${(7.4).toLocaleString()}%`);
     expect(kvCell.textContent).not.toContain("reserved");
-    expect(kvCell.textContent).not.toContain("evicted");
+    expect(kvCell.textContent).not.toContain("free");
+    expect(kvCell.textContent).not.toContain("rebuilt");
     expect(screen.queryByRole("button", { name: HELP })).toBeNull();
   });
 
+  it("nothing about rebuilt prompts when the count is unknown", () => {
+    const { rerender } = render(
+      <ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={null} />,
+    );
+    const kvCell = cell("KV-cache use");
+    expect(kvCell.textContent).toContain("reserved / kept prompts");
+    expect(kvCell.textContent).not.toContain("rebuilt");
+    rerender(<ModelPanel model={figures({ kvCachePercent: 7.4 })} />);
+    expect(cell("KV-cache use").textContent).not.toContain("rebuilt");
+  });
+
   it("the help card opens on hover and closes on leave", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("tooltip")).toBeNull();
@@ -182,8 +231,10 @@ describe("ModelPanel", () => {
     const card = screen.getByRole("tooltip");
     expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
     expect(hasRow(card, "Kept prompts", `${(23.1).toLocaleString()}%`)).toBe(true);
-    expect(hasRow(card, "Evicted since the engine started", (1268).toLocaleString())).toBe(true);
+    expect(hasRow(card, "Free", `${freeText(58.4, 23.1)}%`)).toBe(true);
+    expect(hasRow(card, "Rebuilt today", (3).toLocaleString())).toBe(true);
     expect(card.textContent).toContain("reply budget");
+    expect(card.textContent!.toLowerCase()).toContain("free");
     expect(card.textContent).toContain("rebuild");
     hoverOut(button);
     expect(screen.queryByRole("tooltip")).toBeNull();
@@ -192,7 +243,7 @@ describe("ModelPanel", () => {
 
   // A phone has no hover: a tap opens the card and leaves it open until another tap.
   it("a click keeps the help card open after the mouse leaves, and a second click closes it", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -208,7 +259,7 @@ describe("ModelPanel", () => {
   // The KV figure sits near the top of the page, so a card opening upward ran off the window.
   // Opening downward, it lies over the delegation list, whose search box painted over it.
   it("the help card opens below its button, above the page under it", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     hoverIn(screen.getByRole("button", { name: HELP }));
     const placed = screen.getByRole("tooltip").parentElement!;
     expect(placed.className).toContain("top-full");
@@ -217,7 +268,7 @@ describe("ModelPanel", () => {
   });
 
   it("Escape closes the help card", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     hoverIn(button);
     expect(screen.getByRole("tooltip")).toBeTruthy();
@@ -227,38 +278,30 @@ describe("ModelPanel", () => {
   });
 
   it("the help card shows only the rows whose figures exist", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: null, keptEvicted: 5 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={null} />);
     const button = screen.getByRole("button", { name: HELP });
     hoverIn(button);
     const card = screen.getByRole("tooltip");
     expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
-    expect(hasRow(card, "Evicted since the engine started", (5).toLocaleString())).toBe(true);
-    expect(card.textContent).not.toContain("Kept prompts");
+    expect(hasRow(card, "Kept prompts", `${(23.1).toLocaleString()}%`)).toBe(true);
+    expect(hasRow(card, "Free", `${freeText(58.4, 23.1)}%`)).toBe(true);
+    expect(card.textContent).not.toContain("Rebuilt today");
   });
 
   // The number's row cannot shrink, so a caption inside it cannot wrap and runs over the next
   // cells. The KV-cache lines and the MTP caption sit on their own line under the number instead.
   it("puts the long KV-cache and MTP captions on their own line, outside the number's row", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268, mtpAcceptancePercent: 52 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, mtpAcceptancePercent: 52 })} rebuiltToday={3} />);
     const kvCell = cell("KV-cache use");
     expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
     expect(kvCell.textContent).toContain("reserved / kept prompts");
-    expect(kvCell.textContent).toContain("evicted");
+    expect(kvCell.textContent).toContain("rebuilt today");
     const kvRow = numberRow("KV-cache use");
     expect(kvRow.textContent).not.toContain("reserved");
-    expect(kvRow.textContent).not.toContain("evicted");
+    expect(kvRow.textContent).not.toContain("rebuilt");
     const mtpCell = cell("MTP acceptance");
     expect(mtpCell.textContent).toContain("last requests to finish");
     expect(numberRow("MTP acceptance").textContent).not.toContain("last requests to finish");
-  });
-
-  it("shows nothing about evictions when the count is null", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: null })} />);
-    const kvCell = cell("KV-cache use");
-    const text = kvCell.textContent!;
-    expect(text).toContain(`${(23.1).toLocaleString()}%`);
-    expect(text).toContain("kept prompts");
-    expect(text).not.toContain("evicted");
   });
 
   it("shows decode speed without a line naming its window", () => {

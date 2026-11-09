@@ -99,7 +99,16 @@ export function createApp(deps: AppDeps): Hono {
 
   app.get("/api/cluster", (c) => c.json(cluster()));
   app.get("/api/cluster/history", (c) => c.json(clusterHistory()));
-  app.get("/api/runs", (c) => c.json(runs()));
+  // Every run record, or with ?since=<ISO time> only those started at or after it (a run whose
+  // start is unknown cannot be shown to be since then, so it is left out).
+  app.get("/api/runs", (c) => {
+    const payload = runs();
+    const since = c.req.query("since");
+    if (since === undefined) return c.json(payload);
+    const sinceMs = Date.parse(since);
+    if (Number.isNaN(sinceMs)) return c.json({ error: "since is not a time" }, 400);
+    return c.json({ ...payload, runs: payload.runs.filter((r) => r.startedAt !== null && r.startedAt >= sinceMs) });
+  });
   app.get("/api/busy", (c) => c.json(busy()));
   app.get("/api/power", (c) => c.json(power()));
 

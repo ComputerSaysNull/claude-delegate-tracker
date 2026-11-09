@@ -58,12 +58,14 @@ export function ModelPanel({
   windowSeconds,
   headerExtra,
   decode,
+  rebuiltToday,
 }: {
   model: ModelFigures | null;
   history?: Series;
   windowSeconds?: number;
   headerExtra?: ReactNode;
   decode?: DecodeNow | null;
+  rebuiltToday?: number | null;
 }) {
   const status = model === null ? null : statusLine(model);
   return (
@@ -76,7 +78,7 @@ export function ModelPanel({
       {model === null ? (
         <p className="mt-2 text-muted">Waiting for figures…</p>
       ) : (
-        <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} decode={decode} />
+        <ModelFiguresBody model={model} history={history} windowSeconds={windowSeconds} decode={decode} rebuiltToday={rebuiltToday} />
       )}
     </section>
   );
@@ -183,11 +185,13 @@ function ModelFiguresBody({
   history,
   windowSeconds,
   decode,
+  rebuiltToday,
 }: {
   model: ModelFigures;
   history?: Series;
   windowSeconds?: number;
   decode?: DecodeNow | null;
+  rebuiltToday?: number | null;
 }) {
   const span = windowSeconds ?? 3600;
   const unitClass = "text-[13px] text-muted";
@@ -202,34 +206,48 @@ function ModelFiguresBody({
     history === undefined ? undefined : (
       <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} span={span} />
     );
-  // The KV-cache lines: the kept share is labelled under the number, then the evicted kept-prompt
-  // counter; the evicted count alone when there is no kept share; nothing at all for vLLM, which
-  // has neither. The same figures fill the help card, which appears only when one of them exists.
-  const keptEvicted = model.keptEvicted;
-  const evicted = keptEvicted === null
-    ? null
-    : <span className="font-mono tabular-nums">{keptEvicted.toLocaleString()}</span>;
+  // The KV-cache lines: the kept share is labelled under the number, with the free room and
+  // today's rebuilt prompts; only the rebuilt line for vLLM, which has no kept share. The same
+  // figures fill the help card, which appears only when there is a kept share.
+  const free = model.kvKeptPercent !== null && model.kvCachePercent !== null
+    ? Math.max(0, Math.round((100 - model.kvCachePercent - model.kvKeptPercent) * 10) / 10)
+    : null;
+  const freePercent = free === null
+    ? "—"
+    : `${free.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+  const rebuiltLine = typeof rebuiltToday === "number" ? (
+    <span className="block">
+      <span className="font-mono tabular-nums">{rebuiltToday.toLocaleString()}</span>{" "}
+      {rebuiltToday === 1 ? "prompt" : "prompts"} rebuilt today
+    </span>
+  ) : null;
   let kvNote: ReactNode = null;
   if (model.kvKeptPercent !== null) {
     kvNote = (
       <>
-        <span className="block">reserved / kept prompts</span>
-        {evicted !== null && <span className="block">{evicted} evicted since the engine started</span>}
+        <span className="block">reserved / kept prompts · <span className="font-mono tabular-nums">{freePercent}</span> free</span>
+        {rebuiltLine}
       </>
     );
-  } else if (evicted !== null) {
-    kvNote = <span className="block">{evicted} kept prompts evicted since the engine started</span>;
+  } else if (rebuiltLine !== null) {
+    kvNote = rebuiltLine;
   }
   const kvRows: { label: string; value: string }[] = [];
   if (model.kvCachePercent !== null) kvRows.push({ label: "Reserved by running requests", value: percent(model.kvCachePercent) });
   if (model.kvKeptPercent !== null) kvRows.push({ label: "Kept prompts", value: percent(model.kvKeptPercent) });
-  if (keptEvicted !== null) kvRows.push({ label: "Evicted since the engine started", value: keptEvicted.toLocaleString() });
-  const kvHelp = model.kvKeptPercent !== null || keptEvicted !== null ? (
+  if (free !== null) kvRows.push({ label: "Free", value: freePercent });
+  if (typeof rebuiltToday === "number") kvRows.push({ label: "Rebuilt today", value: rebuiltToday.toLocaleString() });
+  const kvHelp = model.kvKeptPercent !== null ? (
     <HelpMark
       label="About KV-cache use"
       title="KV-cache pool"
       rows={kvRows}
-      text="Reserved counts each running request's prompt plus its whole reply budget, booked when the request starts, so it runs above the space actually written. Kept prompt states are saved so later turns can resume from them. When running requests need room the engine evicts them, and those turns rebuild their prompt from scratch."
+      text={
+        "Reserved counts each running request's prompt plus its whole reply budget, booked when the request starts. Kept prompt states are saved so later turns can resume from them. When a new request needs more than the free room, the engine evicts kept states; a delegation whose state was evicted must rebuild its prompt from scratch on its next turn" +
+        (typeof rebuiltToday === "number"
+          ? ", which is what Rebuilt today counts (from delegations that finished today)."
+          : ".")
+      }
     />
   ) : undefined;
   return (

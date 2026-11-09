@@ -31,7 +31,7 @@ const HEALTH: Health = {
 };
 
 const MODEL: ModelFigures = {
-  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, kvKeptPercent: null, keptEvicted: null, decodeTokensPerSecond: 80,
+  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, kvKeptPercent: null, decodeTokensPerSecond: 80,
   decodeWindowSeconds: 10, prefixHitPercent: 92, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
   prefillTokensPerSecond: null, readAt: "2026-10-03T12:00:00.000Z",
 };
@@ -210,6 +210,45 @@ describe("run records", () => {
     expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
     current = { status: { ...RUNS_STATUS, records: 3 }, runs: RUNS };
     expect(await (await app.request("/api/runs", goodHost)).json()).toEqual(current);
+  });
+
+  // Three runs on one UTC day, for the since filter: 08:00, 12:00 and 16:00.
+  const HOUR = 3_600_000;
+  const DAY = Date.parse("2026-11-09T00:00:00.000Z");
+  const runAt = (name: string, hour: number): RunRecord => ({ ...RUNS[0], name, startedAt: DAY + hour * HOUR });
+  const RUN_08 = runAt("20261109T080000.000-a.jsonl", 8);
+  const RUN_12 = runAt("20261109T120000.000-a.jsonl", 12);
+  const RUN_16 = runAt("20261109T160000.000-a.jsonl", 16);
+  const allRuns = () => ({ status: RUNS_STATUS, runs: [RUN_08, RUN_12, RUN_16] });
+
+  it("GET /api/runs?since= returns only the runs started at or after that time", async () => {
+    const app = makeApp({ runs: allRuns });
+    const res = await app.request(`/api/runs?since=${encodeURIComponent("2026-11-09T12:00:00Z")}`, goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: RUNS_STATUS, runs: [RUN_12, RUN_16] });
+  });
+
+  it("a since given with a time zone offset is read as that instant", async () => {
+    const app = makeApp({ runs: allRuns });
+    // 13:00+01:00 is 12:00Z, the same instant as the test above.
+    const res = await app.request(`/api/runs?since=${encodeURIComponent("2026-11-09T13:00:00+01:00")}`, goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: RUNS_STATUS, runs: [RUN_12, RUN_16] });
+  });
+
+  it.each(["yesterday", ""])("GET /api/runs with a since that is not a time answers 400", async (since) => {
+    const app = makeApp({ runs: allRuns });
+    const res = await app.request(`/api/runs?since=${encodeURIComponent(since)}`, goodHost);
+    expect(res.status).toBe(400);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.runs).toBeUndefined();
+  });
+
+  it("GET /api/runs without since still returns every run", async () => {
+    const app = makeApp({ runs: allRuns });
+    const res = await app.request("/api/runs", goodHost);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: RUNS_STATUS, runs: [RUN_08, RUN_12, RUN_16] });
   });
 });
 

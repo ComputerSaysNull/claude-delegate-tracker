@@ -20,6 +20,16 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
   least 4096 tokens, unless it trimmed tool results on purpose. A new "Prompts rebuilt" card
   shows those turns per day. The run records gained the count, so they are rebuilt once from
   the streams.
+- **The KV-cache cell says how close the pool is to forcing prompts out.** Beside reserved
+  and kept it shows the free room, the space a new request can book before the engine evicts
+  saved prompts, and on the next line how many prompts were rebuilt today.
+
+### Fixed
+
+- **The KV-cache cell no longer shows an eviction count that meant nothing.** The count from
+  #94 kept rising while nothing ran. Cause: the engine counts every saved prompt that is
+  gone, mostly older turns replaced by a newer turn of the same delegation, which is normal.
+  Fix: the count is gone; today's rebuilt prompts replace it.
 
 ## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
 
