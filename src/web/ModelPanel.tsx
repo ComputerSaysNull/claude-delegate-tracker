@@ -1,10 +1,11 @@
 // The model server's figures, as the backend sends them on the cluster event.
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ModelFigures, DecodeNow } from "../server/metrics.ts";
 import type { Series } from "../server/history.ts";
 import { localTime } from "./time.ts";
 import { Sparkline, windowLabel } from "./Sparkline.tsx";
 import { toUplotData } from "./sparkData.ts";
+import { PlacedCard } from "./ChartTooltip.tsx";
 
 const SLATE = "text-muted";
 const AMBER = "text-warn";
@@ -85,11 +86,11 @@ export function ModelPanel({
 // beside it when it has a history, so the card stays short. `minChars` keeps a number that
 // changes every second at a fixed width, so its chart does not move as the digits change.
 // `note` is a caption too long for the number's row, which cannot shrink: it gets its own
-// line under the number, where it can wrap.
-function Figure({ label, value, unit, chart, minChars, note }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number; note?: ReactNode }) {
+// line under the number, where it can wrap. `help` is a mark beside the label opening a card.
+function Figure({ label, value, unit, chart, minChars, note, help }: { label: string; value: string; unit: ReactNode; chart?: ReactNode; minChars?: number; note?: ReactNode; help?: ReactNode }) {
   return (
     <li className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[13px] text-muted">{label}</span>
+      <span className="inline-flex items-center gap-1 text-[13px] text-muted">{label}{help}</span>
       <div className="flex min-w-0 items-center gap-3">
         <div className="flex shrink-0 items-baseline gap-1.5">
           <span
@@ -104,6 +105,76 @@ function Figure({ label, value, unit, chart, minChars, note }: { label: string; 
       </div>
       {note !== undefined && note !== null && <span className="text-xs text-muted">{note}</span>}
     </li>
+  );
+}
+
+// A small ? beside a label: hover or focus shows its card, and a click pins it open until the
+// next click, Escape, or a click elsewhere. The handlers sit on the wrapper, so moving onto the
+// card does not close it.
+function HelpMark({ label, title, rows, text }: { label: string; title: string; rows: { label: string; value: string }[]; text: ReactNode }) {
+  const [hovered, setHovered] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const open = hovered || pinned;
+  const close = () => {
+    setHovered(false);
+    setPinned(false);
+  };
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setHovered(false);
+      setPinned(false);
+    };
+    const onDown = (e: MouseEvent) => {
+      if (pinned && wrap.current !== null && !wrap.current.contains(e.target as Node)) setPinned(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
+  }, [open, pinned]);
+  return (
+    <span
+      ref={wrap}
+      className="relative inline-flex"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        type="button"
+        aria-label={label}
+        aria-expanded={open}
+        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-line text-[10px] leading-none text-muted hover:text-text focus-visible:outline focus-visible:outline-2"
+        onFocus={() => setHovered(true)}
+        onBlur={() => setHovered(false)}
+        onClick={() => {
+          if (pinned) close();
+          else setPinned(true);
+        }}
+      >
+        ?
+      </button>
+      {open && (
+        <PlacedCard at={0.5} below>
+          <div role="tooltip" className="w-[17rem] whitespace-normal rounded-lg border border-line bg-card p-2 text-[12.5px] shadow">
+            <div className="font-semibold">{title}</div>
+            <div className="mt-1.5 flex flex-col gap-1">
+              {rows.map((r) => (
+                <div key={r.label} className="flex items-center gap-1.5">
+                  <span className="flex-1 text-muted">{r.label}</span>
+                  <span className="font-mono tabular-nums font-semibold text-text">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 text-muted">{text}</div>
+          </div>
+        </PlacedCard>
+      )}
+    </span>
   );
 }
 
@@ -131,23 +202,36 @@ function ModelFiguresBody({
     history === undefined ? undefined : (
       <Sparkline data={toUplotData(history, key)} label={`${label} over the ${windowLabel(span)}`} fixed={fixed} dots={dots} span={span} />
     );
-  // The KV-cache caption: the booked and kept shares when the engine gives a kept share, then
-  // the evicted kept-prompt counter after them; the evicted count alone when there is no kept
-  // share; nothing at all for vLLM, which has neither.
-  const evicted = model.keptEvicted === null
+  // The KV-cache lines: the kept share is labelled under the number, then the evicted kept-prompt
+  // counter; the evicted count alone when there is no kept share; nothing at all for vLLM, which
+  // has neither. The same figures fill the help card, which appears only when one of them exists.
+  const keptEvicted = model.keptEvicted;
+  const evicted = keptEvicted === null
     ? null
-    : <span className="font-mono tabular-nums">{model.keptEvicted.toLocaleString()}</span>;
-  let kvCaption: ReactNode = null;
+    : <span className="font-mono tabular-nums">{keptEvicted.toLocaleString()}</span>;
+  let kvNote: ReactNode = null;
   if (model.kvKeptPercent !== null) {
-    kvCaption = (
+    kvNote = (
       <>
-        booked by running requests · <span className="font-mono tabular-nums">{percent(model.kvKeptPercent)}</span> kept prompts
-        {evicted !== null && <> · {evicted} evicted since the engine started</>}
+        <span className="block">reserved / kept prompts</span>
+        {evicted !== null && <span className="block">{evicted} evicted since the engine started</span>}
       </>
     );
   } else if (evicted !== null) {
-    kvCaption = <>{evicted} kept prompts evicted since the engine started</>;
+    kvNote = <span className="block">{evicted} kept prompts evicted since the engine started</span>;
   }
+  const kvRows: { label: string; value: string }[] = [];
+  if (model.kvCachePercent !== null) kvRows.push({ label: "Reserved by running requests", value: percent(model.kvCachePercent) });
+  if (model.kvKeptPercent !== null) kvRows.push({ label: "Kept prompts", value: percent(model.kvKeptPercent) });
+  if (keptEvicted !== null) kvRows.push({ label: "Evicted since the engine started", value: keptEvicted.toLocaleString() });
+  const kvHelp = model.kvKeptPercent !== null || keptEvicted !== null ? (
+    <HelpMark
+      label="About KV-cache use"
+      title="KV-cache pool"
+      rows={kvRows}
+      text="Reserved counts each running request's prompt plus its whole reply budget, booked when the request starts, so it runs above the space actually written. Kept prompt states are saved so later turns can resume from them. When running requests need room the engine evicts them, and those turns rebuild their prompt from scratch."
+    />
+  ) : undefined;
   return (
     <>
       <ul aria-label="Model server figures" className="mt-2 grid flex-1 grid-cols-1 content-evenly gap-x-6 gap-y-3 @md:grid-cols-2 @2xl:grid-cols-3">
@@ -180,9 +264,12 @@ function ModelFiguresBody({
         />
         <Figure
           label="KV-cache use"
-          value={percent(model.kvCachePercent)}
+          value={model.kvKeptPercent === null
+            ? percent(model.kvCachePercent)
+            : `${percent(model.kvCachePercent)} / ${percent(model.kvKeptPercent)}`}
           unit={null}
-          note={kvCaption}
+          note={kvNote}
+          help={kvHelp}
           chart={chart("kvCachePercent", "KV-cache use", [0, 100])}
         />
         <Figure

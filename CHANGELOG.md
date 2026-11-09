@@ -24,10 +24,11 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 - **KV-cache use on TensorFold is the pool, not one request.** The figure read 38% while the
   pool was nearly full and saved prompts were being thrown out. Cause: the engine's
   `kv_cache_usage_perc` lines are each one request's own window, and the tracker showed the
-  fullest. Fix: the figure is the pool's share booked by running requests, from the engine's
-  per-part rows, with the share kept prompt states hold beside it. The engine books a
-  request's whole reply budget up front, so this runs above vLLM's figure. History hours
-  recorded on TensorFold before this fix still hold the fullest request.
+  fullest. Fix: the figure reads reserved / kept, from the engine's per-part rows: the pool's
+  share running requests reserved, then the share kept prompt states hold, with a ? that
+  explains them. The engine reserves a request's whole reply budget up front, so this runs
+  above vLLM's figure. History hours recorded on TensorFold before this fix still hold the
+  fullest request.
 - **MTP acceptance no longer goes blank during a long run.** On TensorFold the "now" figure
   showed `—` for as long as no request finished. Cause: the engine counts drafts only when a
   request finishes, so a window without one has no drafts to divide by. Fix: the panel keeps
