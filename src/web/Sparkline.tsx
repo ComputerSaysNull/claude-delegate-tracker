@@ -1,7 +1,6 @@
-// A single-line sparkline of one key's history. uPlot renders into a full-width h-8 div;
+// A sparkline of one or more lines of history. uPlot renders into a full-width h-8 div;
 // with fewer than two points the div is left empty (no chart). uPlot is loaded only when a
-// chart is drawn: it reads the screen as soon as it is imported. With `dots`, each value is
-// drawn as a point, for a series whose values are single events between gaps.
+// chart is drawn: it reads the screen as soon as it is imported.
 import { useEffect, useRef } from "react";
 import type uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
@@ -29,23 +28,21 @@ export function sparkRange(
   return [min - span * 0.1, top + span * 0.1];
 }
 
-function valueSeries(stroke: string, dots: boolean) {
-  return dots
-    ? { spanGaps: false, stroke, points: { show: true, size: 6, fill: stroke } }
-    : { spanGaps: false, stroke };
+function valueSeries(stroke: string) {
+  return { spanGaps: false, stroke };
 }
 
 export function Sparkline({
   data,
   label,
+  colors,
   fixed,
-  dots,
   span,
 }: {
-  data: [number[], (number | null)[]];
+  data: [number[], ...(number | null)[][]];
   label: string;
+  colors?: string[]; // one CSS custom property name per line; omitted: --muted
   fixed?: [number, number];
-  dots?: boolean;
   span?: number; // seconds the time axis covers, back from the newest point; omitted: the data's own
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -94,10 +91,10 @@ export function Sparkline({
               range: (_u: uPlot, min: number, max: number) => sparkRange(min, max, fixed),
             },
           },
-          // uPlot draws on a canvas, which cannot read a CSS variable: take the token's value.
-          // With dots, each value is drawn as a point filled in the line's colour, so a single
-          // event still shows (uPlot's default fill is the background, a hollow ring).
-          series: [{}, valueSeries(getComputedStyle(el).getPropertyValue("--muted").trim() || "currentColor", dots === true)],
+          // uPlot draws on a canvas, which cannot read a CSS variable: take each token's value.
+          series: [{}, ...(colors ?? ["--muted"]).map((name) =>
+            valueSeries(getComputedStyle(el).getPropertyValue(name).trim() || "currentColor"),
+          )],
         },
         data,
         el,
@@ -106,7 +103,7 @@ export function Sparkline({
     return () => {
       cancelled = true;
     };
-  }, [data, fixed, dots]);
+  }, [data, colors, fixed]);
 
   // Follow the container's width: the chart is drawn at the width it had when created, so a
   // phone turned sideways or a resized window would otherwise leave it too wide or too narrow.

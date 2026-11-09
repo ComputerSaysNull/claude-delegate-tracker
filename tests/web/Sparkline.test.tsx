@@ -5,6 +5,7 @@ import { Sparkline, sparkRange } from "../../src/web/Sparkline.tsx";
 
 interface RecordedChart {
   options: unknown;
+  data: unknown;
   setDataCalls: unknown[];
   setSizeCalls: { width: number; height: number }[];
   destroyed: boolean;
@@ -14,11 +15,13 @@ const { MockUPlot, charts } = vi.hoisted(() => {
   const charts: RecordedChart[] = [];
   class MockUPlot {
     options: unknown;
+    data: unknown;
     setDataCalls: unknown[] = [];
     setSizeCalls: { width: number; height: number }[] = [];
     destroyed = false;
-    constructor(opts: unknown) {
+    constructor(opts: unknown, data: unknown) {
       this.options = opts;
+      this.data = data;
       charts.push(this);
     }
     setData(data: unknown): void {
@@ -56,9 +59,27 @@ function resizeTo(width: number): void {
   }
 }
 
-function lineSeries(opts: unknown): { spanGaps?: boolean }[] {
-  const series = (opts as { series: { spanGaps?: boolean }[] }).series;
+function lineSeries(opts: unknown): { spanGaps?: boolean; stroke?: string }[] {
+  const series = (opts as { series: { spanGaps?: boolean; stroke?: string }[] }).series;
   return series;
+}
+
+// The colours a chart reads from its container. jsdom computes no custom properties, so answer
+// the ones a test names and let every other style question through to the real implementation.
+const realGetComputedStyle = globalThis.getComputedStyle;
+function stubColourVars(vars: Record<string, string>): void {
+  vi.stubGlobal("getComputedStyle", (el: Element) => {
+    const real = realGetComputedStyle.call(globalThis, el);
+    return new Proxy(real, {
+      get(target, prop) {
+        if (prop === "getPropertyValue") {
+          return (name: string) => vars[name] ?? target.getPropertyValue(name);
+        }
+        const value = Reflect.get(target, prop);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  });
 }
 
 // The y range a sparkline's uPlot is given: a zero-only series is lifted off the canvas's
@@ -141,23 +162,6 @@ describe("Sparkline", () => {
     expect(lineSeries(charts[0].options).some((s) => s.spanGaps === false)).toBe(true);
   });
 
-  it("draws a visible, filled 6px point on the value series when dots is set", async () => {
-    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" dots />);
-    await waitFor(() => expect(charts.length).toBe(1));
-    const value = (charts[0].options as { series: { spanGaps?: boolean; stroke?: string; points?: { show: boolean; size: number; fill?: string } }[] }).series[1];
-    // uPlot fills a point with the page background by default, so a lone point reads as a
-    // hollow ring; filled with the line's own colour it reads as a measurement.
-    expect(value.points).toEqual({ show: true, size: 6, fill: value.stroke });
-    expect(value.spanGaps).toBe(false);
-  });
-
-  it("gives the value series no points key when dots is not set", async () => {
-    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
-    await waitFor(() => expect(charts.length).toBe(1));
-    const value = (charts[0].options as { series: { spanGaps?: boolean; points?: { show: boolean; size: number } }[] }).series[1];
-    expect("points" in value).toBe(false);
-  });
-
   it("passes a y range function that pads a zero-only series", async () => {
     render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
     await waitFor(() => expect(charts.length).toBe(1));
@@ -201,6 +205,30 @@ describe("Sparkline", () => {
     await waitFor(() => expect(charts.length).toBe(1));
     rerender(<Sparkline data={[[0, 1, 2], [10, 20, 30]]} label="x" />);
     expect(charts[0].setDataCalls).toEqual([[[0, 1, 2], [10, 20, 30]]]);
+  });
+
+  // One line per value series, each drawn in the colour variable the caller names.
+  it("draws one line per value series, each in its own colour variable", async () => {
+    stubColourVars({ "--chart-pair-a": "#4a7fd1", "--chart-pair-b": "#c96f35" });
+    render(
+      <Sparkline data={[[0, 1], [10, 20], [1, 2]]} colors={["--chart-pair-a", "--chart-pair-b"]} label="x" />,
+    );
+    await waitFor(() => expect(charts.length).toBe(1));
+    const series = lineSeries(charts[0].options);
+    expect(series).toHaveLength(3);
+    expect(series[1].stroke).toBe("#4a7fd1");
+    expect(series[2].stroke).toBe("#c96f35");
+    expect(series.slice(1).every((s) => s.spanGaps === false)).toBe(true);
+    expect((charts[0].data as unknown[]).length).toBe(3);
+  });
+
+  it("uses the muted colour when no colours are given", async () => {
+    stubColourVars({ "--muted": "#566273" });
+    render(<Sparkline data={[[0, 1], [10, 20]]} label="x" />);
+    await waitFor(() => expect(charts.length).toBe(1));
+    const series = lineSeries(charts[0].options);
+    expect(series).toHaveLength(2);
+    expect(series[1].stroke).toBe("#566273");
   });
 
   it("destroys the chart on unmount", async () => {

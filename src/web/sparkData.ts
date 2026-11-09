@@ -51,7 +51,7 @@ export function pointFromModel(model: ModelFigures): Point | null {
   if (model.status !== "ok") {
     return {
       atMs: Date.now(),
-      values: { running: null, waiting: null, kvCachePercent: null, decodeTokensPerSecond: null, prefillTokensPerSecond: null },
+      values: { running: null, waiting: null, kvCachePercent: null, kvKeptPercent: null, decodeTokensPerSecond: null },
     };
   }
   if (model.readAt === null) return null;
@@ -61,8 +61,8 @@ export function pointFromModel(model: ModelFigures): Point | null {
       running: model.running,
       waiting: model.waiting,
       kvCachePercent: model.kvCachePercent,
+      kvKeptPercent: model.kvKeptPercent,
       decodeTokensPerSecond: model.decodeTokensPerSecond,
-      prefillTokensPerSecond: model.prefillTokensPerSecond,
     },
   };
 }
@@ -87,7 +87,8 @@ export function pointFromNode(node: NodeFigures): Point | null {
   };
 }
 
-// The uPlot-friendly view of one key: x in seconds (at / 1000), nulls kept as null.
-export function toUplotData(series: Series, key: string): [number[], (number | null)[]] {
-  return [series.at.map((atMs) => atMs / 1000), series.values[key] ?? []];
+// The uPlot-friendly view of the keys: x in seconds (at / 1000), then one array per key, in
+// order, nulls kept as null.
+export function toUplotData(series: Series, keys: string[]): [number[], ...(number | null)[][]] {
+  return [series.at.map((atMs) => atMs / 1000), ...keys.map((key) => series.values[key] ?? [])];
 }

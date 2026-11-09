@@ -404,7 +404,6 @@ describe("figuresFrom", () => {
     expect(f.preemptions).toBeNull();
     expect(f.mtpAcceptancePercent).toBeNull();
     expect(f.mtpAcceptanceSinceStartPercent).toBeNull();
-    expect(f.keptEvicted).toBeNull();
     expect(f.prefillTokensPerSecond).toBeNull();
     expect(f.readAt).toBe(new Date(T0).toISOString());
   });
@@ -1033,51 +1032,15 @@ describe("TensorFold", () => {
     expect(s["vllm:kv_cache_usage_perc"]).toBeUndefined();
   });
 
-  // The kept prompt states the engine had to evict for room, under a tracker-own key.
-  it("the evicted count is the engine's prompt_cache_evicted counter", () => {
-    const s = parseMetrics(tensorfold());
-    expect(s["kept_evicted_total"]).toBe(133);
+  // prompt_cache_evicted counts normal turnover, not pressure, so it is not read at all.
+  it("prompt_cache_evicted is not read: it counts normal turnover, not pressure", () => {
+    const s = parseMetrics(tensorfold({ "tensorfold:prompt_cache_evicted": "133" }));
+    expect("kept_evicted_total" in s).toBe(false);
     const f = figuresFrom("ok", null, reading(T0, s));
-    expect(f.keptEvicted).toBe(133);
+    expect("keptEvicted" in f).toBe(false);
     // The rest of the scrape still reads.
     expect(f.kvKeptPercent).toBe(23.1);
-  });
-
-  it("a measured 0 evictions is 0, not absent", () => {
-    const s = parseMetrics(tensorfold({ "tensorfold:prompt_cache_evicted": "0" }));
-    expect(s["kept_evicted_total"]).toBe(0);
-    expect(figuresFrom("ok", null, reading(T0, s)).keptEvicted).toBe(0);
-  });
-
-  it("no evicted counter gives no evicted figure", () => {
-    const s = parseMetrics(tensorfold({ "tensorfold:prompt_cache_evicted": [] }));
-    expect(s["kept_evicted_total"]).toBeUndefined();
-    const f = figuresFrom("ok", null, reading(T0, s));
-    expect(f.keptEvicted).toBeNull();
-    expect(f.kvKeptPercent).toBe(23.1);
-  });
-
-  it("an evicted counter on two lines is left out", () => {
-    const body = tensorfold() + "\ntensorfold:prompt_cache_evicted 140";
-    const s = parseMetrics(body);
-    expect(s["kept_evicted_total"]).toBeUndefined();
-    expect(figuresFrom("ok", null, reading(T0, s)).keptEvicted).toBeNull();
-  });
-
-  it("a vLLM scrape gives no evicted figure", () => {
-    const s = parseMetrics('vllm:kv_cache_usage_perc{engine="0"} 0.5');
-    expect(s["kept_evicted_total"]).toBeUndefined();
-    const f = figuresFrom("ok", null, reading(T0, s));
-    expect(f.keptEvicted).toBeNull();
-    expect(f.kvCachePercent).toBe(50);
-  });
-
-  it("no evicted figure when the status is not ok", () => {
-    const s = parseMetrics(tensorfold());
-    expect(s["kept_evicted_total"]).toBe(133);
-    const f = figuresFrom("unreachable", null, reading(T0, s));
-    expect(f.keptEvicted).toBeNull();
-    expect(f.readAt).toBe(new Date(T0).toISOString());
+    expect(f.kvCachePercent).toBe(58.4);
   });
 });
 

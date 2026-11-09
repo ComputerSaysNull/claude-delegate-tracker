@@ -21,6 +21,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     inputTokens: 1000,
     outputTokens: 200,
     cachedTokens: 600,
+    rebuiltTurns: null,
     asks: 0,
     questions: 0,
     mcpTask: null,
@@ -75,10 +76,10 @@ describe("perDay", () => {
     ];
     const days = perDay(runs, spanOf(7, runs, now));
     const byLabel = new Map(days.map((d) => [d.label, d]));
-    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
-    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
-    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
-    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, questions: null, asks: null, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, rebuilt: null, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, rebuilt: null, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("1 Oct")).toEqual({ label: "1 Oct", ok: 0, stopped: 0, limits: 1, failed: 0, cached: 0, fresh: 0, output: 0, rebuilt: null, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
+    expect(byLabel.get("28 Sep")).toEqual({ label: "28 Sep", ok: 0, stopped: 0, limits: 0, failed: 0, cached: 0, fresh: 0, output: 0, rebuilt: null, questions: null, asks: null, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
   });
 
   it("never lets a day's fresh figure go below zero", () => {
@@ -96,6 +97,37 @@ describe("perDay", () => {
     const days = perDay(runs, spanOf(7, runs, now));
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.inline, day.said]).toEqual([1, 2]);
+  });
+
+  it("a day's rebuilt prompts are the sum of its runs' rebuilt turns", () => {
+    const runs = [
+      run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), cachedTokens: 600, rebuiltTurns: 20 }),
+      run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), cachedTokens: 400, rebuiltTurns: 29 }),
+      run({ name: "c", startedAt: new Date(2026, 9, 4, 11).getTime(), cachedTokens: null, rebuiltTurns: null }),
+      run({ name: "d", startedAt: new Date(2026, 9, 3, 9).getTime(), cachedTokens: 250, rebuiltTurns: 5 }),
+    ];
+    const days = perDay(runs, spanOf(7, runs, now));
+    const byLabel = new Map(days.map((d) => [d.label, d]));
+    expect(byLabel.get("4 Oct")!.rebuilt).toBe(49);
+    expect(byLabel.get("3 Oct")!.rebuilt).toBe(5);
+    expect(byLabel.get("2 Oct")!.rebuilt).toBeNull();
+  });
+
+  it("a day with no run that reported cached tokens has no rebuilt figure, not 0", () => {
+    const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), cachedTokens: null, rebuiltTurns: null })];
+    const days = perDay(runs, spanOf(7, runs, now));
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect(day.rebuilt).toBeNull();
+  });
+
+  it("a day whose runs rebuilt nothing shows 0", () => {
+    const runs = [
+      run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), cachedTokens: 500, rebuiltTurns: 0 }),
+      run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), cachedTokens: 300, rebuiltTurns: 0 }),
+    ];
+    const days = perDay(runs, spanOf(7, runs, now));
+    const day = days.find((d) => d.label === "4 Oct")!;
+    expect(day.rebuilt).toBe(0);
   });
 });
 
@@ -151,8 +183,8 @@ describe("spanOf", () => {
   });
 
   it("perDay over a weekly span sums the runs of one week into one bucket", () => {
-    const a = run({ name: "a", startedAt: new Date(2026, 5, 6, 10).getTime(), outcome: "ok", inputTokens: 1000, outputTokens: 200, cachedTokens: 600 });
-    const b = run({ name: "b", startedAt: new Date(2026, 5, 8, 10).getTime(), outcome: "failed", inputTokens: 500, outputTokens: 100, cachedTokens: null });
+    const a = run({ name: "a", startedAt: new Date(2026, 5, 6, 10).getTime(), outcome: "ok", inputTokens: 1000, outputTokens: 200, cachedTokens: 600, rebuiltTurns: 3 });
+    const b = run({ name: "b", startedAt: new Date(2026, 5, 8, 10).getTime(), outcome: "failed", inputTokens: 500, outputTokens: 100, cachedTokens: null, rebuiltTurns: null });
     const runs = [a, b];
     const span = spanOf("all", runs, now);
     expect(span.weekly).toBe(true);
@@ -164,9 +196,11 @@ describe("spanOf", () => {
     expect(days[0].cached).toBe(600);
     expect(days[0].fresh).toBe(900);
     expect(days[0].output).toBe(300);
+    expect(days[0].rebuilt).toBe(3);
     // The next week's bucket stays empty.
     expect(days[1].ok).toBe(0);
     expect(days[1].failed).toBe(0);
+    expect(days[1].rebuilt).toBeNull();
   });
 
   it("counts a run that starts exactly at local midnight on that day, not the one before", () => {

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-// The cluster band as the design canvas draws it: the model server's four figures side by side
-// with a small chart under each that has one, and the nodes side by side without charts.
+// The cluster band as the design canvas draws it: the model server's three charted figures side by
+// side with a small chart under each, the figures without a chart as label-above-value items
+// under them, and the nodes side by side without charts.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { ModelPanel } from "../../src/web/ModelPanel.tsx";
@@ -17,11 +18,11 @@ vi.mock("../../src/web/Sparkline.tsx", () => ({
 }));
 
 const MODEL: ModelFigures = {
-  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, kvKeptPercent: null, keptEvicted: null, decodeTokensPerSecond: 41.2,
-  decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: null, mtpAcceptanceSinceStartPercent: null,
-  prefillTokensPerSecond: null, readAt: "2026-10-04T17:42:01.000Z",
+  status: "ok", running: 2, waiting: 0, kvCachePercent: 7.4, kvKeptPercent: null, decodeTokensPerSecond: 41.2,
+  decodeWindowSeconds: 10, prefixHitPercent: 91.8, preemptions: null, mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2,
+  prefillTokensPerSecond: 1200, readAt: "2026-10-04T17:42:01.000Z",
 };
-const SERIES = { at: [1, 2, 3], values: { running: [1, 2, 2], kvCachePercent: [5, 6, 7], decodeTokensPerSecond: [30, 40, 41], prefillTokensPerSecond: [20, 30, 31] } };
+const SERIES = { at: [1, 2, 3], values: { running: [1, 2, 2], kvCachePercent: [5, 6, 7], decodeTokensPerSecond: [30, 40, 41] } };
 const LIMITS = { loadWarn: 50, loadHot: 80, tempWarn: 70, tempHot: 85 };
 
 function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
@@ -35,18 +36,58 @@ function node(name: string, overrides: Partial<NodeFigures> = {}): NodeFigures {
   };
 }
 
+// A figure's cell in the model server grid, by the label it carries.
+function figure(label: string): HTMLElement {
+  const grid = screen.getByRole("list", { name: "Model server figures" });
+  const found = within(grid)
+    .getAllByRole("listitem")
+    .find((c) => (c.firstElementChild?.textContent ?? "").includes(label));
+  if (found === undefined) throw new Error(`no figure labelled ${label}`);
+  return found;
+}
+
+// A label's own words: its text without a help mark's button ("?") beside it.
+function labelText(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll("button").forEach((b) => b.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function readText(el: Element): string {
+  return (el.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
 describe("the model server card", () => {
   // The columns follow the card's own width, not the screen's: the card shares a row.
-  it("lays its six figures out three across on a wide card, each under its own label", () => {
+  it("lays its three charted figures out three across on a wide card, each under its own label", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const grid = screen.getByRole("list", { name: "Model server figures" });
     expect(grid.closest("section")!.className).toMatch(/(^|\s)@container\b/);
-    expect(grid.className).toMatch(/(^|\s)@2xl:grid-cols-3\b/);
-    const labels = within(grid).getAllByRole("listitem").map((cell) => cell.firstElementChild!.textContent);
-    expect(labels).toEqual(["Decode speed", "Prefill speed · last prompt", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance"]);
+    expect(grid.className).toMatch(/(^|\s)@md:grid-cols-3\b/);
+    const labels = within(grid)
+      .getAllByRole("listitem")
+      .map((cell) => readText(cell.firstElementChild!));
+    expect(labels).toEqual(["Decode speed", "Requests · running / waiting", "KV-cache use"]);
   });
 
-  it("writes each figure large in Plex Mono, with its unit beside it", () => {
+  // The figures without a chart keep the card from growing: one item each, label above value,
+  // in a row of their own.
+  it("puts prefill, prefix hits, MTP and today's rebuilt prompts in a compact item each, after the charted figures", () => {
+    render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
+    const grid = screen.getByRole("list", { name: "Model server figures" });
+    const compact = screen.getByRole("list", { name: "Model server figures without a chart" });
+    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the compact row comes after the charted figures.
+    expect(grid.compareDocumentPosition(compact) & 4).toBe(4);
+    const labels = within(compact)
+      .getAllByRole("listitem")
+      .map((item) => labelText(item.firstElementChild!));
+    expect(labels).toEqual(["Prefill · last prompt", "Prefix hits · since start", "MTP · last / all", "Prompts rebuilt · today"]);
+    for (const item of within(compact).getAllByRole("listitem")) {
+      expect(item.className.split(/\s+/)).toContain("flex-col");
+    }
+  });
+
+  it("writes each charted figure large in Plex Mono, with its unit beside it", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const value = screen.getByText((41.2).toLocaleString());
     expect(value.className).toMatch(/\bfont-mono\b/);
@@ -54,21 +95,33 @@ describe("the model server card", () => {
     expect(value.parentElement!.textContent).toContain("tok/s");
   });
 
-  it("counts the requests running large and those waiting small", () => {
+  it("shows the requests as one running / waiting number", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
-    const cell = screen.getByText("Requests").parentElement!;
-    expect(cell.textContent).toContain("2running");
-    expect(cell.textContent).toContain("0 waiting");
+    const cell = figure("Requests");
+    const number = cell.querySelector(".text-2xl");
+    expect(number).not.toBeNull();
+    expect(number!.textContent).toBe("2 / 0");
+    expect(readText(cell.firstElementChild!)).toBe("Requests · running / waiting");
   });
 
-  it("draws a small chart under decode speed, prefill speed, requests and KV-cache use, and none under prefix hits or MTP acceptance", () => {
+  it("draws a small chart under each charted figure, and none under prefill, prefix hits, MTP or rebuilt prompts", () => {
     render(<ModelPanel model={MODEL} history={SERIES} windowSeconds={3600} />);
     const charts = screen.getAllByRole("img").map((c) => c.getAttribute("aria-label"));
-    expect(charts).toHaveLength(4);
+    expect(charts).toHaveLength(3);
     expect(charts.join(" ")).toMatch(/Decode speed/);
-    expect(charts.join(" ")).toMatch(/Prefill speed/);
+    expect(charts.join(" ")).toMatch(/Requests/);
+    expect(charts.join(" ")).toMatch(/KV-cache use/);
+    expect(charts.join(" ")).not.toMatch(/Prefill/);
     expect(charts.join(" ")).not.toMatch(/Prefix/);
     expect(charts.join(" ")).not.toMatch(/MTP/);
+    expect(charts.join(" ")).not.toMatch(/Prompts rebuilt/);
+    // The chart is a line of its own under the number, not beside it.
+    const decode = figure("Decode speed");
+    const kids = Array.from(decode.children);
+    expect(kids).toHaveLength(3);
+    expect(kids[1].textContent).toContain("tok/s");
+    expect(kids[1].querySelector('[role="img"]')).toBeNull();
+    expect(kids[2].querySelector('[role="img"]')).not.toBeNull();
   });
 
   it("names itself in small capitals with the time of its newest reading", () => {

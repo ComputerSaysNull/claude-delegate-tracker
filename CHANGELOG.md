@@ -9,6 +9,40 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #95 — 2026-11-09 — feat: show how close the KV pool is to forcing out saved prompts
+
+### Added
+
+- **History counts the prompts delegations had to rebuild.** When the KV pool is full, the
+  engine throws out a delegation's saved prompt, and its next turn computes it again: on
+  2026-11-08 that cost 49 turns about three minutes each, and nothing showed it. A turn after
+  the first counts as rebuilt when it cached under half of the previous turn's prompt of at
+  least 4096 tokens, unless it trimmed tool results on purpose. A new "Prompts rebuilt" card
+  shows those turns per day. The run records gained the count, so they are rebuilt once from
+  the streams.
+- **The model server block warns as the KV pool fills, and counts today's rebuilt prompts.**
+  Reserved and kept turn amber when together they pass 90% of the pool and red from 97%:
+  near that point a new request may only find room by evicting saved prompts. Today's
+  rebuilt prompts sit in the row under the charts, and the help card adds the free room.
+
+### Changed
+
+- **The model server block shows pairs as one number with one two-line chart.** Its KV lines
+  had grown under a small number, three of its six figures had no chart, and the prefill
+  chart's dots sat on top of each other. Now decode speed, requests as running / waiting, and
+  KV-cache as reserved / kept each show one number with its chart across the column under
+  it. A pair draws two lines, keyed by a coloured stroke before each word of the label.
+  Under a divider, prefill, prefix hits, MTP acceptance (last / all, with a ? that explains
+  both, as KV-cache has) and today's rebuilt prompts each show their label above the number.
+  The prefill chart is gone.
+
+### Fixed
+
+- **The KV-cache cell no longer shows an eviction count that meant nothing.** The count from
+  #94 kept rising while nothing ran. Cause: the engine counts every saved prompt that is
+  gone, mostly older turns replaced by a newer turn of the same delegation, which is normal.
+  Fix: the count is gone; today's rebuilt prompts replace it.
+
 ## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
 
 ### Added

@@ -130,6 +130,22 @@ describe("colour tokens", () => {
   });
 });
 
+// The two lines of a panel chart reuse the pair already validated for colour blindness as
+// asked/messaged, in both themes.
+describe("the panel chart pair", () => {
+  it("reuses the validated asked/messaged colours, light and dark", () => {
+    for (const [theme, t] of [["light", LIGHT], ["dark", DARK]] as const) {
+      expect(t["chart-pair-a"], theme).toBe(t["chart-asked"]);
+      expect(t["chart-pair-b"], theme).toBe(t["chart-messaged"]);
+    }
+  });
+
+  it("is named for Tailwind as chart-pair-a and chart-pair-b", () => {
+    expect(CSS).toMatch(/--color-chart-pair-a:\s*var\(--chart-pair-a\)/);
+    expect(CSS).toMatch(/--color-chart-pair-b:\s*var\(--chart-pair-b\)/);
+  });
+});
+
 // A colour picked by the page itself rather than taken from a token.
 const OWN_COLOUR = /(?<![\w:-])(?:bg|text|border|ring|fill|stroke|placeholder)-(?:slate|gray|zinc|red|amber|green|blue|orange|yellow|white|black)(?:-\d{2,3})?\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{3}\b/g;
 

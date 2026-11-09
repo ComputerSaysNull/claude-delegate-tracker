@@ -6,16 +6,30 @@ import { localTime } from "../../src/web/time.ts";
 import type { ModelFigures } from "../../src/server/metrics.ts";
 import type { Series } from "../../src/server/history.ts";
 
-// The chart itself is Sparkline's to test; here only the range each chart is given matters.
+// The chart itself is Sparkline's to test; here only what each chart is handed matters: its
+// label, its y range, its span, its colours and how many lines it draws.
 vi.mock("../../src/web/Sparkline.tsx", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../src/web/Sparkline.tsx")>()),
-  Sparkline: ({ label, fixed, dots, span }: { label: string; fixed?: [number, number]; dots?: boolean; span?: number }) => (
+  Sparkline: ({
+    label,
+    fixed,
+    span,
+    colors,
+    data,
+  }: {
+    label: string;
+    fixed?: [number, number];
+    span?: number;
+    colors?: string[];
+    data: unknown[];
+  }) => (
     <div
       role="img"
       aria-label={label}
       data-fixed={fixed === undefined ? "" : fixed.join(",")}
-      data-dots={dots === undefined ? "" : String(dots)}
       data-span={span === undefined ? "" : String(span)}
+      data-colors={colors === undefined ? "" : colors.join(",")}
+      data-lines={String(data.length - 1)}
     />
   ),
 }));
@@ -27,7 +41,6 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
     waiting: null,
     kvCachePercent: null,
     kvKeptPercent: null,
-    keptEvicted: null,
     decodeTokensPerSecond: null,
     decodeWindowSeconds: null,
     prefixHitPercent: null,
@@ -40,15 +53,47 @@ function figures(overrides: Partial<ModelFigures> = {}): ModelFigures {
   };
 }
 
-// A figure's cell. Its label may carry a help button beside it (before or after the label text,
-// and possibly with an icon glyph), so match on the label text being in the label element rather
-// than on the cell's first child being exactly the label.
-function cell(label: string): HTMLElement {
-  const found = screen
+// The history the server keeps: the keys the charts draw.
+const SERIES: Series = {
+  at: [0, 1000],
+  values: {
+    running: [0, 0],
+    waiting: [0, 0],
+    kvCachePercent: [0, 0],
+    kvKeptPercent: [0, 0],
+    decodeTokensPerSecond: [0, 0],
+  },
+};
+
+const GRID = "Model server figures";
+const COMPACT = "Model server figures without a chart";
+const HELP = "About KV-cache use";
+
+function figureList(): HTMLElement {
+  return screen.getByRole("list", { name: GRID });
+}
+
+function compactList(): HTMLElement {
+  return screen.getByRole("list", { name: COMPACT });
+}
+
+function listItemIn(list: HTMLElement, label: string): HTMLElement {
+  const found = within(list)
     .getAllByRole("listitem")
     .find((c) => (c.firstElementChild?.textContent ?? "").includes(label));
   if (found === undefined) throw new Error(`no figure cell labelled ${label}`);
   return found;
+}
+
+// A figure's cell. Its label may carry a help mark beside it (before or after the label text,
+// and possibly with an icon glyph), so match on the label text being in the label element rather
+// than on the cell's first child being exactly the label.
+function cell(label: string): HTMLElement {
+  return listItemIn(figureList(), label);
+}
+
+function compactItem(label: string): HTMLElement {
+  return listItemIn(compactList(), label);
 }
 
 // The span holding a figure's big number.
@@ -58,18 +103,42 @@ function valueOf(label: string): HTMLElement {
   return value as HTMLElement;
 }
 
-// The row holding the number and its unit: captions must stay outside it.
+// The line holding a figure's number and its unit.
 function numberRow(label: string): HTMLElement {
-  return valueOf(label).parentElement!.parentElement as HTMLElement;
+  const row = valueOf(label).parentElement;
+  if (row === null) throw new Error(`no number row in ${label}`);
+  return row;
 }
 
-// The innermost element holding `needle`. A descendant always follows its ancestors in document
-// order, so the last match is the innermost one: that is the element holding the text itself,
-// not a wrapper around it.
-function innermost(root: HTMLElement, needle: string): HTMLElement {
-  const matches = [...root.querySelectorAll<HTMLElement>("*")].filter((el) => (el.textContent ?? "").includes(needle));
-  if (matches.length === 0) throw new Error(`no element holds ${needle}`);
-  return matches[matches.length - 1];
+// The figure's label line, which may carry strokes and a help mark.
+function labelLine(label: string): HTMLElement {
+  const line = cell(label).firstElementChild;
+  if (line === null) throw new Error(`no label in ${label}`);
+  return line as HTMLElement;
+}
+
+// The span holding a compact item's value: the item's second child, after its label.
+function compactValue(label: string): HTMLElement {
+  const value = compactItem(label).children[1];
+  if (value === undefined) throw new Error(`no value in ${label}`);
+  return value as HTMLElement;
+}
+
+// The text of an element as the page reads it, with runs of whitespace collapsed.
+// A label's own words: its text without a help mark's button ("?") beside it.
+function labelText(el: Element): string {
+  const copy = el.cloneNode(true) as Element;
+  copy.querySelectorAll("button").forEach((b) => b.remove());
+  return (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+function readText(el: Element): string {
+  return (el.textContent ?? "").replace(/\s+/g, " ").trim();
+}
+
+// The coloured strokes a label uses to key its lines.
+function strokesIn(root: HTMLElement): HTMLElement[] {
+  return [...root.querySelectorAll<HTMLElement>('[aria-hidden="true"]')];
 }
 
 // Whether some element inside `root` holds both a row's label and its figure: the row itself.
@@ -77,6 +146,16 @@ function hasRow(root: HTMLElement, label: string, value: string): boolean {
   return [...root.querySelectorAll<HTMLElement>("*")].some(
     (el) => (el.textContent ?? "").includes(label) && (el.textContent ?? "").includes(value),
   );
+}
+
+// What reserved and kept leave of the pool, as one decimal, the way the help card writes it.
+function freeText(reserved: number, kept: number): string {
+  return (100 - reserved - kept).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+// A speed as the panel writes it: one decimal, so a whole number is as wide as any other.
+function speed(n: number): string {
+  return n.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
 // React derives mouseenter/mouseleave from mouseover/mouseout, and a plain mouseenter does not
@@ -92,8 +171,6 @@ function hoverOut(el: HTMLElement) {
   fireEvent.mouseLeave(el);
 }
 
-const HELP = "About KV-cache use";
-
 describe("ModelPanel", () => {
   afterEach(cleanup);
 
@@ -106,85 +183,206 @@ describe("ModelPanel", () => {
 
   it("shows 0 for a zero figure", () => {
     render(<ModelPanel model={figures({ running: 0, waiting: 0 })} />);
-    expect(screen.getAllByText("0").length).toBe(2);
+    expect(valueOf("Requests").textContent).toBe("0 / 0");
   });
 
   it("carries a percent sign on KV-cache and prefix figures", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 7.4, prefixHitPercent: 92 })} />);
     expect(screen.getByText(`${(7.4).toLocaleString()}%`)).toBeTruthy();
-    expect(screen.getByText(`${(92).toLocaleString()}%`)).toBeTruthy();
+    expect(compactValue("Prefix hits · since start").textContent).toBe(`${(92).toLocaleString()}%`);
+  });
+
+  // The card stops growing at six figures: the three that have a chart stay in the grid, the
+  // other three drop to one compact item each under it, beside the rebuilt count.
+  it("puts only the charted figures in the main grid, in order: Decode speed, Requests, KV-cache", () => {
+    render(
+      <ModelPanel
+        model={figures({ decodeTokensPerSecond: 41.2, running: 2, waiting: 1, kvCachePercent: 58.4, kvKeptPercent: 23.1, prefixHitPercent: 92, mtpAcceptancePercent: 52, prefillTokensPerSecond: 1200 })}
+        history={SERIES}
+        windowSeconds={3600}
+        rebuiltToday={3}
+      />,
+    );
+    const grid = figureList();
+    const cells = within(grid).getAllByRole("listitem");
+    expect(cells).toHaveLength(3);
+    const labels = cells.map((c) => readText(c.firstElementChild!));
+    expect(labels[0]).toBe("Decode speed");
+    expect(labels[1]).toBe("Requests · running / waiting");
+    // The TensorFold label carries its help mark after the text.
+    expect(labels[2]).toContain("KV-cache · reserved / kept prompts");
+    // Each is a charted figure still: its number large, with its chart.
+    for (const c of cells) {
+      expect(c.querySelector(".text-2xl")).not.toBeNull();
+      expect(within(c).getByRole("img")).toBeTruthy();
+    }
+    // The TensorFold figure keeps its help mark.
+    expect(within(cells[2]).getByRole("button", { name: HELP })).toBeTruthy();
+    expect(grid.textContent).not.toContain("Prefill");
+    expect(grid.textContent).not.toContain("Prefix");
+    expect(grid.textContent).not.toContain("MTP");
+    expect(grid.textContent).not.toContain("Prompts rebuilt");
+  });
+
+  // The rows used to be spread over the height the Nodes card gives the model card, leaving a
+  // gap under the header; they start right under it now.
+  it("the figure grid starts under the header instead of spreading over the card's height", () => {
+    render(<ModelPanel model={figures()} />);
+    const grid = figureList();
+    const classes = grid.className.split(/\s+/);
+    expect(classes).not.toContain("content-evenly");
+    expect(classes).not.toContain("flex-1");
+    expect(classes).toContain("grid");
+    expect(classes).toContain("grid-cols-1");
+    expect(classes).toContain("@md:grid-cols-3");
+    expect(grid.className).toMatch(/(^|\s)mt-\S+/);
+    expect(grid.closest("section")!.className).toMatch(/\bflex-col\b/);
+  });
+
+  // A charted figure is its label, its number, and under them its chart across the column.
+  it("a charted figure puts its chart under its number, across the column", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 41.2 })} history={SERIES} windowSeconds={3600} />);
+    const figure = cell("Decode speed");
+    expect(figure.className.split(/\s+/)).toContain("flex-col");
+    const kids = Array.from(figure.children);
+    expect(kids).toHaveLength(3);
+    const number = kids[1] as HTMLElement;
+    expect(numberRow("Decode speed")).toBe(number);
+    expect(readText(number)).toContain("tok/s");
+    const img = within(figure).getByRole("img");
+    expect(kids[2].contains(img)).toBe(true);
+    expect(number.contains(img)).toBe(false);
+    expect(kids[0].contains(img)).toBe(false);
+  });
+
+  it("Decode speed draws one line in the default colour", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 41.2 })} history={SERIES} windowSeconds={3600} />);
+    const drawn = screen.getByRole("img", { name: /^Decode speed over/ });
+    expect(drawn.getAttribute("data-lines")).toBe("1");
+    // The default colour, whether left to Sparkline or named as the muted token.
+    expect(["", "--muted"]).toContain(drawn.getAttribute("data-colors"));
+    expect(drawn.getAttribute("data-fixed")).toBe("");
+  });
+
+  // Both request lines in one chart, each keyed by a stroke beside its word in the label.
+  it("Requests shows running / waiting as one number and draws both in one chart", () => {
+    render(<ModelPanel model={figures({ running: 2, waiting: 1 })} history={SERIES} windowSeconds={3600} />);
+    expect(valueOf("Requests").textContent).toBe("2 / 1");
+    expect(readText(labelLine("Requests"))).toBe("Requests · running / waiting");
+    const strokes = strokesIn(cell("Requests"));
+    expect(strokes).toHaveLength(2);
+    expect(strokes[0].className.split(/\s+/)).toContain("bg-chart-pair-a");
+    expect(strokes[1].className.split(/\s+/)).toContain("bg-chart-pair-b");
+    const drawn = screen.getByRole("img", { name: /^Requests over/ });
+    expect(drawn.getAttribute("data-lines")).toBe("2");
+    expect(drawn.getAttribute("data-colors")).toBe("--chart-pair-a,--chart-pair-b");
+    expect(drawn.getAttribute("data-fixed")).toBe("");
   });
 
   // TensorFold gives both a reserved and a kept share; they sit in one number, reserved first.
-  it("shows reserved and kept as one big number, reserved first", () => {
+  // At 1440 px the model card shares the row with the nodes card, and the full KV label did not
+  // fit its column: as flex items its words broke mid-word ("reserve / d"). The label is plain
+  // text whose stroke-and-word units never break inside, and " prompts" is left out on a
+  // mid-width card (still shown on a phone, where the column is the card's full width).
+  it("the KV label wraps only between its legend units, and drops 'prompts' on a mid-width card", () => {
     render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} />);
-    expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
+    const label = labelLine("KV-cache · reserved / kept prompts");
+    expect(label.className).not.toContain("inline-flex");
+    const units = Array.from(label.querySelectorAll("span.whitespace-nowrap"));
+    expect(units.map((u) => u.textContent)).toEqual(["reserved /", "kept prompts"]);
+    const prompts = Array.from(label.querySelectorAll("span")).find((s) => s.textContent === " prompts")!;
+    expect(prompts.className.split(" ")).toEqual(expect.arrayContaining(["@md:hidden", "@3xl:inline"]));
   });
 
-  it("labels the two numbers on the line under them, outside the number's row", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(kvCell.textContent).toContain("reserved / kept prompts");
-    const row = numberRow("KV-cache use");
-    expect(row.textContent).not.toContain("reserved");
-    expect(row.textContent).not.toContain("kept prompts");
-    expect(row.contains(innermost(kvCell, "reserved / kept prompts"))).toBe(false);
+  it("KV-cache on TensorFold shows reserved / kept and draws both in one chart, on 0–100", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} history={SERIES} windowSeconds={3600} />);
+    expect(valueOf("KV-cache").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
+    // The help mark follows the label text in the same line.
+    expect(readText(labelLine("KV-cache"))).toContain("KV-cache · reserved / kept prompts");
+    expect(within(cell("KV-cache")).getByRole("button", { name: HELP })).toBeTruthy();
+    const strokes = strokesIn(cell("KV-cache"));
+    expect(strokes).toHaveLength(2);
+    expect(strokes[0].className.split(/\s+/)).toContain("bg-chart-pair-a");
+    expect(strokes[1].className.split(/\s+/)).toContain("bg-chart-pair-b");
+    const drawn = screen.getByRole("img", { name: /^KV-cache/ });
+    expect(drawn.getAttribute("data-lines")).toBe("2");
+    expect(drawn.getAttribute("data-colors")).toBe("--chart-pair-a,--chart-pair-b");
+    expect(drawn.getAttribute("data-fixed")).toBe("0,100");
   });
 
-  it("puts the eviction count on its own line under the label line", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
-    const kvCell = cell("KV-cache use");
-    const labelLine = innermost(kvCell, "reserved / kept prompts");
-    const evictedLine = innermost(kvCell, "evicted since the engine started");
-    expect(evictedLine.textContent).toContain(`${(1268).toLocaleString()} evicted since the engine started`);
-    expect(evictedLine).not.toBe(labelLine);
-    expect(labelLine.contains(evictedLine)).toBe(false);
-    expect(evictedLine.contains(labelLine)).toBe(false);
-    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the eviction line comes after the label line.
-    expect(labelLine.compareDocumentPosition(evictedLine) & 4).toBe(4);
-    // jsdom does no layout: each line is its own line because it displays as a block.
-    expect(labelLine.classList.contains("block")).toBe(true);
-    expect(evictedLine.classList.contains("block")).toBe(true);
+  // The pool is close to full at 90% booked and nearly exhausted at 97%: the number warns, then
+  // reads as a failure, in the same colours the state badges use.
+  it("the KV numbers turn amber from 90% together and red from 97%", () => {
+    const { rerender } = render(<ModelPanel model={figures({ kvCachePercent: 44.9, kvKeptPercent: 45 })} />);
+    const classes = () => valueOf("KV-cache").className.split(/\s+/);
+    expect(classes()).not.toContain("text-state-queued");
+    expect(classes()).not.toContain("text-state-failed");
+    rerender(<ModelPanel model={figures({ kvCachePercent: 45, kvKeptPercent: 45 })} />);
+    expect(classes()).toContain("text-state-queued");
+    expect(classes()).not.toContain("text-state-failed");
+    expect(valueOf("KV-cache").textContent).toBe(`${(45).toLocaleString()}% / ${(45).toLocaleString()}%`);
+    rerender(<ModelPanel model={figures({ kvCachePercent: 48.5, kvKeptPercent: 48.5 })} />);
+    expect(classes()).toContain("text-state-failed");
+    expect(valueOf("KV-cache").textContent).toBe(`${(48.5).toLocaleString()}% / ${(48.5).toLocaleString()}%`);
   });
 
-  it("shows only the reserved share and the eviction line when there is no kept share", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: null, keptEvicted: 1268 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}%`);
-    expect(kvCell.textContent).toContain(`${(1268).toLocaleString()} kept prompts evicted since the engine started`);
-    expect(kvCell.textContent).not.toContain("reserved");
-    expect(kvCell.textContent).not.toContain("booked");
-  });
-
-  it("shows a measured 0 evictions as 0", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 0 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(kvCell.textContent).toContain(`${(0).toLocaleString()} evicted since the engine started`);
-    expect(kvCell.textContent).not.toContain("— evicted");
-  });
-
-  it("a vLLM model shows the plain number with no lines under it and no help button", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 7.4 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(valueOf("KV-cache use").textContent).toBe(`${(7.4).toLocaleString()}%`);
-    expect(kvCell.textContent).not.toContain("reserved");
-    expect(kvCell.textContent).not.toContain("evicted");
+  // vLLM has neither a kept share nor a help card: one number, one line, no strokes.
+  it("KV-cache on vLLM keeps one number, one line, and no help mark", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 7.4 })} history={SERIES} windowSeconds={3600} />);
+    expect(valueOf("KV-cache").textContent).toBe(`${(7.4).toLocaleString()}%`);
+    expect(readText(labelLine("KV-cache"))).toBe("KV-cache use");
+    expect(strokesIn(cell("KV-cache"))).toHaveLength(0);
     expect(screen.queryByRole("button", { name: HELP })).toBeNull();
+    const classes = valueOf("KV-cache").className.split(/\s+/);
+    expect(classes).not.toContain("text-state-queued");
+    expect(classes).not.toContain("text-state-failed");
+    const drawn = screen.getByRole("img", { name: /^KV-cache/ });
+    expect(drawn.getAttribute("data-lines")).toBe("1");
+    expect(["", "--muted"]).toContain(drawn.getAttribute("data-colors"));
+    expect(drawn.getAttribute("data-fixed")).toBe("0,100");
+  });
+
+  // The free room and today's rebuilt count moved: the free room stays in the help card, the
+  // rebuilt count is a compact figure of its own, and neither sits under the KV number.
+  it("no free line and no rebuilt line under the KV number", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
+    const kv = cell("KV-cache");
+    expect(kv.textContent).not.toContain("free");
+    expect(kv.textContent).not.toContain("rebuilt");
+    expect(Array.from(kv.children)).toHaveLength(3);
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe("3");
+  });
+
+  it("the help card still gives the free room", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
+    const button = screen.getByRole("button", { name: HELP });
+    hoverIn(button);
+    const card = screen.getByRole("tooltip");
+    expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
+    expect(hasRow(card, "Kept prompts", `${(23.1).toLocaleString()}%`)).toBe(true);
+    expect(hasRow(card, "Free", `${freeText(58.4, 23.1)}%`)).toBe(true);
+    expect(hasRow(card, "Rebuilt today", (3).toLocaleString())).toBe(true);
+    expect(card.textContent).toContain("reply budget");
+  });
+
+  it("the help card shows only the rows whose figures exist", () => {
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={null} />);
+    hoverIn(screen.getByRole("button", { name: HELP }));
+    const card = screen.getByRole("tooltip");
+    expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
+    expect(hasRow(card, "Kept prompts", `${(23.1).toLocaleString()}%`)).toBe(true);
+    expect(hasRow(card, "Free", `${freeText(58.4, 23.1)}%`)).toBe(true);
+    expect(card.textContent).not.toContain("Rebuilt today");
   });
 
   it("the help card opens on hover and closes on leave", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     expect(button.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByRole("tooltip")).toBeNull();
     hoverIn(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
-    const card = screen.getByRole("tooltip");
-    expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
-    expect(hasRow(card, "Kept prompts", `${(23.1).toLocaleString()}%`)).toBe(true);
-    expect(hasRow(card, "Evicted since the engine started", (1268).toLocaleString())).toBe(true);
-    expect(card.textContent).toContain("reply budget");
-    expect(card.textContent).toContain("rebuild");
+    expect(screen.getByRole("tooltip")).toBeTruthy();
     hoverOut(button);
     expect(screen.queryByRole("tooltip")).toBeNull();
     expect(button.getAttribute("aria-expanded")).toBe("false");
@@ -192,7 +390,7 @@ describe("ModelPanel", () => {
 
   // A phone has no hover: a tap opens the card and leaves it open until another tap.
   it("a click keeps the help card open after the mouse leaves, and a second click closes it", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -208,7 +406,7 @@ describe("ModelPanel", () => {
   // The KV figure sits near the top of the page, so a card opening upward ran off the window.
   // Opening downward, it lies over the delegation list, whose search box painted over it.
   it("the help card opens below its button, above the page under it", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     hoverIn(screen.getByRole("button", { name: HELP }));
     const placed = screen.getByRole("tooltip").parentElement!;
     expect(placed.className).toContain("top-full");
@@ -217,7 +415,7 @@ describe("ModelPanel", () => {
   });
 
   it("Escape closes the help card", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268 })} />);
+    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1 })} rebuiltToday={3} />);
     const button = screen.getByRole("button", { name: HELP });
     hoverIn(button);
     expect(screen.getByRole("tooltip")).toBeTruthy();
@@ -226,223 +424,142 @@ describe("ModelPanel", () => {
     expect(button.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("the help card shows only the rows whose figures exist", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: null, keptEvicted: 5 })} />);
-    const button = screen.getByRole("button", { name: HELP });
-    hoverIn(button);
-    const card = screen.getByRole("tooltip");
-    expect(hasRow(card, "Reserved by running requests", `${(58.4).toLocaleString()}%`)).toBe(true);
-    expect(hasRow(card, "Evicted since the engine started", (5).toLocaleString())).toBe(true);
-    expect(card.textContent).not.toContain("Kept prompts");
-  });
-
-  // The number's row cannot shrink, so a caption inside it cannot wrap and runs over the next
-  // cells. The KV-cache lines and the MTP caption sit on their own line under the number instead.
-  it("puts the long KV-cache and MTP captions on their own line, outside the number's row", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: 1268, mtpAcceptancePercent: 52 })} />);
-    const kvCell = cell("KV-cache use");
-    expect(valueOf("KV-cache use").textContent).toBe(`${(58.4).toLocaleString()}% / ${(23.1).toLocaleString()}%`);
-    expect(kvCell.textContent).toContain("reserved / kept prompts");
-    expect(kvCell.textContent).toContain("evicted");
-    const kvRow = numberRow("KV-cache use");
-    expect(kvRow.textContent).not.toContain("reserved");
-    expect(kvRow.textContent).not.toContain("evicted");
-    const mtpCell = cell("MTP acceptance");
-    expect(mtpCell.textContent).toContain("last requests to finish");
-    expect(numberRow("MTP acceptance").textContent).not.toContain("last requests to finish");
-  });
-
-  it("shows nothing about evictions when the count is null", () => {
-    render(<ModelPanel model={figures({ kvCachePercent: 58.4, kvKeptPercent: 23.1, keptEvicted: null })} />);
-    const kvCell = cell("KV-cache use");
-    const text = kvCell.textContent!;
-    expect(text).toContain(`${(23.1).toLocaleString()}%`);
-    expect(text).toContain("kept prompts");
-    expect(text).not.toContain("evicted");
-  });
-
-  it("shows decode speed without a line naming its window", () => {
-    render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} />);
-    const decodeCell = cell("Decode speed");
-    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
-    expect(decodeCell.textContent).toContain("tok/s");
-    expect(decodeCell.textContent).not.toMatch(/over/);
-  });
-
-  it("omits the preemptions row when it is null and shows it when set", () => {
-    const { rerender } = render(<ModelPanel model={figures({ preemptions: null })} />);
-    expect(screen.queryByText(/Preemptions/)).toBeNull();
-    rerender(<ModelPanel model={figures({ preemptions: 3 })} />);
-    expect(screen.getByText(/Preemptions/)).toBeTruthy();
-    expect(screen.getByText((3).toLocaleString())).toBeTruthy();
-  });
-
-  it("shows an as-of line when the status is ok", () => {
-    const readAt = "2024-01-15T13:45:00.000Z";
-    render(<ModelPanel model={figures({ status: "ok", readAt })} />);
-    expect(screen.getByText(`as of ${localTime(readAt)}`)).toBeTruthy();
-  });
-
-  it("shows the unreachable line with the last reading time", () => {
-    const readAt = "2024-01-15T13:45:00.000Z";
-    render(<ModelPanel model={figures({ status: "unreachable", readAt })} />);
-    expect(
-      screen.getByText(`Unreachable; no figures since ${localTime(readAt)}`)
-    ).toBeTruthy();
-  });
-
-  it("shows the unreachable line without a reading time", () => {
-    render(<ModelPanel model={figures({ status: "unreachable", readAt: null })} />);
-    expect(screen.getByText("Unreachable; no figures yet")).toBeTruthy();
-  });
-
-  it("shows the not-available line", () => {
-    render(<ModelPanel model={figures({ status: "not available" })} />);
-    expect(screen.getByText("/metrics is not available (404)")).toBeTruthy();
-  });
-
-  it("shows the no-known-figures line", () => {
-    render(<ModelPanel model={figures({ status: "no known figures" })} />);
-    expect(screen.getByText("/metrics has no figures this tracker reads").className).toContain("text-warn");
-  });
-
-  it("shows the not-configured line", () => {
-    render(<ModelPanel model={figures({ status: "not configured" })} />);
-    expect(screen.getByText("METRICS_URL is not set")).toBeTruthy();
-  });
-
-  it("shows the waiting line for a null model", () => {
-    render(<ModelPanel model={null} />);
-    expect(screen.getByText("Waiting for figures…")).toBeTruthy();
-  });
-
-  it("gives the KV-cache sparkline a fixed 0-100 y range, and the others none", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: {
-        running: [0, 0],
-        waiting: [0, 0],
-        kvCachePercent: [0, 0],
-        decodeTokensPerSecond: [0, 0],
-        prefillTokensPerSecond: [0, 0],
-      },
-    };
-    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
-    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-fixed")).toBe("0,100");
-    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-fixed")).toBe("");
-    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-fixed")).toBe("");
-    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
-  });
-
-  // The chart sits beside its number rather than under it, so a figure takes one line.
-  it("puts each chart on the same line as its number", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
-    };
+  // The figures without a chart are now a label with its value under it, four across on a wide
+  // card, under a divider: Prefill, Prefix hits, MTP, then today's rebuilt count.
+  it("the compact row shows Prefill, Prefix hits, MTP and Prompts rebuilt, each label above its value", () => {
     render(
       <ModelPanel
-        model={figures({ decodeTokensPerSecond: 80.5, prefillTokensPerSecond: 120.5, running: 3, kvCachePercent: 7.4 })}
-        history={history}
-        windowSeconds={3600}
+        model={figures({ prefillTokensPerSecond: 1200, prefixHitPercent: 92, mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })}
+        rebuiltToday={3}
       />,
     );
-    const cases: [RegExp, string][] = [
-      [/^Decode speed over/, (80.5).toLocaleString()],
-      [/^Prefill speed over/, (120.5).toLocaleString()],
-      [/^Requests over/, (3).toLocaleString()],
-      [/^KV-cache use over/, `${(7.4).toLocaleString()}%`],
+    const compact = compactList();
+    const labels = within(compact)
+      .getAllByRole("listitem")
+      .map((c) => labelText(c.firstElementChild!));
+    expect(labels).toEqual(["Prefill · last prompt", "Prefix hits · since start", "MTP · last / all", "Prompts rebuilt · today"]);
+    const cases: [string, string][] = [
+      ["Prefill · last prompt", speed(1200)],
+      ["Prefix hits · since start", `${(92).toLocaleString()}%`],
+      ["MTP · last / all", `${(52).toLocaleString()}% / ${(67.2).toLocaleString()}%`],
+      ["Prompts rebuilt · today", "3"],
     ];
-    for (const [name, value] of cases) {
-      const line = screen.getByRole("img", { name }).parentElement!.parentElement!;
-      const classes = line.className.split(/\s+/);
-      expect(classes).toContain("flex");
-      expect(classes).not.toContain("flex-col");
-      expect(within(line).getByText(value)).toBeTruthy();
+    for (const [label, value] of cases) {
+      const item = compactItem(label);
+      expect(item.className.split(/\s+/)).toContain("flex-col");
+      // The item is its label and its value, stacked: nothing else.
+      expect(Array.from(item.children)).toHaveLength(2);
+      const labelSpan = item.children[0] as HTMLElement;
+      const valueSpan = item.children[1] as HTMLElement;
+      expect(labelText(labelSpan)).toBe(label);
+      expect(labelSpan.className.split(/\s+/)).toContain("text-[13px]");
+      expect(labelSpan.className.split(/\s+/)).toContain("text-muted");
+      expect(valueSpan.textContent).toContain(value);
+      for (const cls of ["font-mono", "tabular-nums", "text-lg", "font-medium"]) {
+        expect(valueSpan.className.split(/\s+/)).toContain(cls);
+      }
+      expect(valueSpan.className.split(/\s+/)).not.toContain("text-2xl");
+      // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the label comes above its value.
+      expect(labelSpan.compareDocumentPosition(valueSpan) & 4).toBe(4);
     }
+    // The prefill speed's unit is a small sans caption inside the value, as it was.
+    const prefillValue = compactValue("Prefill · last prompt");
+    const unit = [...prefillValue.querySelectorAll<HTMLElement>("span")].find((el) => (el.textContent ?? "").includes("tok/s"));
+    expect(unit).toBeDefined();
+    expect(unit!.className.split(/\s+/)).toContain("font-sans");
   });
 
-  it("shows Prefill speed right after Decode speed, with its tok/s unit", () => {
-    render(<ModelPanel model={figures({ prefillTokensPerSecond: 120.5 })} />);
-    const prefillCell = cell("Prefill speed · last prompt");
-    expect(prefillCell.textContent).toContain((120.5).toLocaleString());
-    expect(prefillCell.textContent).toContain("tok/s");
-    const labels = screen.getAllByRole("listitem").map((c) => c.firstElementChild!.textContent);
-    expect(labels).toEqual([
-      "Decode speed", "Prefill speed · last prompt", "Requests", "KV-cache use", "Prefix-cache hits", "MTP acceptance",
-    ]);
-  });
-
-  it("shows MTP acceptance as a percent with its caption", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 47.5 })} />);
-    const mtpCell = cell("MTP acceptance");
-    expect(mtpCell.textContent).toContain(`${(47.5).toLocaleString()}%`);
-    expect(mtpCell.textContent).toContain("last requests to finish");
-    expect(mtpCell.textContent).not.toContain("now");
-  });
-
-  it("shows the MTP acceptance now figure then the since-start figure", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 47 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const nowPct = `${(52).toLocaleString()}%`;
-    const sincePct = `${(47).toLocaleString()}%`;
-    expect(text).toContain(nowPct);
-    expect(text).toContain("last requests to finish");
-    expect(text).toContain(sincePct);
-    expect(text).toContain("since start");
-    expect(text.indexOf(nowPct)).toBeLessThan(text.indexOf("last requests to finish"));
-    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf(sincePct));
-    expect(text.indexOf(sincePct)).toBeLessThan(text.indexOf("since start"));
-  });
-
-  it("shows a dash for the MTP now figure before the since-start figure when it is null", () => {
-    render(<ModelPanel model={figures({ mtpAcceptanceSinceStartPercent: 47 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const sincePct = `${(47).toLocaleString()}%`;
-    expect(text).toContain("—");
-    expect(text).toContain("last requests to finish");
-    expect(text).toContain(sincePct);
-    expect(text).toContain("since start");
-    expect(text.indexOf("—")).toBeLessThan(text.indexOf("last requests to finish"));
-  });
-
-  it("shows a dash for the MTP since-start figure after the now figure when it is null", () => {
-    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52 })} />);
-    const mtpCell = cell("MTP acceptance");
-    const text = mtpCell.textContent!;
-    const nowPct = `${(52).toLocaleString()}%`;
-    expect(text).toContain(nowPct);
-    expect(text).toContain("—");
-    expect(text).toContain("since start");
-    expect(text).toContain("last requests to finish");
-    expect(text.indexOf("last requests to finish")).toBeLessThan(text.indexOf("—"));
-    expect(text.indexOf("—")).toBeLessThan(text.indexOf("since start"));
-  });
-
-  it("shows a dash for Prefill speed and MTP acceptance when null", () => {
+  it("the compact row sits under a divider, two across, four on a wide card", () => {
     render(<ModelPanel model={figures()} />);
-    expect(cell("Prefill speed · last prompt").textContent).toContain("—");
-    expect(cell("MTP acceptance").textContent).toContain("—");
+    const compact = compactList();
+    const classes = compact.className.split(/\s+/);
+    for (const cls of ["mt-3", "grid", "grid-cols-2", "gap-x-6", "gap-y-2", "border-t", "border-line", "pt-2.5", "@2xl:grid-cols-4"]) {
+      expect(classes).toContain(cls);
+    }
+    // 4 is Node.DOCUMENT_POSITION_FOLLOWING: the compact row comes after the main grid.
+    expect(figureList().compareDocumentPosition(compact) & 4).toBe(4);
   });
 
-  it("shows the live prefill speed from the decode event, with last prompt in its title", () => {
+  it("Prompts rebuilt · today shows the count, 0 as 0, and — when unknown", () => {
+    const { rerender } = render(<ModelPanel model={figures()} rebuiltToday={12} />);
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe((12).toLocaleString());
+    rerender(<ModelPanel model={figures()} rebuiltToday={0} />);
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe("0");
+    rerender(<ModelPanel model={figures()} rebuiltToday={null} />);
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe("—");
+    rerender(<ModelPanel model={figures()} />);
+    expect(compactValue("Prompts rebuilt · today").textContent).toBe("—");
+  });
+
+  it("the compact MTP item shows last / since start, with a dash for a missing part", () => {
+    const { rerender } = render(
+      <ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })} />,
+    );
+    const both = `${(52).toLocaleString()}% / ${(67.2).toLocaleString()}%`;
+    expect(compactValue("MTP · last / all").textContent).toBe(both);
+    // The visible text is the label and then the two figures: no caption like the old one.
+    const text = compactItem("MTP · last / all").textContent!;
+    expect(text).toContain("MTP · last / all");
+    expect(text.indexOf(both)).toBeGreaterThan(text.indexOf("MTP · last / all"));
+    rerender(<ModelPanel model={figures({ mtpAcceptanceSinceStartPercent: 67.2 })} />);
+    expect(compactValue("MTP · last / all").textContent).toBe(`— / ${(67.2).toLocaleString()}%`);
+    rerender(<ModelPanel model={figures({ mtpAcceptancePercent: 52 })} />);
+    expect(compactValue("MTP · last / all").textContent).toBe(`${(52).toLocaleString()}% / —`);
+  });
+
+  // A title only shows on hover, which a phone does not have: MTP explains its two numbers with
+  // the same ? mark and card as KV-cache, which a tap opens.
+  it("the compact MTP item explains its two numbers with a help mark, not a title", () => {
+    render(<ModelPanel model={figures({ mtpAcceptancePercent: 52, mtpAcceptanceSinceStartPercent: 67.2 })} />);
+    const item = compactItem("MTP · last / all");
+    expect(item.hasAttribute("title")).toBe(false);
+    expect(item.children).toHaveLength(2);
+    // The card opens inside the label: a label that hides its overflow would clip it.
+    const labelClasses = (item.firstElementChild as HTMLElement).className.split(/\s+/);
+    expect(labelClasses).not.toContain("truncate");
+    expect(labelClasses).not.toContain("overflow-hidden");
+    const button = within(item.firstElementChild as HTMLElement).getByRole("button", { name: "About MTP acceptance" });
+    fireEvent.click(button);
+    const card = screen.getByRole("tooltip");
+    expect(card.textContent).toContain("Last requests to finish");
+    expect(card.textContent).toContain(`${(52).toLocaleString()}%`);
+    expect(card.textContent).toContain("Since the engine started");
+    expect(card.textContent).toContain(`${(67.2).toLocaleString()}%`);
+    expect(card.textContent).toContain("draft");
+    fireEvent.click(button);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  // The prefill speed is a single event between gaps, not a series: it gets no chart.
+  it("Prefill has no chart", () => {
+    render(<ModelPanel model={figures({ prefillTokensPerSecond: 1200 })} history={SERIES} windowSeconds={3600} />);
+    expect(screen.queryByRole("img", { name: /Prefill/ })).toBeNull();
+    expect(within(compactItem("Prefill · last prompt")).queryByRole("img")).toBeNull();
+    expect(screen.getAllByRole("img")).toHaveLength(3);
+  });
+
+  it("shows a dash for Prefill and MTP in the compact row when null", () => {
+    render(<ModelPanel model={figures()} />);
+    expect(compactValue("Prefill · last prompt").textContent).toContain("—");
+    expect(compactValue("MTP · last / all").textContent).toBe("— / —");
+  });
+
+  it("shows the live prefill speed from the decode event in the compact item", () => {
     render(
       <ModelPanel
         model={figures({ prefillTokensPerSecond: null })}
         decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
       />,
     );
-    const prefillCell = cell("Prefill speed · last prompt");
-    // "last prompt" sits in the title, so only the unit stands beside the number and the chart
-    // keeps the same width as Decode speed's.
-    expect(prefillCell.textContent).toBe(`Prefill speed · last prompt${(1453.3).toLocaleString()}tok/s`);
+    const value = compactValue("Prefill · last prompt");
+    expect(value.textContent).toContain(speed(1453.3));
+    expect(value.textContent).toContain("tok/s");
+    expect(value.textContent).not.toContain("—");
   });
 
   it("shows the model's own prefill figure when no decode event has arrived", () => {
     render(<ModelPanel model={figures({ prefillTokensPerSecond: 1200 })} />);
-    expect(cell("Prefill speed · last prompt").textContent).toContain((1200).toLocaleString());
+    expect(compactValue("Prefill · last prompt").textContent).toContain(speed(1200));
   });
 
   it("shows the model's own prefill figure when the model status is not ok, even with a decode event", () => {
@@ -452,9 +569,9 @@ describe("ModelPanel", () => {
         decode={{ tokensPerSecond: 61.4, windowSeconds: 1, prefillTokensPerSecond: 1453.3 }}
       />,
     );
-    const prefillCell = cell("Prefill speed · last prompt");
-    expect(prefillCell.textContent).toContain((1200).toLocaleString());
-    expect(prefillCell.textContent).not.toContain((1453.3).toLocaleString());
+    const value = compactValue("Prefill · last prompt");
+    expect(value.textContent).toContain(speed(1200));
+    expect(value.textContent).not.toContain(speed(1453.3));
   });
 
   it("shows a dash for prefill when both the model and the live decode have none", () => {
@@ -464,25 +581,15 @@ describe("ModelPanel", () => {
         decode={{ tokensPerSecond: 40, windowSeconds: 1, prefillTokensPerSecond: null }}
       />,
     );
-    expect(cell("Prefill speed · last prompt").textContent).toContain("—");
+    expect(compactValue("Prefill · last prompt").textContent).toContain("—");
   });
 
-  it("passes dots only to the Prefill speed chart", () => {
-    const history: Series = {
-      at: [0, 1000],
-      values: {
-        running: [0, 0],
-        waiting: [0, 0],
-        kvCachePercent: [0, 0],
-        decodeTokensPerSecond: [0, 0],
-        prefillTokensPerSecond: [0, 0],
-      },
-    };
-    render(<ModelPanel model={figures()} history={history} windowSeconds={3600} />);
-    expect(screen.getByRole("img", { name: /^Prefill speed over/ }).getAttribute("data-dots")).toBe("true");
-    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-dots")).toBe("");
-    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-dots")).toBe("");
-    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-dots")).toBe("");
+  it("shows decode speed without a line naming its window", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 80.5, decodeWindowSeconds: 10 })} />);
+    const decodeCell = cell("Decode speed");
+    expect(decodeCell.textContent).toContain((80.5).toLocaleString());
+    expect(decodeCell.textContent).toContain("tok/s");
+    expect(decodeCell.textContent).not.toMatch(/over/);
   });
 
   it("shows the live decode value once a decode event has arrived, over the model's own", () => {
@@ -514,39 +621,90 @@ describe("ModelPanel", () => {
     expect(decodeCell.textContent).toContain((80.5).toLocaleString());
     expect(decodeCell.textContent).not.toContain((61.4).toLocaleString());
   });
+
+  it("omits the preemptions row when it is null and shows it when set", () => {
+    const { rerender } = render(<ModelPanel model={figures({ preemptions: null })} />);
+    expect(screen.queryByText(/Preemptions/)).toBeNull();
+    rerender(<ModelPanel model={figures({ preemptions: 3 })} />);
+    expect(screen.getByText(/Preemptions/)).toBeTruthy();
+    expect(screen.getByText((3).toLocaleString())).toBeTruthy();
+  });
+
+  it("the preemptions line stays after the compact row", () => {
+    render(<ModelPanel model={figures({ preemptions: 3 })} />);
+    const preemptions = screen.getByText(/Preemptions/);
+    expect(compactList().compareDocumentPosition(preemptions) & 4).toBe(4);
+  });
+
+  it("shows an as-of line when the status is ok", () => {
+    const readAt = "2024-01-15T13:45:00.000Z";
+    render(<ModelPanel model={figures({ status: "ok", readAt })} />);
+    expect(screen.getByText(`as of ${localTime(readAt)}`)).toBeTruthy();
+  });
+
+  it("shows the unreachable line with the last reading time", () => {
+    const readAt = "2024-01-15T13:45:00.000Z";
+    render(<ModelPanel model={figures({ status: "unreachable", readAt })} />);
+    expect(screen.getByText(`Unreachable; no figures since ${localTime(readAt)}`)).toBeTruthy();
+  });
+
+  it("shows the unreachable line without a reading time", () => {
+    render(<ModelPanel model={figures({ status: "unreachable", readAt: null })} />);
+    expect(screen.getByText("Unreachable; no figures yet")).toBeTruthy();
+  });
+
+  it("shows the not-available line", () => {
+    render(<ModelPanel model={figures({ status: "not available" })} />);
+    expect(screen.getByText("/metrics is not available (404)")).toBeTruthy();
+  });
+
+  it("shows the no-known-figures line", () => {
+    render(<ModelPanel model={figures({ status: "no known figures" })} />);
+    expect(screen.getByText("/metrics has no figures this tracker reads").className).toContain("text-warn");
+  });
+
+  it("shows the not-configured line", () => {
+    render(<ModelPanel model={figures({ status: "not configured" })} />);
+    expect(screen.getByText("METRICS_URL is not set")).toBeTruthy();
+  });
+
+  it("shows the waiting line for a null model", () => {
+    render(<ModelPanel model={null} />);
+    expect(screen.getByText("Waiting for figures…")).toBeTruthy();
+  });
+
+  it("gives the KV-cache sparkline a fixed 0-100 y range, and the others none", () => {
+    render(<ModelPanel model={figures()} history={SERIES} windowSeconds={3600} />);
+    expect(screen.getByRole("img", { name: /^KV-cache use over/ }).getAttribute("data-fixed")).toBe("0,100");
+    expect(screen.getByRole("img", { name: /^Decode speed over/ }).getAttribute("data-fixed")).toBe("");
+    expect(screen.getByRole("img", { name: /^Requests over/ }).getAttribute("data-fixed")).toBe("");
+  });
 });
 
-// A chart beside a number must not move when the number does, its time axis must follow the
-// range switch, and the card's rows spread over the height the Nodes card gives it.
+// A chart under a number must not move when the number does, its time axis must follow the
+// range switch, and the figures must not spread over the height the Nodes card gives the card.
 describe("ModelPanel steady charts", () => {
   afterEach(cleanup);
   const twoPoints: Series = {
     at: [0, 10_000],
-    values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], decodeTokensPerSecond: [0, 0], prefillTokensPerSecond: [0, 0] },
+    values: { running: [0, 0], waiting: [0, 0], kvCachePercent: [0, 0], kvKeptPercent: [0, 0], decodeTokensPerSecond: [0, 0] },
   };
 
   it("shows decode and prefill speeds with one decimal, even on a whole number", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 41, prefillTokensPerSecond: 1465 })} />);
-    expect(valueOf("Decode speed").textContent).toBe((41).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
-    expect(valueOf("Prefill speed · last prompt").textContent).toBe((1465).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+    expect(valueOf("Decode speed").textContent).toBe(speed(41));
+    expect(compactValue("Prefill · last prompt").textContent).toContain(speed(1465));
   });
 
-  it("gives the decode and prefill numbers a minimum width in digits", () => {
-    render(<ModelPanel model={figures({ decodeTokensPerSecond: 9.5, prefillTokensPerSecond: 980.2 })} />);
+  it("gives the decode number a minimum width in digits", () => {
+    render(<ModelPanel model={figures({ decodeTokensPerSecond: 9.5 })} />);
     expect(valueOf("Decode speed").style.minWidth).toBe("4ch");
-    expect(valueOf("Prefill speed · last prompt").style.minWidth).toBe("7ch");
   });
 
   it("hands every chart the chosen range as its time span", () => {
     render(<ModelPanel model={figures()} history={twoPoints} windowSeconds={900} />);
-    for (const img of screen.getAllByRole("img")) expect(img.getAttribute("data-span")).toBe("900");
-  });
-
-  it("spreads the figure rows over the card's height", () => {
-    render(<ModelPanel model={figures()} />);
-    const list = screen.getByRole("list", { name: "Model server figures" });
-    expect(list.className).toMatch(/\bflex-1\b/);
-    expect(list.className).toMatch(/\bcontent-evenly\b/);
-    expect(list.closest("section")!.className).toMatch(/\bflex\b.*\bflex-col\b|\bflex-col\b.*\bflex\b/);
+    const charts = screen.getAllByRole("img");
+    expect(charts).toHaveLength(3);
+    for (const img of charts) expect(img.getAttribute("data-span")).toBe("900");
   });
 });
