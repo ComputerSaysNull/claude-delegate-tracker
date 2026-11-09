@@ -220,6 +220,7 @@ export interface Day {
   cached: number;
   fresh: number;
   output: number;
+  rebuilt: number | null;
   questions: number | null;
   asks: number | null;
   asked: number;
@@ -237,6 +238,7 @@ export function perDay(runs: RunRecord[], span: Span): Day[] {
     label: b.label,
     ok: 0, stopped: 0, limits: 0, failed: 0,
     cached: 0, fresh: 0, output: 0,
+    rebuilt: null,
     questions: null, asks: null, asked: 0, messaged: 0, both: 0,
     messages: null, undelivered: null, waits: [], inline: 0, said: 0,
   }));
@@ -255,6 +257,9 @@ export function perDay(runs: RunRecord[], span: Span): Day[] {
     day.cached += r.cachedTokens ?? 0;
     day.fresh += Math.max(0, (r.inputTokens ?? 0) - (r.cachedTokens ?? 0));
     day.output += r.outputTokens ?? 0;
+    // A run whose stream reported no cached tokens has no rebuilt figure and is left out, so a
+    // day none of them reported on stays null rather than 0.
+    if (r.rebuiltTurns !== null) day.rebuilt = (day.rebuilt ?? 0) + r.rebuiltTurns;
     if (r.questions !== null) day.questions = (day.questions ?? 0) + r.questions;
     if (r.asks !== null) day.asks = (day.asks ?? 0) + r.asks;
     // A run that never said how many messages it got is left out of the involvement counts;

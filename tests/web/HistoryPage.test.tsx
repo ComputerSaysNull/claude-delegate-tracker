@@ -31,6 +31,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     inputTokens: 1000,
     outputTokens: 200,
     cachedTokens: 500,
+    rebuiltTurns: null,
     asks: 0,
     questions: 0,
     mcpTask: null,
@@ -524,6 +525,65 @@ describe("HistoryPage", () => {
     });
   });
 
+  describe("the Prompts rebuilt card", () => {
+    // The card holding the "Prompts rebuilt" chart: the heading's container.
+    function rebuiltCard(): HTMLElement {
+      return screen.getByRole("heading", { name: "Prompts rebuilt" }).closest("div")!;
+    }
+
+    // The hit target of a day column in the Prompts rebuilt chart, found by its aria-label.
+    function rebuiltColumn(label: string): HTMLElement {
+      return within(rebuiltCard()).getAllByRole("button").find((b) => (b.getAttribute("aria-label") ?? "").includes(label))!;
+    }
+
+    it("adds a Prompts rebuilt card to the Delegations group", async () => {
+      mockFetch(api(RUNS));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Delegations", level: 2 })).toBeTruthy());
+      const group = screen.getByRole("heading", { name: "Delegations", level: 2 }).closest("section")!;
+      const headings = within(group).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+      expect(headings).toContain("Prompts rebuilt");
+      // In document order the new card sits after Caller involvement.
+      expect(headings.indexOf("Prompts rebuilt")).toBeGreaterThan(headings.indexOf("Caller involvement"));
+    });
+
+    it("the Prompts rebuilt card's hover card names the day and its count", async () => {
+      mockFetch(
+        api([
+          run({ name: "a", startedAt: NOW - 2 * DAY, cachedTokens: 600, rebuiltTurns: 20 }),
+          run({ name: "b", startedAt: NOW - 2 * DAY, cachedTokens: 400, rebuiltTurns: 29 }),
+        ]),
+      );
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Prompts rebuilt" })).toBeTruthy());
+      const card = rebuiltCard();
+      const day = rebuiltColumn("2 Oct");
+      expect(screen.queryByRole("tooltip")).toBeNull();
+
+      fireEvent.mouseOver(day);
+      const tooltip = within(card).getByRole("tooltip");
+      expect(tooltip.textContent).toContain("2 Oct");
+      expect(tooltip.textContent).toContain("49");
+
+      fireEvent.mouseOut(day);
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
+
+    it("a day without a rebuilt figure draws no column and its hover card says —", async () => {
+      mockFetch(api([run({ name: "a", startedAt: NOW - 2 * DAY, cachedTokens: null, rebuiltTurns: null })]));
+      render(<HistoryPage />);
+      await waitFor(() => expect(screen.getByRole("heading", { name: "Prompts rebuilt" })).toBeTruthy());
+      const card = rebuiltCard();
+      const day = rebuiltColumn("2 Oct");
+      // A day with no rebuilt figure draws no bar segment.
+      expect(day.querySelector("[data-part]")).toBeNull();
+
+      fireEvent.mouseOver(day);
+      const tooltip = within(card).getByRole("tooltip");
+      expect(tooltip.textContent).toContain("—");
+    });
+  });
+
   it("adds the KV-cache, busy, and cluster-busy sections with the KV legend", async () => {
     mockFetch(api(RUNS), { buckets: busyBuckets(), writeError: null });
     render(<HistoryPage />);
@@ -715,6 +775,7 @@ describe("HistoryPage", () => {
       expect(cardHeadings("Delegations")).toEqual([
         "Delegations per day",
         "Caller involvement",
+        "Prompts rebuilt",
         "Tokens per day",
         "Why runs did not finish",
       ]);

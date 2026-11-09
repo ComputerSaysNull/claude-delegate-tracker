@@ -488,6 +488,8 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
   const askRuns = askedMoreThanOnce(runs);
   const involvedMax = days.reduce((m, d) => Math.max(m, d.asked + d.messaged + d.both), 0);
   const involvedPct = (v: number) => (involvedMax === 0 ? 0 : (v / involvedMax) * 100);
+  const rebuiltMax = days.reduce((m, d) => Math.max(m, d.rebuilt ?? 0), 0);
+  const rebuiltPct = (v: number) => (rebuiltMax === 0 ? 0 : (v / rebuiltMax) * 100);
   const fig = (v: number | null): string => (v === null ? "—" : String(v));
 
   return (
@@ -632,6 +634,27 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <h3 className="text-sm font-semibold">Prompts rebuilt</h3>
+            <p className="text-[12.5px] text-muted">Turns that found their saved prompt gone and computed it again.</p>
+            <DayChart
+              days={days}
+              pct={rebuiltPct}
+              title={(d) => d.label}
+              ariaLabel={(d) => `${d.label}: ${fig(d.rebuilt)} prompts rebuilt`}
+              totalFor={(d) => ({ label: "Prompts rebuilt", value: fig(d.rebuilt) })}
+              // One series, in the palette's teal: no outcome uses it, so it carries no other meaning.
+              barsFor={(d) => [
+                { key: "rebuilt", label: "Prompts rebuilt", value: d.rebuilt ?? 0, swatch: "bg-muted", text: fig(d.rebuilt) },
+              ]}
+            />
+            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+              {labels.map((l) => (
+                <span key={l}>{l}</span>
+              ))}
+            </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">

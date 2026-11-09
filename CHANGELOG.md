@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #95 — 2026-11-09 — feat: show how close the KV pool is to forcing out saved prompts
+
+### Added
+
+- **History counts the prompts delegations had to rebuild.** When the KV pool is full, the
+  engine throws out a delegation's saved prompt, and its next turn computes it again: on
+  2026-11-08 that cost 49 turns about three minutes each, and nothing showed it. A turn after
+  the first counts as rebuilt when it cached under half of the previous turn's prompt of at
+  least 4096 tokens, unless it trimmed tool results on purpose. A new "Prompts rebuilt" card
+  shows those turns per day. The run records gained the count, so they are rebuilt once from
+  the streams.
+
 ## #94 — 2026-11-08 — fix: show the TensorFold engine's KV pool, and keep its MTP acceptance
 
 ### Added

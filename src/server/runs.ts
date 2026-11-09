@@ -20,6 +20,7 @@ export interface RunRecord {
   inputTokens: number | null;    // end.input_tokens
   outputTokens: number | null;   // end.output_tokens
   cachedTokens: number | null;   // end.cached_tokens
+  rebuiltTurns: number | null;   // turns that rebuilt their prompt because the saved one was gone; null when the stream reported no cached tokens
   asks: number | null;      // question events: how many times it called ask_caller; null on a record saved before this field
   questions: number | null; // the questions those events held (each one's questions array, string entries only)
   messages: number | null;      // message events the caller sent the run; null on a record saved before this field
@@ -36,7 +37,8 @@ export interface RunsStatus {
   writeError: string | null; // the last error writing the file, null when the last write worked
 }
 
-const VERSION = 1;
+// Version 2 added rebuiltTurns; an older file is rebuilt from the streams.
+const VERSION = 2;
 
 function reasonOf(outcome: Outcome, end: Record<string, unknown> | null): string | null {
   if (outcome === "ok") return null;
@@ -108,6 +110,43 @@ function countMessages(lines: string[]): { messages: number; undelivered: number
   return { messages, undelivered, messageWaits };
 }
 
+// A prompt under this many tokens costs nothing to rebuild, so it does not count.
+const REBUILD_MIN_PROMPT = 4096;
+// Under half of the previous prompt cached means the saved prefix was gone; a turn that trimmed
+// tool results shortened the cached prefix on purpose, so it is left out.
+const REBUILD_CACHE_SHARE = 1 / 2;
+
+// The turns a stream holds that rebuilt their prompt, as summariseRun records them: a turn after
+// the first whose cached tokens are under half the previous turn's prompt of at least
+// REBUILD_MIN_PROMPT tokens, unless it trimmed tool results. Null when no turn reported cached
+// tokens, since then nothing says whether a prompt was rebuilt.
+function countRebuilt(lines: string[]): number | null {
+  let prev: number | null = null;
+  let rebuilt = 0;
+  let reported = false;
+  for (const line of lines) {
+    if (!line.includes("turn")) continue;
+    let ev: unknown;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof ev !== "object" || ev === null || Array.isArray(ev)) continue;
+    const e = ev as Record<string, unknown>;
+    if (e.t !== "turn") continue;
+    const cached = e.cached_tokens;
+    if (typeof cached === "number") {
+      reported = true;
+      const evicted = e.tool_results_evicted;
+      const trimmed = evicted === true || (typeof evicted === "number" && evicted > 0);
+      if (prev !== null && prev >= REBUILD_MIN_PROMPT && cached < prev * REBUILD_CACHE_SHARE && !trimmed) rebuilt += 1;
+    }
+    if (typeof e.input_tokens === "number") prev = e.input_tokens;
+  }
+  return reported ? rebuilt : null;
+}
+
 export function summariseRun(name: string, size: number, lines: string[], now: Date): RunRecord | null {
   const s = newStreamState();
   for (const line of lines) applyLine(s, line);
@@ -115,6 +154,7 @@ export function summariseRun(name: string, size: number, lines: string[], now: D
   const outcome = stateOf(s, now.getTime(), 0) as Outcome;
   const { asks, questions } = countQuestions(lines);
   const { messages, undelivered, messageWaits } = countMessages(lines);
+  const rebuiltTurns = countRebuilt(lines);
   return {
     name,
     size,
@@ -129,6 +169,7 @@ export function summariseRun(name: string, size: number, lines: string[], now: D
     inputTokens: typeof s.end.input_tokens === "number" ? s.end.input_tokens : null,
     outputTokens: typeof s.end.output_tokens === "number" ? s.end.output_tokens : null,
     cachedTokens: typeof s.end.cached_tokens === "number" ? s.end.cached_tokens : null,
+    rebuiltTurns,
     asks,
     questions,
     messages,
@@ -152,7 +193,7 @@ function isRecord(v: unknown): v is RunRecord {
   return typeof r.name === "string" && typeof r.size === "number" && typeof r.outcome === "string" && OUTCOMES.includes(r.outcome)
     && numberOrNull(r.startedAt) && stringOrNull(r.reason) && stringOrNull(r.repo) && typeof r.repoFromPaths === "boolean" && stringOrNull(r.model)
     && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens)
-    && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean")
+    && numberOrNull(r.rebuiltTurns) && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean")
     && numberOrNull(r.messages) && numberOrNull(r.undelivered) && numbersOrNull(r.messageWaits);
 }
 
@@ -276,12 +317,14 @@ export class RunStore {
     if (obj.version !== VERSION || !Array.isArray(obj.runs)) return;
     // A record of the wrong shape is dropped: the page reads these fields without checking.
     // A record saved before asks/questions existed is kept, with those two read as null; the
-    // same holds for mcpTask and for the message counts on a record saved before they existed.
+    // same holds for mcpTask, for the message counts on a record saved before they existed, and
+    // for rebuiltTurns.
     const runs = (obj.runs as unknown[]).map((r) => {
       if (typeof r !== "object" || r === null) return r;
       const rec = r as Record<string, unknown>;
       return {
         ...rec,
+        rebuiltTurns: rec.rebuiltTurns === undefined ? null : rec.rebuiltTurns,
         asks: rec.asks === undefined ? null : rec.asks,
         questions: rec.questions === undefined ? null : rec.questions,
         mcpTask: rec.mcpTask === undefined ? null : rec.mcpTask,
