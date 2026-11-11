@@ -18,7 +18,7 @@ function makeSettings(overrides: Partial<Settings> = {}): Settings {
     quietAfterSeconds: 1, streamsPollSeconds: 1, followPollSeconds: 1,
     metricsUrl: null, metricsTokenEnv: null, metricsPollSeconds: 1, decodeRefreshSeconds: 1,
     nodes: [], nodeKey: null, nodeKnownHosts: null, nodesPollSeconds: 1, historyWindowSeconds: 1,
-    dataDir: null, runsScanSeconds: 1,
+    dataDir: null, runsScanSeconds: 1, imageRoots: [], imageMaxBytes: 1,
     limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 }, ...overrides,
   };
 }
@@ -70,6 +70,7 @@ function makeApp(overrides: Partial<AppDeps> & { runs?: () => RunsPayload } = {}
     view: () => null,
     follow: () => null,
     thinking: () => null,
+    image: async () => ({ kind: "missing" }),
     history: () => null,
     clusterHistory: () => ({ windowSeconds: 1, model: { at: [], values: {} }, nodes: [] }),
     cluster: () => ({ model: MODEL, nodes: [], limits: { loadWarn: 1, loadHot: 2, tempWarn: 1, tempHot: 2 } }),
@@ -579,5 +580,60 @@ describe("thinking route", () => {
     const app = makeApp({ thinking: () => "Look at the file." });
     const res = await app.request("/api/streams/s.jsonl/thinking/2", { headers: { host: "evil.example" } });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("image route", () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+
+  it("serves the image for a known name and ref, typed, unsniffed and never cached", async () => {
+    const image = vi.fn(async (name: string, ref: string) =>
+      name === "s.jsonl" && ref === "t2c1" ? { kind: "ok" as const, type: "image/png", bytes: PNG } : { kind: "missing" as const },
+    );
+    const app = makeApp({ image });
+    const res = await app.request("/api/streams/s.jsonl/image/t2c1", goodHost);
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
+    expect(res.headers.get("content-type")).toBe("image/png");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
+    expect(image).toHaveBeenCalledWith("s.jsonl", "t2c1");
+  });
+
+  it.each([
+    [{ kind: "missing" as const }, "not found"],
+    [{ kind: "off" as const }, "images are off"],
+    [{ kind: "refused" as const, reason: "outside the image roots" }, "outside the image roots"],
+  ])("answers 404 JSON saying why for %o", async (result, error) => {
+    const app = makeApp({ image: async () => result });
+    const res = await app.request("/api/streams/s.jsonl/image/f0", goodHost);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error });
+  });
+
+  it.each(["f01", "t0c1", "t1c", "x", "f-1", "t1c1x", "f1.png"])(
+    "rejects a bad ref %s without calling deps.image",
+    async (ref) => {
+      const image = vi.fn(async () => ({ kind: "ok" as const, type: "image/png", bytes: PNG }));
+      const app = makeApp({ image });
+      const res = await app.request(`/api/streams/s.jsonl/image/${ref}`, goodHost);
+      expect(res.status).toBe(404);
+      expect(image).not.toHaveBeenCalled();
+    },
+  );
+
+  it("sets no access-control-allow-origin", async () => {
+    const app = makeApp({ image: async () => ({ kind: "ok", type: "image/png", bytes: PNG }) });
+    const res = await app.request("/api/streams/s.jsonl/image/f0", goodHost);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("rejects a foreign host with 403", async () => {
+    const image = vi.fn(async () => ({ kind: "ok" as const, type: "image/png", bytes: PNG }));
+    const app = makeApp({ image });
+    const res = await app.request("/api/streams/s.jsonl/image/f0", { headers: { host: "evil.example" } });
+    expect(res.status).toBe(403);
+    expect(image).not.toHaveBeenCalled();
   });
 });

@@ -901,3 +901,36 @@ describe("a running delegation past the newest 20", () => {
     }
   });
 });
+
+describe("an image a stream names", () => {
+  const NAME = "20261001T120000.000-a.jsonl";
+  const stream = (): Record<string, unknown>[] => [
+    { ...startEvent("2026-10-01T12:00:00.000Z"), files_read: [{ path: "/w/views/front.png", bytes: 1, est_tokens: 1, images: 1 }] },
+  ];
+
+  it("gives the path the stream recorded for a ref", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, stream());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.imagePath(NAME, "f0")).toBe("/w/views/front.png");
+      expect(poller.imagePath(NAME, "f1")).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns null for a name the poller did not list", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, stream());
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.imagePath("../x.jsonl", "f0")).toBeNull();
+      expect(poller.imagePath("unknown.jsonl", "f0")).toBeNull();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

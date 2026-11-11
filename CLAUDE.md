@@ -37,7 +37,8 @@ how planned work is tracked) and is read first wherever they matter.
 
 ## File access and security
 - A name from a URL is never joined onto a path. The backend looks up a name in the list it
-  listed itself, and opens only *.jsonl files it found, read-only.
+  listed itself, and opens only *.jsonl files it found, read-only, plus an image whose path a
+  stream recorded, inside IMAGE_ROOTS (ADR-0006).
 - Accept only loopback Host names plus ALLOWED_HOSTS; anything else is refused, so a page on
   another origin cannot read it through DNS rebinding.
 - GET routes and SSE only, no CORS headers, no write or control endpoints.

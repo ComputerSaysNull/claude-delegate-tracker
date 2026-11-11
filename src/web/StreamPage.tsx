@@ -6,7 +6,7 @@
 // the hook.
 import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, TriangleAlert, X } from "lucide-react";
-import type { StreamView, TurnView, CallView, SummaryView, AnswerView, MessageView } from "../server/view.ts";
+import type { StreamView, TurnView, CallView, FileView, SummaryView, AnswerView, MessageView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
 import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
@@ -159,21 +159,7 @@ export function StreamViewBody({ view }: { view: StreamView }) {
               {view.files.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {view.files.map((file) => (
-                    <span
-                      key={file.path}
-                      className={`inline-flex w-[22rem] max-w-full items-center gap-1.5 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
-                        file.skipped !== null ? "border-warn/60 text-warn" : ""
-                      }`}
-                    >
-                      <File size={12} aria-hidden="true" />
-                      <span className="min-w-0 flex-1">
-                        <span className="line-clamp-2 break-all" title={file.path} tabIndex={0}>{insideRepo(file.path, row.workspace)}</span>
-                      </span>
-                      {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
-                      {file.images !== null && <span className="whitespace-nowrap"> · {file.images} {file.images === 1 ? "image" : "images"}</span>}
-                      {file.lines !== null && <span className="whitespace-nowrap"> · lines {file.lines.start}–{file.lines.end}</span>}
-                      {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
-                    </span>
+                    <FileChip key={file.path} file={file} name={view.name} shown={insideRepo(file.path, row.workspace)} />
                   ))}
                 </div>
               )}
@@ -468,7 +454,7 @@ function DelegationMessage({
           {calls.length > 0 && (
             <ul aria-label="Tool calls" className="flex flex-col overflow-hidden rounded-xl border border-line">
               {calls.map((call, i) => (
-                <CallViewItem key={i} call={call} />
+                <CallViewItem key={i} call={call} name={name} />
               ))}
             </ul>
           )}
@@ -598,6 +584,88 @@ function ThinkingDetails({
   );
 }
 
+// A file the delegation was given. One sent as an image opens on a click to show that image.
+function FileChip({ file, name, shown }: { file: FileView; name: string; shown: string }) {
+  const [open, setOpen] = useState(false);
+  const look = `inline-flex w-[22rem] max-w-full flex-col gap-1 rounded-md border border-line px-2 py-0.5 font-mono text-xs ${
+    file.skipped !== null ? "border-warn/60 text-warn" : ""
+  }`;
+  const line = (
+    <>
+      <File size={12} aria-hidden="true" className="shrink-0" />
+      <span className="min-w-0 flex-1">
+        <span className="line-clamp-2 break-all" title={file.path} tabIndex={file.imageRef === null ? 0 : undefined}>{shown}</span>
+      </span>
+      {file.size !== null && <span className="whitespace-nowrap"> · {file.size}</span>}
+      {file.images !== null && <span className="whitespace-nowrap"> · {file.images} {file.images === 1 ? "image" : "images"}</span>}
+      {file.lines !== null && <span className="whitespace-nowrap"> · lines {file.lines.start}–{file.lines.end}</span>}
+      {file.skipped !== null && <span className="whitespace-nowrap"> · refused</span>}
+    </>
+  );
+  if (file.imageRef === null) {
+    return (
+      <span className={look}>
+        <span className="flex items-center gap-1.5">{line}</span>
+      </span>
+    );
+  }
+  return (
+    <span className={look}>
+      <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-left">
+        {line}
+      </button>
+      {open && <StreamImage key={`${name}/${file.imageRef}`} name={name} imageRef={file.imageRef} label={file.path} />}
+    </span>
+  );
+}
+
+type ImageState = { kind: "loading" } | { kind: "ok"; url: string } | { kind: "failed"; why: string };
+
+// An image the delegation was given or read, fetched when shown and let go when hidden: the
+// download stops and the image is released. Its callers key it by stream and ref, so another
+// image starts afresh. It is the file as it is on disk now: a script may have rewritten it.
+function StreamImage({ name, imageRef, label }: { name: string; imageRef: string; label: string }) {
+  const src = `/api/streams/${encodeURIComponent(name)}/image/${imageRef}`;
+  const [state, setState] = useState<ImageState>({ kind: "loading" });
+  useEffect(() => {
+    let gone = false;
+    let url: string | null = null;
+    const stop = new AbortController();
+    fetch(src, { signal: stop.signal })
+      .then(async (r) => {
+        if (!r.ok) {
+          const body = (await r.json().catch(() => ({}))) as { error?: unknown };
+          throw new Error(typeof body.error === "string" ? body.error : "not found");
+        }
+        return r.blob();
+      })
+      .then((blob) => {
+        if (gone) return;
+        url = URL.createObjectURL(blob);
+        setState({ kind: "ok", url });
+      })
+      .catch((e: unknown) => {
+        if (!gone) setState({ kind: "failed", why: e instanceof Error ? e.message : "not found" });
+      });
+    return () => {
+      gone = true;
+      stop.abort();
+      if (url !== null) URL.revokeObjectURL(url);
+    };
+  }, [src]);
+  if (state.kind === "loading") return <p className="font-sans text-xs text-muted">Loading the image…</p>;
+  if (state.kind === "failed") return <p className="font-sans text-xs text-warn">Could not load the image: {state.why}.</p>;
+  return (
+    <figure className="flex flex-col gap-1">
+      <img src={state.url} alt={`The image ${label}`} className="max-h-[32rem] max-w-full self-start rounded border border-line object-contain" />
+      <figcaption className="font-sans text-xs text-muted">
+        The file as it is on disk now; a script may have changed it since the model read it.{" "}
+        <a href={src} target="_blank" rel="noopener noreferrer">Open full size</a>
+      </figcaption>
+    </figure>
+  );
+}
+
 // A call in one line: the file's name and the lines it read when it names a path, else its first argument.
 function callSummary(args: [string, string][]): { text: string; full: string } | null {
   const get = (key: string) => args.find(([k]) => k === key)?.[1];
@@ -610,7 +678,7 @@ function callSummary(args: [string, string][]): { text: string; full: string } |
   return { text: lines.length > 0 ? `${name} · ${lines.join(" ")}` : name, full: path };
 }
 
-function CallViewItem({ call }: { call: CallView }) {
+function CallViewItem({ call, name }: { call: CallView; name: string }) {
   const [open, setOpen] = useState(false);
   const summary = callSummary(call.args);
   const figures = [
@@ -647,6 +715,7 @@ function CallViewItem({ call }: { call: CallView }) {
           {call.args.map(([key, value], i) => (
             <p key={i} className="break-all">{key}: {value}</p>
           ))}
+          {call.imageRef !== null && <StreamImage key={`${name}/${call.imageRef}`} name={name} imageRef={call.imageRef} label={summary?.full ?? call.name} />}
         </div>
       )}
       {call.message !== null && (

@@ -122,6 +122,19 @@ describe('loadSettings', () => {
     expect(s.allowedHosts).toEqual(['foo.example', 'bar']);
   });
 
+  it('IMAGE_ROOTS splits and trims absolute folders, and is empty when unset', () => {
+    expect(loadSettings({}).imageRoots).toEqual([]);
+    expect(loadSettings({ IMAGE_ROOTS: ' /srv/a , ,/srv/b ' }).imageRoots).toEqual(['/srv/a', '/srv/b']);
+  });
+
+  it('IMAGE_ROOTS refuses a relative folder', () => {
+    expect(() => loadSettings({ IMAGE_ROOTS: '/srv/a,projects' })).toThrow(/IMAGE_ROOTS/);
+  });
+
+  it('IMAGE_MAX_BYTES is read as a whole number', () => {
+    expect(loadSettings({ IMAGE_MAX_BYTES: '2048' }).imageMaxBytes).toBe(2048);
+  });
+
   it('TRANSCRIPT_DIR blank is null, otherwise trimmed kept', () => {
     expect(loadSettings({ TRANSCRIPT_DIR: '  ' }).transcriptDir).toBeNull();
     expect(loadSettings({ TRANSCRIPT_DIR: 'C:\\x' }).transcriptDir).toBe('C:\\x');

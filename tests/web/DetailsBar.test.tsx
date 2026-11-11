@@ -94,6 +94,7 @@ function call(overrides: Partial<CallView> = {}): CallView {
     result: null,
     exitCode: null,
     time: null,
+    imageRef: null,
     ...overrides,
   };
 }

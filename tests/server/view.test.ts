@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyLine, listRow, newStreamState, type StreamState } from "../../src/server/streams.ts";
-import { applyViewEvent, buildView, diffView, newViewState, turnThinking, type StreamView, type ViewState } from "../../src/server/view.ts";
+import { applyViewEvent, buildView, diffView, imagePath, newViewState, turnThinking, type StreamView, type ViewState } from "../../src/server/view.ts";
 
 const NOW = new Date("2026-10-01T13:00:09.000Z");
 const QUIET = 120;
@@ -952,9 +952,9 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null },
-      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null, images: null },
-      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null, images: null },
+      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null },
+      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null, images: null, imageRef: null },
+      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null, images: null, imageRef: null },
     ]);
   });
 
@@ -967,7 +967,7 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 }, images: null },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 }, images: null, imageRef: null },
     ]);
     const single = viewOf([start({ files_read: [{ path: "/w/a", start_line: 7, end_line: 7 }] })]);
     expect(single.files[0].lines).toEqual({ start: 7, end: 7 });
@@ -976,7 +976,7 @@ describe("files", () => {
   it("leaves lines null for a whole-file entry with neither bound", () => {
     const v = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py" }] })]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null, images: null },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
     ]);
   });
 
@@ -1007,7 +1007,7 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null, images: null },
+      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null, images: null, imageRef: null },
     ]);
   });
 
@@ -1023,10 +1023,10 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8 },
-      { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null },
-      { path: "/w/proj/str.png", size: null, skipped: null, lines: null, images: null },
-      { path: "/w/proj/zero.png", size: null, skipped: null, lines: null, images: null },
+      { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8, imageRef: "f0" },
+      { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
+      { path: "/w/proj/str.png", size: null, skipped: null, lines: null, images: null, imageRef: null },
+      { path: "/w/proj/zero.png", size: null, skipped: null, lines: null, images: null, imageRef: null },
     ]);
   });
 });
@@ -1523,4 +1523,48 @@ describe("which model answered (format 1.15)", () => {
     expect(v.turns[0].askedFor).toBeNull();
     expect(v.turns[1].askedFor).toBe("m-a");
   });
+});
+
+// An image the model was given or read can be shown on request. The view marks each with a ref
+// the page asks for it by; the backend turns a ref back into the path the stream recorded.
+describe("images the model was given or read", () => {
+  const events = [
+    start({ format: "1.13", files_read: [
+      { path: "/w/proj/notes.md", bytes: 10, est_tokens: 3 },
+      { path: "/w/proj/views/front.png", given: "views/front.png", bytes: 120, est_tokens: 40, images: 1 },
+    ], files_skipped: [{ path: "/w/proj/big.png", reason: "too large", images: 1 }] }),
+    { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+    { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+      { name: "read_file", outcome: "ran", arguments: { path: "/w/proj/notes.md" }, result_lines: 1, result_bytes: 10 },
+      { name: "read_file", outcome: "ran", arguments: { path: "/w/proj/views/side.png" }, result_images: 1 },
+      { name: "look", outcome: "ran", arguments: { file: "/w/proj/views/top.png" }, result_images: 1 },
+    ], text: "" },
+    { t: "priced", at: at(0), turn: 2, of_turns: 4 },
+    { t: "tools", at: at(0), turn: 2, of_turns: 4, tool_calls: [{ name: "read_file", arguments: { path: "/w/proj/views/back.png" } }] },
+  ];
+
+  it("gives a prefetched image file a ref, and a text or skipped file none", () => {
+    const v = viewOf(events);
+    expect(v.files.map((f) => f.imageRef)).toEqual([null, "f1", null]);
+  });
+
+  it("gives a finished call that returned an image from a path a ref, and other calls none", () => {
+    const v = viewOf(events);
+    expect(v.turns[0].calls.map((c) => c.imageRef)).toEqual([null, "t1c1", null]);
+    expect(v.turns[1].calls.map((c) => c.imageRef)).toEqual([null]);
+  });
+
+  it("turns a ref back into the path the stream recorded", () => {
+    const { state, view } = build(events);
+    expect(imagePath(state.start, view, "f1")).toBe("/w/proj/views/front.png");
+    expect(imagePath(state.start, view, "t1c1")).toBe("/w/proj/views/side.png");
+  });
+
+  it.each(["f0", "f2", "f9", "t1c0", "t1c2", "t2c0", "t9c0", "f01", "t0c0", "t1c01", "x", "f-1", "../f1", ""])(
+    "finds no image for the ref %s",
+    (ref) => {
+      const { state, view } = build(events);
+      expect(imagePath(state.start, view, ref)).toBeNull();
+    },
+  );
 });

@@ -17,6 +17,7 @@ import type { RowFilter } from "./catalog.ts";
 import type { RunRecord, RunsStatus } from "./runs.ts";
 import type { Settings } from "./settings.ts";
 import type { StreamView, ViewPatch } from "./view.ts";
+import type { ImageResult } from "./images.ts";
 
 export interface AppDeps {
   settings: Settings;
@@ -30,6 +31,9 @@ export interface AppDeps {
   follow: (name: string, listener: (patch: ViewPatch) => void) => (() => void) | null;
   // A finished turn's thinking text; null for a name the backend did not list itself or a turn still open.
   thinking: (name: string, turn: number) => string | null;
+  // An image the stream says the model was given or read, by its ref; read from the path the
+  // stream recorded, never one from the URL.
+  image: (name: string, ref: string) => Promise<ImageResult>;
   history: (before: string, filter: RowFilter) => HistoryPage | null;
   cluster: () => Cluster;
   clusterHistory: () => ClusterHistory;
@@ -65,7 +69,7 @@ function hostAllowed(host: string, allowedHosts: string[]): boolean {
 }
 
 export function createApp(deps: AppDeps): Hono {
-  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, history, cluster, clusterHistory, subscribeCluster, subscribeDecode, runs, busy, power } = deps;
+  const { settings, staticRoot, health, subscribeHealth, streams, subscribe, view, follow, thinking, image, history, cluster, clusterHistory, subscribeCluster, subscribeDecode, runs, busy, power } = deps;
   const app = new Hono();
 
   // Reject hosts that are neither local nor allow-listed (stops DNS rebinding).
@@ -124,6 +128,26 @@ export function createApp(deps: AppDeps): Hono {
     if (!/^[1-9][0-9]{0,5}$/.test(turn)) return c.json({ error: "not found" }, 404);
     const text = thinking(c.req.param("name"), Number(turn));
     return text === null ? c.json({ error: "not found" }, 404) : c.json({ text });
+  });
+
+  // An image, fetched only when the reader asks for it. The bytes are typed by the backend,
+  // never sniffed, never cached (a script may rewrite the file), and run nothing if opened.
+  app.get("/api/streams/:name/image/:ref", async (c) => {
+    const ref = c.req.param("ref");
+    if (!/^(?:f(?:0|[1-9][0-9]{0,4})|t[1-9][0-9]{0,5}c(?:0|[1-9][0-9]{0,4}))$/.test(ref)) {
+      return c.json({ error: "not found" }, 404);
+    }
+    const got = await image(c.req.param("name"), ref);
+    if (got.kind === "ok") {
+      return c.body(got.bytes, 200, {
+        "Content-Type": got.type,
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "no-store",
+        "Content-Security-Policy": "default-src 'none'; sandbox",
+      });
+    }
+    const error = got.kind === "off" ? "images are off" : got.kind === "refused" ? got.reason : "not found";
+    return c.json({ error }, 404);
   });
 
   // Stream the list to the page so it updates without a reload; with ?stream=<name>,

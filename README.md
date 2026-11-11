@@ -64,6 +64,8 @@ Settings come from the environment (see `.env.example` for the placeholders):
 - `HISTORY_WINDOW_SECONDS` — how far back the charts of the figures reach.
 - `DATA_DIR` — where the tracker keeps its records (ADR-0005); unset, a per-user data folder.
 - `RUNS_SCAN_SECONDS` — how often the folder is checked for runs that ended.
+- `IMAGE_ROOTS` — comma-separated folders the images a delegation was given or read may be shown from (ADR-0006); unset, images are off.
+- `IMAGE_MAX_BYTES` — the largest image file shown.
 - `LOAD_WARN_PERCENT`, `LOAD_HOT_PERCENT`, `TEMP_WARN_C`, `TEMP_HOT_C` — where CPU and GPU use, and temperatures, turn amber and red; each warning value must sit below its hot one.
 - The other poll intervals, and the optional identity check.
 

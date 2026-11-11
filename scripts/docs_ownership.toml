@@ -87,6 +87,7 @@ owns = [
   "src/server/runs.ts",
   "src/server/busy.ts",
   "src/server/power.ts",
+  "src/server/images.ts",
   "src/server/metrics.ts",
   "src/server/nodes.ts",
   "src/server/titles.ts",

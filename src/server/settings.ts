@@ -20,6 +20,8 @@ export interface Settings {
   dataDir: string | null;       // DATA_DIR; where the run records are kept; default from LOCALAPPDATA/XDG_DATA_HOME/HOME
   runsScanSeconds: number;      // RUNS_SCAN_SECONDS; how often the runs folder is checked for runs that ended
   limits: Limits;               // LOAD_WARN_PERCENT, LOAD_HOT_PERCENT, TEMP_WARN_C, TEMP_HOT_C
+  imageRoots: string[];         // IMAGE_ROOTS; comma-separated absolute folders images may be read from; default none (images off)
+  imageMaxBytes: number;        // IMAGE_MAX_BYTES; the largest image file served
 }
 
 // Where a figure turns amber (warn) and red (hot): CPU and GPU use in percent, temperatures in °C.
@@ -47,6 +49,7 @@ export const DEFAULTS = {
   tempHotC: 85,
   nodeTimeoutMs: 10000,
   sshPort: 22,
+  imageMaxBytes: 20 * 1024 * 1024,
 } as const;
 
 function nodeTargets(env: Record<string, string | undefined>): NodeTarget[] {
@@ -129,5 +132,15 @@ export function loadSettings(env: Record<string, string | undefined>): Settings 
     dataDir: (env.DATA_DIR?.trim() ?? "") === "" ? dataDirDefault(env) : (env.DATA_DIR ?? "").trim(),
     runsScanSeconds: wholeNumber(env, "RUNS_SCAN_SECONDS", DEFAULTS.runsScanSeconds, 5, 3600),
     limits: { loadWarn, loadHot, tempWarn, tempHot },
+    imageRoots: imageRoots(env),
+    imageMaxBytes: wholeNumber(env, "IMAGE_MAX_BYTES", DEFAULTS.imageMaxBytes, 1, 100 * 1024 * 1024),
   };
+}
+
+function imageRoots(env: Record<string, string | undefined>): string[] {
+  const roots = (env.IMAGE_ROOTS ?? "").split(",").map((r) => r.trim()).filter((r) => r !== "");
+  for (const root of roots) {
+    if (!path.isAbsolute(root)) throw new SettingsError(`IMAGE_ROOTS must be comma-separated absolute folders, not "${root}".`);
+  }
+  return roots;
 }

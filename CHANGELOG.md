@@ -9,6 +9,22 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #99 — 2026-11-11 — feat: show the images a delegation was given or read, on request
+
+### Added
+
+- **Open a tool row or click a file chip to see the image the model got.** Delegations that
+  work on rendered views can run for hours, and the tracker showed only "1 image". The
+  streams already record each image's path: a prefetched file's, and a `read_file` call's.
+  The view gives each such file and finished call a ref, and
+  `/api/streams/<name>/image/<ref>` reads the file from the path the stream recorded, never
+  one from the URL. It reads only inside `IMAGE_ROOTS` after links are resolved, only
+  raster types (never SVG), only a regular file within `IMAGE_MAX_BYTES`, and answers with
+  `nosniff`, `no-store` and a sandboxing CSP. It never waits on a named pipe, and checks
+  again the file it actually opened. Unset roots mean images are off (ADR-0006).
+  The page says the image is the file as it is on disk now, since a script may have
+  rewritten it.
+
 ## #98 — 2026-11-11 — feat: render Markdown tables, and thinking as Markdown while its fold is open
 
 ### Added
