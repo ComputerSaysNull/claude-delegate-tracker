@@ -2,7 +2,7 @@
 // no IntersectionObserver, so each instance records its callback and the elements it observes,
 // and bottomInView() replays an intersecting report for every live (not disconnected) instance
 // inside act — letting a test drive the load-on-scroll path without a real observer.
-import { act } from "@testing-library/react";
+import { act, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 interface LiveObserver {
@@ -60,6 +60,16 @@ export function bottomInView(): void {
       }
     }
   });
+}
+
+// The list makes a fresh observer in an effect after each page, and a findBy can return before
+// that effect has run. Reporting the marker then reaches no live observer and nothing loads, so
+// after awaiting a page, wait for a live observer first.
+export async function bottomInViewOnceObserved(): Promise<void> {
+  await waitFor(() => {
+    if (!observers.some((o) => !o.disconnected && o.targets.length > 0)) throw new Error("no live observer yet");
+  });
+  bottomInView();
 }
 
 // How many observers were made, and how many are still live: a real observer reports only

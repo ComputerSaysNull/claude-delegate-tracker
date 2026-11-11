@@ -9,6 +9,19 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #96 — 2026-11-11 — fix: list tests wait for the scroll observer a page makes
+
+### Fixed
+
+- **Three delegation list tests no longer fail now and then under the full suite.** The
+  Older-fetch filter test failed once in 25 full runs: the list stayed idle on its first
+  older page and the second fetch was never made. The list makes a new scroll observer in an
+  effect after each page, and a test's `findBy` could return before that effect ran: the
+  test then reported the end marker in view to no observer at all. The observer test showed
+  the same race directly, failing 2 in 40 runs with one observer made where two were due.
+  Tests that act after a page now wait for the observer first, then for the fetch itself.
+  A test of the helper makes the observer late on purpose and fails without the wait.
+
 ## #95 — 2026-11-09 — feat: show how close the KV pool is to forcing out saved prompts
 
 ### Added

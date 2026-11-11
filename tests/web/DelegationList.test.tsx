@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { bottomInView, installIntersectionObserver, observerCounts } from "./intersection.ts";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { bottomInView, bottomInViewOnceObserved, installIntersectionObserver, observerCounts } from "./intersection.ts";
 import { DelegationList } from "../../src/web/DelegationList.tsx";
 import { localTime } from "../../src/web/time.ts";
 import { STATE_LABEL } from "../../src/web/states.tsx";
@@ -195,7 +195,8 @@ describe("DelegationList", () => {
     render(<DelegationList list={list([row({ name: "last live" })], { capped: true, total: 21 })} />);
     bottomInView();
     await screen.findByText("First older");
-    bottomInView();
+    await bottomInViewOnceObserved();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await screen.findByText("Second older");
     expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/streams?before=last%20live");
     expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/streams?before=older-2");
@@ -348,9 +349,9 @@ describe("DelegationList", () => {
       />,
     );
     await screen.findByText("Older rare");
-    bottomInView();
+    await bottomInViewOnceObserved();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     await screen.findByText("Second older");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
     const url = new URL(fetchMock.mock.calls[1][0], "http://localhost");
     expect(url.searchParams.get("before")).toBe("more-1");
     expect(url.searchParams.get("model")).toBe("rare");
@@ -542,9 +543,9 @@ describe("DelegationList", () => {
     expect(observerCounts()).toEqual({ made: 1, live: 1 });
     bottomInView();
     expect(await screen.findByText("First older")).toBeTruthy();
-    const after = observerCounts();
-    expect(after.made).toBeGreaterThan(1);
-    expect(after.live).toBe(1);
+    // The fresh observer is made in an effect, which can run after findByText returns.
+    await waitFor(() => expect(observerCounts().made).toBeGreaterThan(1));
+    expect(observerCounts().live).toBe(1);
   });
 
   it("loads nothing on delegations:more when the list is not capped", async () => {
