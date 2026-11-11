@@ -159,14 +159,16 @@ describe("a turn's thinking", () => {
     expect(screen.queryByText(/^Thinking/)).toBeNull();
   });
 
-  it("labels an open turn's thinking by the reasoning written so far and shows it directly", () => {
+  it("labels an open turn's thinking by the reasoning written so far and shows it on opening, without a fetch", () => {
     const reasoning = "x".repeat(1240);
     render(
       <StreamViewBody
         view={view({ turns: [turn(1, { closed: false, partial: { reasoning, answer: "" } })] })}
       />,
     );
-    expect(screen.getByText("Thinking · 1,240 characters")).toBeTruthy();
+    const fold = screen.getByText("Thinking · 1,240 characters").closest("details")!;
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
     expect(screen.getByText(reasoning)).toBeTruthy();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -253,6 +255,7 @@ describe("folding a long thinking text", () => {
     );
     const fold = screen.getByText("Thinking · 300 characters").closest("details")!;
     fold.open = true;
+    fireEvent(fold, new Event("toggle"));
     const text = screen.getByText(reasoning);
     const button = screen.getByRole("button", { name: "Fold the thinking" });
     expect(text.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
