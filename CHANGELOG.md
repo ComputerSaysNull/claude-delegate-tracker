@@ -9,6 +9,14 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #101 — 2026-11-11 — fix: drop the round mark beside the delegation's messages
+
+### Fixed
+
+- **A delegation's bubbles use the whole width on a phone.** Each turn and question had a
+  round asterisk mark on its left, which took width from the bubble and said nothing its
+  left side does not already say. The mark is gone on every width.
+
 ## #100 — 2026-11-11 — feat: pair the History day charts, and bar the reasons runs did not finish
 
 ### Changed
