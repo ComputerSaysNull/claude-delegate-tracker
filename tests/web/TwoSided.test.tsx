@@ -62,6 +62,25 @@ describe("the two sides", () => {
     }
   });
 
+  // On a phone the round mark beside each turn took width from the bubble and said nothing the
+  // left side does not already say, so a delegation's message holds no mark, only its column.
+  it("puts no mark beside the delegation's messages", () => {
+    render(
+      <StreamViewBody
+        view={view({
+          turns: [
+            turn(1, { closed: true, calls: [call({ name: "read_file" })] }),
+            turn(2, { closed: true, reply: "Done." }),
+          ],
+        })}
+      />,
+    );
+    for (const li of message("delegation")) {
+      expect(li.children).toHaveLength(1);
+      expect(li.querySelector(".rounded-full")).toBeNull();
+    }
+  });
+
   it("bubbles each turn on the left and keeps the task on the right", () => {
     render(
       <StreamViewBody

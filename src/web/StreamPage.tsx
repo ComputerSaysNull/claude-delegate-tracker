@@ -5,7 +5,7 @@
 // StreamViewBody is split out so the presentational part can be rendered in tests without
 // the hook.
 import { Fragment, useEffect, useRef, useState, type ReactNode, type SyntheticEvent } from "react";
-import { Asterisk, Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, TriangleAlert, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, File, PanelRightClose, PanelRightOpen, Repeat, TriangleAlert, X } from "lucide-react";
 import type { StreamView, TurnView, CallView, FileView, SummaryView, AnswerView, MessageView } from "../server/view.ts";
 import type { ListRow } from "../server/streams.ts";
 import { useStreamView } from "./useStreamView.ts";
@@ -311,9 +311,6 @@ function QuestionMessage({ ask, waitingFor }: { ask: TurnView["asks"][number]; w
   if (ask.question === null) return null;
   return (
     <li data-from="delegation" className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
-        <Asterisk size={15} />
-      </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <div data-bubble className="mr-auto flex w-[88%] flex-col gap-2 rounded-2xl border border-line bg-card px-4 py-3">
           <QuestionBox ask={ask} waitingFor={waitingFor} />
@@ -382,9 +379,6 @@ function DelegationMessage({
   const hasBubble = thinking || thoughtForOnly || calls.length > 0 || writing || answer !== null;
   return (
     <li data-from="delegation" className="flex gap-3">
-      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line text-muted">
-        <Asterisk size={15} />
-      </div>
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         <p className="text-xs text-muted">
           {head.join(" · ")}
