@@ -375,6 +375,36 @@ describe("HistoryPage", () => {
     expect(tooltip.textContent).not.toContain("1.7");
   });
 
+  // Each reason keeps its icon, text and count, and gains a bar sized by its count against the
+  // largest, with the count inside it; the bars line up on the right.
+  it("draws each reason a run did not finish as a bar sized by its count, with the count in it", async () => {
+    mockFetch(api([
+      run({ name: "a", outcome: "failed", reason: "backend_unreachable" }),
+      run({ name: "b", outcome: "failed", reason: "backend_unreachable" }),
+      run({ name: "c", outcome: "failed", reason: "backend_unreachable" }),
+      run({ name: "d", outcome: "failed", reason: "backend_unreachable" }),
+      run({ name: "e", outcome: "stopped", reason: "stopped by the caller" }),
+      run({ name: "f", outcome: "timed out", reason: "past the deadline" }),
+      run({ name: "g", outcome: "timed out", reason: "past the deadline" }),
+    ]));
+    render(<HistoryPage />);
+    const card = (await screen.findByRole("heading", { name: "Why runs did not finish" })).parentElement!;
+    const rows = [...card.querySelectorAll<HTMLElement>("[data-reason]")];
+    const seen = rows.map((r) => {
+      const bar = r.querySelector<HTMLElement>("[data-bar]")!;
+      return [r.dataset.reason, bar.style.width, bar.textContent, bar.parentElement!.className.split(" ").includes("justify-end")];
+    });
+    expect(seen).toEqual([
+      ["backend_unreachable", "100%", "4", true],
+      ["past the deadline", "50%", "2", true],
+      ["stopped by the caller", "25%", "1", true],
+    ]);
+    const colour = (reason: string) => card.querySelector(`[data-reason="${reason}"] [data-bar]`)!.className.split(" ");
+    expect(colour("backend_unreachable")).toContain("bg-chart-failed");
+    expect(colour("stopped by the caller")).toContain("bg-chart-stopped");
+    expect(colour("past the deadline")).toContain("bg-chart-limits");
+  });
+
   it("says every run finished when there is nothing to explain", async () => {
     mockFetch(api([run({ name: "a" }), run({ name: "b", outcome: "ok" })]));
     render(<HistoryPage />);
@@ -772,11 +802,12 @@ describe("HistoryPage", () => {
       ]);
       const cardHeadings = (name: string) =>
         within(groupSection(name)).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
+      // Two a row: the day counts beside the tokens, then the caller beside the rebuilt prompts.
       expect(cardHeadings("Delegations")).toEqual([
         "Delegations per day",
+        "Tokens per day",
         "Caller involvement",
         "Prompts rebuilt",
-        "Tokens per day",
         "Why runs did not finish",
       ]);
       expect(cardHeadings("Cluster")).toEqual([
