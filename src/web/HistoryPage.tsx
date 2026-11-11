@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { HourBucket } from "../server/busy.ts";
 import type { PowerBucket } from "../server/power.ts";
-import type { RunRecord, RunsStatus } from "../server/runs.ts";
+import type { Outcome, RunRecord, RunsStatus } from "../server/runs.ts";
 import { ChartTooltip, PlacedCard } from "./ChartTooltip.tsx";
 import { addressFor } from "./address.ts";
 import { busiest, busyIn, kvPerDay, load, weekLoad } from "./busyData.ts";
@@ -67,6 +67,15 @@ function chartLabels(days: { label: string }[]): string[] {
 }
 
 const RANGES: Range[] = [7, 30, 90, "all"];
+
+// A reason's bar takes its outcome's colour from the "Delegations per day" chart.
+const WHY_BAR: Record<Outcome, string> = {
+  ok: "bg-chart-done",
+  failed: "bg-chart-failed",
+  stopped: "bg-chart-stopped",
+  "timed out": "bg-chart-limits",
+  "cut off": "bg-chart-limits",
+};
 
 export function HistoryPage({ onOpenList }: { onOpenList?: (filter: RowFilter) => void }) {
   const [data, setData] = useState<RunsResponse | null>(null);
@@ -459,6 +468,7 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
   const t = totals(runs);
   const days = perDay(runs, span);
   const why = reasons(runs);
+  const whyMax = Math.max(1, ...why.map((r) => r.count));
   const repoGroups = groupBy(runs, "repo");
   const modelGroups = groupBy(runs, "model");
   const kvBuckets = busy === null ? [] : busyIn(busy.buckets, span);
@@ -570,6 +580,35 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
           </div>
 
           <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+              <h3 className="text-sm font-semibold">Tokens per day</h3>
+              <span className="text-[12.5px] text-muted">{peakText}</span>
+            </div>
+            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/30" aria-hidden="true" />input, from cache</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
+              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
+            </div>
+            <DayChart
+              days={days}
+              pct={tokenPct}
+              title={(d) => d.label}
+              ariaLabel={(d) => `${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
+              totalFor={(d) => ({ label: "Tokens", value: compactCount(d.cached + d.fresh + d.output) })}
+              barsFor={(d) => [
+                { key: "cached", label: "input, from cache", value: d.cached, swatch: "bg-accent/30", text: compactCount(d.cached) },
+                { key: "fresh", label: "input, new", value: d.fresh, swatch: "bg-accent/65", text: compactCount(d.fresh) },
+                { key: "output", label: "output", value: d.output, swatch: "bg-accent", text: compactCount(d.output) },
+              ]}
+            />
+            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
+              {labels.map((l) => (
+                <span key={l}>{l}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
             <h3 className="text-sm font-semibold">Caller involvement</h3>
             <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
               <span className="inline-flex items-baseline gap-1.5">questions<span className="font-mono tabular-nums text-text">{fig(t.questions)}</span></span>
@@ -657,45 +696,25 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
             </div>
           </div>
 
-          <div className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-card p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-              <h3 className="text-sm font-semibold">Tokens per day</h3>
-              <span className="text-[12.5px] text-muted">{peakText}</span>
-            </div>
-            <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-[12.5px] text-muted">
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/30" aria-hidden="true" />input, from cache</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
-              <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
-            </div>
-            <DayChart
-              days={days}
-              pct={tokenPct}
-              title={(d) => d.label}
-              ariaLabel={(d) => `${d.label}: ${d.cached} from cache, ${d.fresh} new, ${d.output} output`}
-              totalFor={(d) => ({ label: "Tokens", value: compactCount(d.cached + d.fresh + d.output) })}
-              barsFor={(d) => [
-                { key: "cached", label: "input, from cache", value: d.cached, swatch: "bg-accent/30", text: compactCount(d.cached) },
-                { key: "fresh", label: "input, new", value: d.fresh, swatch: "bg-accent/65", text: compactCount(d.fresh) },
-                { key: "output", label: "output", value: d.output, swatch: "bg-accent", text: compactCount(d.output) },
-              ]}
-            />
-            <div className="flex justify-between font-mono tabular-nums text-[11.5px] text-muted">
-              {labels.map((l) => (
-                <span key={l}>{l}</span>
-              ))}
-            </div>
-          </div>
-
           <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-line bg-card p-4">
             <h3 className="text-sm font-semibold">Why runs did not finish</h3>
             {why.length === 0 ? (
               <p className="text-muted">Every run finished.</p>
             ) : (
               why.map((r) => (
-                <div key={r.reason} className="flex items-center gap-2.5 text-[13px]">
+                <div key={r.reason} data-reason={r.reason} className="flex items-center gap-2.5 text-[13px]">
                   <StateIcon state={r.outcome} />
-                  <span className="flex-1">{r.reason}</span>
-                  <span className="font-mono tabular-nums">{r.count}</span>
+                  <span className="min-w-0 flex-1">{r.reason}</span>
+                  {/* The bar's length is its count against the largest; the bars line up on the right. */}
+                  <span className="flex w-2/5 shrink-0 justify-end">
+                    <span
+                      data-bar
+                      style={{ width: `${(r.count / whyMax) * 100}%` }}
+                      className={`min-w-8 rounded-sm px-1.5 py-0.5 text-right font-mono tabular-nums ${WHY_BAR[r.outcome]}`}
+                    >
+                      {r.count}
+                    </span>
+                  </span>
                 </div>
               ))
             )}

@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #100 — 2026-11-11 — feat: pair the History day charts, and bar the reasons runs did not finish
+
+### Changed
+
+- **History pairs its Delegations charts by what they compare.** Delegations per day now
+  sits beside tokens per day, and caller involvement beside prompts rebuilt; why runs did
+  not finish follows. Before, the two per-day charts sat in different rows.
+- **Each reason a run did not finish gets a bar.** The counts were bare numbers, so the
+  biggest reason did not stand out. Each reason keeps its icon and text, and gains a bar in
+  its outcome's chart colour, as long as its count against the largest, with the count in
+  it; the bars line up on the right.
+
 ## #99 — 2026-11-11 — feat: show the images a delegation was given or read, on request
 
 ### Added
