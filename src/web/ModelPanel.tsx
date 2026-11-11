@@ -260,7 +260,7 @@ function ModelFiguresBody({
           value={rate(decodeValue)}
           minChars={4}
           unit={<span className={unitClass}>tok/s</span>}
-          chart={chart(["decodeTokensPerSecond"], "Decode speed")}
+          chart={chart(["decodeTokensPerSecond"], "Decode speed", ["--chart-pair-a"])}
         />
         <Figure
           label={
@@ -277,7 +277,7 @@ function ModelFiguresBody({
           <Figure
             label="KV-cache use"
             value={percent(model.kvCachePercent)}
-            chart={chart(["kvCachePercent"], "KV-cache use", undefined, [0, 100])}
+            chart={chart(["kvCachePercent"], "KV-cache use", ["--chart-pair-a"], [0, 100])}
           />
         ) : (
           <Figure
