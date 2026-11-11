@@ -42,6 +42,7 @@ function rec(over: Partial<RunRecord> = {}): RunRecord {
     messages: null,
     undelivered: null,
     messageWaits: null,
+    slots: [],
     ...over,
   };
 }

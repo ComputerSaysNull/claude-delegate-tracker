@@ -6,9 +6,12 @@ import type { RunRecord } from "../../src/server/runs.ts";
 
 const DAY = 86_400_000;
 
+// A fixed "now" for the tests that only need a span to pass in.
+const NOW = new Date(2026, 9, 4, 12);
+
 // A finished run with every field set; override the ones a test cares about.
 function run(overrides: Partial<RunRecord> = {}): RunRecord {
-  return {
+  const base: RunRecord = {
     name: "stream.jsonl",
     size: 100,
     repoFromPaths: false,
@@ -28,8 +31,14 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     messages: null,
     undelivered: null,
     messageWaits: null,
+    slots: [],
     ...overrides,
   };
+  // A slot at the run's start when it has tokens, so token figures land on the day it started.
+  if (overrides.slots === undefined && base.startedAt !== null && (base.inputTokens !== null || base.outputTokens !== null || base.cachedTokens !== null)) {
+    base.slots = [[Math.floor(base.startedAt / 900000) * 900000, base.inputTokens, base.cachedTokens, base.outputTokens, base.rebuiltTurns]];
+  }
+  return base;
 }
 
 describe("inRange", () => {
@@ -60,7 +69,7 @@ describe("perDay", () => {
   const now = new Date(2026, 9, 4, 12);
 
   it("returns exactly `days` entries, oldest first, labelled day + short month", () => {
-    const days = perDay([], spanOf(7, [], now));
+    const days = perDay([], spanOf(7, [], now), []);
     expect(days.length).toBe(7);
     expect(days[0].label).toBe("28 Sep");
     expect(days[6].label).toBe("4 Oct");
@@ -74,7 +83,7 @@ describe("perDay", () => {
       run({ name: "d", startedAt: new Date(2026, 9, 3, 10).getTime(), outcome: "stopped", inputTokens: null, outputTokens: null, cachedTokens: null }),
       run({ name: "e", startedAt: new Date(2026, 9, 1, 9).getTime(), outcome: "cut off", inputTokens: null, outputTokens: null, cachedTokens: null }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const byLabel = new Map(days.map((d) => [d.label, d]));
     expect(byLabel.get("4 Oct")).toEqual({ label: "4 Oct", ok: 1, stopped: 0, limits: 0, failed: 1, cached: 600, fresh: 900, output: 300, rebuilt: null, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
     expect(byLabel.get("3 Oct")).toEqual({ label: "3 Oct", ok: 0, stopped: 1, limits: 1, failed: 0, cached: 250, fresh: 50, output: 50, rebuilt: null, questions: 0, asks: 0, asked: 0, messaged: 0, both: 0, messages: null, undelivered: null, waits: [], inline: 0, said: 0 });
@@ -84,7 +93,7 @@ describe("perDay", () => {
 
   it("never lets a day's fresh figure go below zero", () => {
     const runs = [run({ name: "x", startedAt: new Date(2026, 9, 4, 9).getTime(), inputTokens: 100, outputTokens: 0, cachedTokens: 200 })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     expect(days[6].fresh).toBe(0);
   });
 
@@ -94,7 +103,7 @@ describe("perDay", () => {
       run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), mcpTask: true }),
       run({ name: "c", startedAt: new Date(2026, 9, 4, 11).getTime(), mcpTask: null }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.inline, day.said]).toEqual([1, 2]);
   });
@@ -106,7 +115,7 @@ describe("perDay", () => {
       run({ name: "c", startedAt: new Date(2026, 9, 4, 11).getTime(), cachedTokens: null, rebuiltTurns: null }),
       run({ name: "d", startedAt: new Date(2026, 9, 3, 9).getTime(), cachedTokens: 250, rebuiltTurns: 5 }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const byLabel = new Map(days.map((d) => [d.label, d]));
     expect(byLabel.get("4 Oct")!.rebuilt).toBe(49);
     expect(byLabel.get("3 Oct")!.rebuilt).toBe(5);
@@ -115,7 +124,7 @@ describe("perDay", () => {
 
   it("a day with no run that reported cached tokens has no rebuilt figure, not 0", () => {
     const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), cachedTokens: null, rebuiltTurns: null })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect(day.rebuilt).toBeNull();
   });
@@ -125,7 +134,7 @@ describe("perDay", () => {
       run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), cachedTokens: 500, rebuiltTurns: 0 }),
       run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), cachedTokens: 300, rebuiltTurns: 0 }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect(day.rebuilt).toBe(0);
   });
@@ -188,7 +197,7 @@ describe("spanOf", () => {
     const runs = [a, b];
     const span = spanOf("all", runs, now);
     expect(span.weekly).toBe(true);
-    const days = perDay(runs, span);
+    const days = perDay(runs, span, runs);
     expect(days).toHaveLength(18);
     expect(days[0].label).toBe("week of 6 Jun");
     expect(days[0].ok).toBe(1);
@@ -205,7 +214,7 @@ describe("spanOf", () => {
 
   it("counts a run that starts exactly at local midnight on that day, not the one before", () => {
     const midnight = run({ name: "m", startedAt: new Date(2026, 9, 3).getTime(), outcome: "ok" });
-    const days = perDay([midnight], spanOf(7, [midnight], now));
+    const days = perDay([midnight], spanOf(7, [midnight], now), [midnight]);
     expect(days.find((d) => d.label === "3 Oct")!.ok).toBe(1);
     expect(days.find((d) => d.label === "2 Oct")!.ok).toBe(0);
   });
@@ -246,7 +255,7 @@ describe("reasons", () => {
 describe("groupBy", () => {
   it("gives the median time, which one slow run does not drag up", () => {
     const times = [10, 20, 900].map((s, i) => run({ name: `t${i}`, elapsedSeconds: s }));
-    expect(groupBy(times, "repo")[0].medianSeconds).toBe(20);
+    expect(groupBy(times, "repo", spanOf(7, times, NOW), times)[0].medianSeconds).toBe(20);
   });
 
   const runs = [
@@ -257,7 +266,7 @@ describe("groupBy", () => {
   ];
 
   it("groups by repo, most delegations first, and a null repo as a dash", () => {
-    const groups = groupBy(runs, "repo");
+    const groups = groupBy(runs, "repo", spanOf(7, runs, NOW), runs);
     expect(groups[0].key).toBe("web-shop");
     const byKey = new Map(groups.map((g) => [g.key, g]));
     expect(byKey.get("web-shop")).toEqual({ key: "web-shop", delegations: 2, donePercent: 50, tokens: 1200, cacheReusePercent: 50, medianSeconds: 90, last: new Date(2026, 9, 4, 10).getTime() });
@@ -266,7 +275,7 @@ describe("groupBy", () => {
   });
 
   it("groups by model the same way", () => {
-    const groups = groupBy(runs, "model");
+    const groups = groupBy(runs, "model", spanOf(7, runs, NOW), runs);
     const byKey = new Map(groups.map((g) => [g.key, g]));
     expect(byKey.get("claude-code")!.delegations).toBe(2);
     expect(byKey.get("flash")!.delegations).toBe(2);
@@ -284,12 +293,13 @@ describe("questions to the caller", () => {
   const now = new Date(2026, 9, 4, 12);
 
   it("totals questions and asks, and counts the runs that asked", () => {
-    const result = totals([
+    const runs = [
       run({ name: "a", asks: 2, questions: 4 }),
       run({ name: "b", asks: 1, questions: 1 }),
       run({ name: "c", asks: 0, questions: 0 }),
       run({ name: "d", asks: null, questions: null }),
-    ]);
+    ];
+    const result = totals(runs, spanOf(7, runs, now), runs);
     expect(result.asks).toBe(3);
     expect(result.questions).toBe(5);
     expect(result.asked).toBe(2);
@@ -297,10 +307,11 @@ describe("questions to the caller", () => {
   });
 
   it("leaves asks and questions null when no run reports them", () => {
-    const result = totals([
+    const runs = [
       run({ name: "a", asks: null, questions: null }),
       run({ name: "b", asks: null, questions: null }),
-    ]);
+    ];
+    const result = totals(runs, spanOf(7, runs, now), runs);
     expect(result.asks).toBeNull();
     expect(result.questions).toBeNull();
     expect(result.asked).toBe(0);
@@ -313,7 +324,7 @@ describe("questions to the caller", () => {
       run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), asks: null, questions: null }),
       run({ name: "c", startedAt: new Date(2026, 9, 3, 9).getTime(), asks: 1, questions: 2 }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const byLabel = new Map(days.map((d) => [d.label, d]));
     expect(byLabel.get("4 Oct")!.asks).toBe(2);
     expect(byLabel.get("4 Oct")!.questions).toBe(4);
@@ -325,14 +336,14 @@ describe("questions to the caller", () => {
 
   it("leaves a day null when its only runs have no figure", () => {
     const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: null, questions: null })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.asks, day.questions]).toEqual([null, null]);
   });
 
   it("keeps a day's asks at a measured zero, not null", () => {
     const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 0, questions: 0 })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     expect(days[6].asks).toBe(0);
     expect(days[6].questions).toBe(0);
   });
@@ -356,14 +367,14 @@ describe("caller involvement", () => {
       run({ name: "both", startedAt: new Date(2026, 9, 4, 11).getTime(), asks: 1, messages: 3 }),
       run({ name: "neither", startedAt: new Date(2026, 9, 4, 12).getTime(), asks: 0, messages: 0 }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.asked, day.messaged, day.both]).toEqual([1, 1, 1]);
   });
 
   it("counts a run with messages null in none of the three, even when it asked", () => {
     const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), asks: 2, messages: null })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.asked, day.messaged, day.both]).toEqual([0, 0, 0]);
   });
@@ -374,7 +385,7 @@ describe("caller involvement", () => {
       run({ name: "b", startedAt: new Date(2026, 9, 4, 10).getTime(), messages: 1, undelivered: 0, messageWaits: [3] }),
       run({ name: "c", startedAt: new Date(2026, 9, 3, 9).getTime(), messages: 1, undelivered: 0, messageWaits: [1] }),
     ];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const byLabel = new Map(days.map((d) => [d.label, d]));
     expect([byLabel.get("4 Oct")!.messages, byLabel.get("4 Oct")!.undelivered]).toEqual([3, 1]);
     expect(byLabel.get("4 Oct")!.waits).toEqual([2, 4, 3]);
@@ -384,24 +395,26 @@ describe("caller involvement", () => {
 
   it("leaves a day's messages and undelivered null when its runs do not report them", () => {
     const runs = [run({ name: "a", startedAt: new Date(2026, 9, 4, 9).getTime(), messages: null })];
-    const days = perDay(runs, spanOf(7, runs, now));
+    const days = perDay(runs, spanOf(7, runs, now), runs);
     const day = days.find((d) => d.label === "4 Oct")!;
     expect([day.messages, day.undelivered, day.waits]).toEqual([null, null, []]);
   });
 
   it("totals the runs that were messaged and the messages they held", () => {
-    const result = totals([
+    const runs = [
       run({ name: "a", messages: 0, undelivered: 0 }),
       run({ name: "b", messages: 2, undelivered: 1, messageWaits: [2] }),
       run({ name: "c", messages: null, undelivered: null }),
-    ]);
+    ];
+    const result = totals(runs, spanOf(7, runs, now), runs);
     expect(result.messaged).toBe(1);
     expect(result.messages).toBe(2);
     expect(result.undelivered).toBe(1);
   });
 
   it("leaves totals.messages and totals.undelivered null when no run reports them", () => {
-    const result = totals([run({ name: "a", messages: null, undelivered: null }), run({ name: "b", messages: null, undelivered: null })]);
+    const runs = [run({ name: "a", messages: null, undelivered: null }), run({ name: "b", messages: null, undelivered: null })];
+    const result = totals(runs, spanOf(7, runs, now), runs);
     expect(result.messaged).toBe(0);
     expect(result.messages).toBeNull();
     expect(result.undelivered).toBeNull();
@@ -412,5 +425,89 @@ describe("caller involvement", () => {
     expect(median([3])).toBe(3);
     expect(median([1, 4])).toBe(2.5);
     expect(median([5, 1, 3])).toBe(3);
+  });
+});
+
+describe("tokens on the day each turn finished", () => {
+  const now = new Date(2026, 9, 4, 12);
+
+  it("puts each slot's tokens on the day it finished, not the day its run started", () => {
+    const late = run({
+      name: "late",
+      startedAt: new Date(2026, 9, 3, 23, 50).getTime(),
+      slots: [
+        [new Date(2026, 9, 3, 23, 45).getTime(), 1000, 0, 100, null],
+        [new Date(2026, 9, 4, 0, 15).getTime(), 3000, 900, 200, null],
+      ],
+    });
+    const days = perDay([late], spanOf(7, [late], now), [late]);
+    const byLabel = new Map(days.map((d) => [d.label, d]));
+    const first = byLabel.get("3 Oct")!;
+    const second = byLabel.get("4 Oct")!;
+    expect([first.cached, first.fresh, first.output]).toEqual([0, 1000, 100]);
+    expect([second.cached, second.fresh, second.output]).toEqual([900, 2100, 200]);
+    // The delegation itself stays on the day it started.
+    expect([first.ok + first.stopped + first.limits + first.failed, second.ok]).toEqual([1, 0]);
+  });
+
+  it("counts a slot inside the range even when its run started before it", () => {
+    const early = run({
+      name: "early",
+      startedAt: new Date(2026, 8, 27, 12).getTime(),
+      slots: [[new Date(2026, 8, 29, 10).getTime(), 1000, 200, 100, null]],
+    });
+    const span = spanOf(7, [early], now);
+    const runs = inRange([early], span);
+    expect(runs).toEqual([]);
+    const t = totals(runs, span, [early]);
+    expect(t.delegations).toBe(0);
+    expect(t.tokens).toBe(1100);
+    expect(t.cacheReusePercent).toBe(20);
+    const day = perDay(runs, span, [early]).find((d) => d.label === "29 Sep")!;
+    expect([day.cached, day.fresh, day.output]).toEqual([200, 800, 100]);
+    expect(day.ok).toBe(0);
+  });
+
+  it("groups tokens by the turns in the window, not by where their run started", () => {
+    const before = run({
+      name: "before",
+      startedAt: new Date(2026, 8, 28, 22).getTime(),
+      slots: [
+        [new Date(2026, 8, 28, 22).getTime(), 1000, 0, 100, null],
+        [new Date(2026, 8, 29, 0, 15).getTime(), 2000, 500, 300, null],
+      ],
+    });
+    const inside = run({
+      name: "inside",
+      startedAt: new Date(2026, 8, 30, 10).getTime(),
+      inputTokens: null,
+      outputTokens: null,
+      cachedTokens: null,
+      slots: [],
+    });
+    const all = [before, inside];
+    // The wider range holds both of the first run's slots; the one starting a day later holds only
+    // the second, and still counts the repo its run started under.
+    const wide = groupBy([before, inside], "repo", spanOf(7, all, now), all);
+    expect(wide[0]).toMatchObject({ key: "web-shop", delegations: 2, tokens: 3400, cacheReusePercent: 17 });
+    const narrow = groupBy([inside], "repo", spanOf(7, all, new Date(2026, 9, 5, 12)), all);
+    expect(narrow).toEqual([expect.objectContaining({ key: "web-shop", delegations: 1, tokens: 2300, cacheReusePercent: 25 })]);
+  });
+
+  it("leaves a day's rebuilt figure null unless a slot reported one, and keeps a reported zero", () => {
+    const noFigure = run({
+      name: "no-figure",
+      startedAt: new Date(2026, 9, 4, 10).getTime(),
+      slots: [[new Date(2026, 9, 4, 10).getTime(), 1000, 500, 200, null]],
+    });
+    const zero = run({
+      name: "zero",
+      startedAt: new Date(2026, 9, 3, 10).getTime(),
+      slots: [[new Date(2026, 9, 3, 10).getTime(), 1000, 500, 200, 0]],
+    });
+    const days = perDay([noFigure, zero], spanOf(7, [noFigure, zero], now), [noFigure, zero]);
+    const byLabel = new Map(days.map((d) => [d.label, d]));
+    expect(byLabel.get("4 Oct")!.rebuilt).toBeNull();
+    expect(byLabel.get("3 Oct")!.rebuilt).toBe(0);
   });
 });

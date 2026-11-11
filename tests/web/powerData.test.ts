@@ -22,7 +22,7 @@ function bucketAt(local: Date, overrides: Partial<PowerBucket> = {}): PowerBucke
 
 // A well-formed run record, as runs.ts builds one.
 function rec(over: Partial<RunRecord> = {}): RunRecord {
-  return {
+  const base: RunRecord = {
     name: "x.jsonl",
     size: 1,
     repoFromPaths: false,
@@ -42,8 +42,14 @@ function rec(over: Partial<RunRecord> = {}): RunRecord {
     messages: null,
     undelivered: null,
     messageWaits: null,
+    slots: [],
     ...over,
   };
+  // A slot at the run's start when it has tokens, so token figures land on the day it started.
+  if (over.slots === undefined && base.startedAt !== null && (base.inputTokens !== null || base.outputTokens !== null || base.cachedTokens !== null)) {
+    base.slots = [[Math.floor(base.startedAt / 900000) * 900000, base.inputTokens, base.cachedTokens, base.outputTokens, base.rebuiltTurns]];
+  }
+  return base;
 }
 
 describe("powerPerDay", () => {
@@ -188,5 +194,32 @@ describe("powerPerDay over a weekly span", () => {
       { node: "alpha", wh: 30, averageW: 108, maxW: 60 },
       { node: "beta", wh: null, averageW: null, maxW: null },
     ]);
+  });
+});
+
+describe("powerPerDay counts output tokens on the day each turn finished", () => {
+  const now = new Date(2026, 9, 4, 12);
+
+  it("splits a run's output tokens over the days its slots finished on", () => {
+    const buckets = [
+      bucketAt(new Date(2026, 9, 2, 10), { node: "alpha", wh: 100, seconds: 3600, maxW: 200 }),
+      bucketAt(new Date(2026, 9, 3, 10), { node: "alpha", wh: 100, seconds: 3600, maxW: 200 }),
+    ];
+    const runs = [
+      rec({
+        startedAt: new Date(2026, 9, 2, 10).getTime(),
+        outputTokens: 5000,
+        slots: [
+          [new Date(2026, 9, 2, 10).getTime(), 1000, 0, 3000, null],
+          [new Date(2026, 9, 3, 9).getTime(), 1000, 0, 2000, null],
+        ],
+      }),
+    ];
+    const result = powerPerDay(buckets, runs, spanOf(7, runs, now));
+    const byLabel = new Map(result.map((d) => [d.label, d]));
+    expect(byLabel.get("2 Oct")!.outputTokens).toBe(3000);
+    expect(byLabel.get("3 Oct")!.outputTokens).toBe(2000);
+    expect(byLabel.get("2 Oct")!.whPerKiloToken).toBe(33.33); // 100 ÷ (3000 ÷ 1000)
+    expect(byLabel.get("3 Oct")!.whPerKiloToken).toBe(50); // 100 ÷ (2000 ÷ 1000)
   });
 });

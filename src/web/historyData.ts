@@ -1,5 +1,5 @@
 // The History tab's figures, computed from the run records the backend keeps on disk. Pure: no React, no fetch.
-import type { Outcome, RunRecord } from "../server/runs.ts";
+import type { Outcome, RunRecord, Slot } from "../server/runs.ts";
 
 export type Range = 7 | 30 | 90 | "all";
 
@@ -29,8 +29,14 @@ function startOfDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+// The moment a span stops counting: the end of its last bucket, or its own end when it has none.
+// The runs in range and the token window both stop here.
+function windowEnd(span: Span): number {
+  return span.buckets.length === 0 ? span.endMs : span.buckets[span.buckets.length - 1].endMs;
+}
+
 export function inRange(runs: RunRecord[], span: Span): RunRecord[] {
-  const endMs = span.buckets.length === 0 ? span.endMs : span.buckets[span.buckets.length - 1].endMs;
+  const endMs = windowEnd(span);
   return runs.filter((r) => r.startedAt !== null && r.startedAt >= span.startMs && r.startedAt < endMs);
 }
 
@@ -108,6 +114,19 @@ export function bucketIndex(span: Span, ms: number): number | undefined {
   return lo;
 }
 
+// Every slot of `all` whose turn finished inside the span's window, with its bucket.
+function windowSlots(all: RunRecord[], span: Span): { index: number; slot: Slot }[] {
+  const found: { index: number; slot: Slot }[] = [];
+  for (const r of all) {
+    for (const slot of r.slots) {
+      const index = bucketIndex(span, slot[0]);
+      if (index === undefined) continue;
+      found.push({ index, slot });
+    }
+  }
+  return found;
+}
+
 export interface Totals {
   delegations: number;
   donePercent: number | null;
@@ -127,16 +146,37 @@ export interface Totals {
   said: number;
 }
 
-export function totals(runs: RunRecord[]): Totals {
+// The tokens and cache reuse of the turns that finished in the span's window, whichever day their
+// run started: a slot counts only when it reported the figures.
+function tokenFigures(all: RunRecord[], span: Span): { tokens: number | null; cacheReusePercent: number | null } {
+  let tokenSum = 0;
+  let anyTokens = false;
+  let inputSum = 0;
+  let cachedSum = 0;
+  let anyCache = false;
+  for (const { slot } of windowSlots(all, span)) {
+    const [, input, cached, output] = slot;
+    if (input !== null || output !== null) {
+      anyTokens = true;
+      tokenSum += (input ?? 0) + (output ?? 0);
+    }
+    if (input !== null && cached !== null) {
+      anyCache = true;
+      inputSum += input;
+      cachedSum += cached;
+    }
+  }
+  return {
+    tokens: anyTokens ? tokenSum : null,
+    cacheReusePercent: anyCache && inputSum > 0 ? Math.round((cachedSum / inputSum) * 100) : null,
+  };
+}
+
+export function totals(runs: RunRecord[], span: Span, all: RunRecord[]): Totals {
   let ok = 0;
   let stopped = 0;
   let limits = 0;
   let failed = 0;
-  let tokenSum = 0;
-  let anyTokens = false;
-  let cachedSum = 0;
-  let inputSum = 0;
-  let anyCache = false;
   let questionSum = 0;
   let anyQuestions = false;
   let askSum = 0;
@@ -157,15 +197,6 @@ export function totals(runs: RunRecord[]): Totals {
       case "timed out":
       case "cut off": limits++; break;
       case "failed": failed++; break;
-    }
-    if (r.inputTokens !== null || r.outputTokens !== null) {
-      anyTokens = true;
-      tokenSum += (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
-    }
-    if (r.inputTokens !== null && r.cachedTokens !== null) {
-      anyCache = true;
-      inputSum += r.inputTokens;
-      cachedSum += r.cachedTokens;
     }
     if (r.questions !== null) {
       anyQuestions = true;
@@ -191,14 +222,15 @@ export function totals(runs: RunRecord[]): Totals {
       if (r.mcpTask === false) inline++;
     }
   }
+  const figures = tokenFigures(all, span);
   return {
     delegations: runs.length,
     donePercent: runs.length === 0 ? null : Math.round((ok / runs.length) * 100),
     stopped,
     limits,
     failed,
-    tokens: anyTokens ? tokenSum : null,
-    cacheReusePercent: anyCache && inputSum > 0 ? Math.round((cachedSum / inputSum) * 100) : null,
+    tokens: figures.tokens,
+    cacheReusePercent: figures.cacheReusePercent,
     questions: anyQuestions ? questionSum : null,
     asks: anyAsks ? askSum : null,
     asked,
@@ -233,7 +265,9 @@ export interface Day {
   said: number;
 }
 
-export function perDay(runs: RunRecord[], span: Span): Day[] {
+// A day's delegations and involvement come from the runs that started on it; its tokens and
+// rebuilt prompts come from the turns that finished on it, whichever day their run started.
+export function perDay(runs: RunRecord[], span: Span, all: RunRecord[]): Day[] {
   const result: Day[] = span.buckets.map((b) => ({
     label: b.label,
     ok: 0, stopped: 0, limits: 0, failed: 0,
@@ -254,12 +288,6 @@ export function perDay(runs: RunRecord[], span: Span): Day[] {
       case "cut off": day.limits++; break;
       case "failed": day.failed++; break;
     }
-    day.cached += r.cachedTokens ?? 0;
-    day.fresh += Math.max(0, (r.inputTokens ?? 0) - (r.cachedTokens ?? 0));
-    day.output += r.outputTokens ?? 0;
-    // A run whose stream reported no cached tokens has no rebuilt figure and is left out, so a
-    // day none of them reported on stays null rather than 0.
-    if (r.rebuiltTurns !== null) day.rebuilt = (day.rebuilt ?? 0) + r.rebuiltTurns;
     if (r.questions !== null) day.questions = (day.questions ?? 0) + r.questions;
     if (r.asks !== null) day.asks = (day.asks ?? 0) + r.asks;
     // A run that never said how many messages it got is left out of the involvement counts;
@@ -277,6 +305,17 @@ export function perDay(runs: RunRecord[], span: Span): Day[] {
       day.said++;
       if (r.mcpTask === false) day.inline++;
     }
+  }
+  // The tokens and rebuilt prompts of the turns that finished on each day.
+  for (const { index, slot } of windowSlots(all, span)) {
+    const day = result[index];
+    const [, input, cached, output, rebuilt] = slot;
+    day.cached += cached ?? 0;
+    day.fresh += Math.max(0, (input ?? 0) - (cached ?? 0));
+    day.output += output ?? 0;
+    // A slot whose turn reported no rebuilt figure is left out, so a day none of them reported
+    // on stays null rather than 0.
+    if (rebuilt !== null) day.rebuilt = (day.rebuilt ?? 0) + rebuilt;
   }
   return result;
 }
@@ -323,7 +362,9 @@ interface Accumulator {
   last: number | null;
 }
 
-export function groupBy(runs: RunRecord[], field: "repo" | "model"): Group[] {
+// Groups are the keys the runs in range started with; their tokens and cache reuse count the
+// turns that finished in the window, whichever day their run started.
+export function groupBy(runs: RunRecord[], field: "repo" | "model", span: Span, all: RunRecord[]): Group[] {
   const groups = new Map<string, Accumulator>();
   for (const r of runs) {
     const key = field === "repo" ? (r.repo ?? "—") : (r.model ?? "—");
@@ -334,17 +375,27 @@ export function groupBy(runs: RunRecord[], field: "repo" | "model"): Group[] {
     }
     g.delegations++;
     if (r.outcome === "ok") g.ok++;
-    if (r.inputTokens !== null || r.outputTokens !== null) {
-      g.anyTokens = true;
-      g.tokenSum += (r.inputTokens ?? 0) + (r.outputTokens ?? 0);
-    }
-    if (r.inputTokens !== null && r.cachedTokens !== null) {
-      g.anyCache = true;
-      g.inputSum += r.inputTokens;
-      g.cachedSum += r.cachedTokens;
-    }
     if (r.elapsedSeconds !== null) g.elapsed.push(r.elapsedSeconds);
     if (r.startedAt !== null && (g.last === null || r.startedAt > g.last)) g.last = r.startedAt;
+  }
+  // A run outside the range still adds its slots' tokens to the key its group already has.
+  for (const r of all) {
+    const key = field === "repo" ? (r.repo ?? "—") : (r.model ?? "—");
+    const g = groups.get(key);
+    if (g === undefined) continue;
+    for (const slot of r.slots) {
+      if (bucketIndex(span, slot[0]) === undefined) continue;
+      const [, input, cached, output] = slot;
+      if (input !== null || output !== null) {
+        g.anyTokens = true;
+        g.tokenSum += (input ?? 0) + (output ?? 0);
+      }
+      if (input !== null && cached !== null) {
+        g.anyCache = true;
+        g.inputSum += input;
+        g.cachedSum += cached;
+      }
+    }
   }
   return [...groups.values()]
     .map((g): Group => {

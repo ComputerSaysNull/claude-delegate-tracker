@@ -6,6 +6,11 @@ import { applyLine, newStreamState, parseAt, stateOf, WHY_TIMED_OUT } from "./st
 
 export type Outcome = "ok" | "failed" | "stopped" | "timed out" | "cut off";
 
+// One 15-minute window of a run's work: [slot start ms (a multiple of SLOT_MS), input, cached, output, rebuilt].
+// Each figure is the sum of what the turns finishing in that window reported, null when none of them reported it.
+export type Slot = [number, number | null, number | null, number | null, number | null];
+export const SLOT_MS = 15 * 60 * 1000;
+
 export interface RunRecord {
   name: string;            // the stream's file name
   size: number;            // the file's size in bytes when summarised
@@ -17,10 +22,11 @@ export interface RunRecord {
   model: string | null;    // start.model_key
   mcpTask: boolean | null; // start.mcp_task (format 1.12): false when the call ran inline; null when the stream does not say or on a record saved before this field
   elapsedSeconds: number | null; // end.elapsed_seconds
-  inputTokens: number | null;    // end.input_tokens
-  outputTokens: number | null;   // end.output_tokens
-  cachedTokens: number | null;   // end.cached_tokens
+  inputTokens: number | null;    // end.input_tokens, or the turns' sum when higher or when end has none
+  outputTokens: number | null;   // the same, from end.output_tokens and the turns
+  cachedTokens: number | null;   // the same, from end.cached_tokens and the turns
   rebuiltTurns: number | null;   // turns that rebuilt their prompt because the saved one was gone; null when the stream reported no cached tokens
+  slots: Slot[];                 // 15-minute windows of the turns' work, by slot start, ascending
   asks: number | null;      // question events: how many times it called ask_caller; null on a record saved before this field
   questions: number | null; // the questions those events held (each one's questions array, string entries only)
   messages: number | null;      // message events the caller sent the run; null on a record saved before this field
@@ -37,8 +43,8 @@ export interface RunsStatus {
   writeError: string | null; // the last error writing the file, null when the last write worked
 }
 
-// Version 2 added rebuiltTurns; an older file is rebuilt from the streams.
-const VERSION = 2;
+// Version 2 added rebuiltTurns; version 3 added slots. An older file is rebuilt from the streams.
+const VERSION = 3;
 
 function reasonOf(outcome: Outcome, end: Record<string, unknown> | null): string | null {
   if (outcome === "ok") return null;
@@ -119,11 +125,13 @@ const REBUILD_CACHE_SHARE = 1 / 2;
 // The turns a stream holds that rebuilt their prompt, as summariseRun records them: a turn after
 // the first whose cached tokens are under half the previous turn's prompt of at least
 // REBUILD_MIN_PROMPT tokens, unless it trimmed tool results. Null when no turn reported cached
-// tokens, since then nothing says whether a prompt was rebuilt.
-function countRebuilt(lines: string[]): number | null {
+// tokens, since then nothing says whether a prompt was rebuilt. Also which turns those were, by
+// their order among the stream's turn events.
+function countRebuilt(lines: string[]): { rebuiltTurns: number | null; turns: Set<number> } {
   let prev: number | null = null;
-  let rebuilt = 0;
+  let index = 0;
   let reported = false;
+  const turns = new Set<number>();
   for (const line of lines) {
     if (!line.includes("turn")) continue;
     let ev: unknown;
@@ -140,36 +148,142 @@ function countRebuilt(lines: string[]): number | null {
       reported = true;
       const evicted = e.tool_results_evicted;
       const trimmed = evicted === true || (typeof evicted === "number" && evicted > 0);
-      if (prev !== null && prev >= REBUILD_MIN_PROMPT && cached < prev * REBUILD_CACHE_SHARE && !trimmed) rebuilt += 1;
+      if (prev !== null && prev >= REBUILD_MIN_PROMPT && cached < prev * REBUILD_CACHE_SHARE && !trimmed) turns.add(index);
     }
     if (typeof e.input_tokens === "number") prev = e.input_tokens;
+    index += 1;
   }
-  return reported ? rebuilt : null;
+  return { rebuiltTurns: reported ? turns.size : null, turns };
+}
+
+interface TurnFigures {
+  at: number | null;
+  input: number | null;
+  cached: number | null;
+  output: number | null;
+}
+
+// The stream's turn events in order, with the token figures each reported.
+function turnFigures(lines: string[]): TurnFigures[] {
+  const out: TurnFigures[] = [];
+  for (const line of lines) {
+    if (!line.includes("turn")) continue;
+    let ev: unknown;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof ev !== "object" || ev === null || Array.isArray(ev)) continue;
+    const e = ev as Record<string, unknown>;
+    if (e.t !== "turn") continue;
+    out.push({
+      at: parseAt(e.at),
+      input: typeof e.input_tokens === "number" ? e.input_tokens : null,
+      cached: typeof e.cached_tokens === "number" ? e.cached_tokens : null,
+      output: typeof e.output_tokens === "number" ? e.output_tokens : null,
+    });
+  }
+  return out;
+}
+
+const FIGURES = ["input", "cached", "output"] as const;
+type Figure = (typeof FIGURES)[number];
+const END_KEY: Record<Figure, string> = { input: "input_tokens", cached: "cached_tokens", output: "output_tokens" };
+
+interface SlotTotals { input: number | null; cached: number | null; output: number | null; rebuilt: number }
+
+// The slots a stream's turns fall into, by each turn's own time (its `at`, then the end's, then
+// the start's), and what the end reported beyond the turns' sum in the slot of the end's time.
+function buildSlots(
+  lines: string[],
+  end: Record<string, unknown>,
+  startAt: number | null,
+  rebuilt: Set<number>,
+  rebuiltTurns: number | null,
+): { slots: Slot[]; inputTokens: number | null; cachedTokens: number | null; outputTokens: number | null } {
+  const endAt = parseAt(end.at);
+  const turns = turnFigures(lines);
+  const turnMs = turns.map((t) => t.at ?? endAt ?? startAt);
+  const bySlot = new Map<number, SlotTotals>();
+  const slotOf = (ms: number): SlotTotals => {
+    const start = Math.floor(ms / SLOT_MS) * SLOT_MS;
+    let acc = bySlot.get(start);
+    if (acc === undefined) {
+      acc = { input: null, cached: null, output: null, rebuilt: 0 };
+      bySlot.set(start, acc);
+    }
+    return acc;
+  };
+  const add = (acc: SlotTotals, figure: Figure, v: number | null): void => {
+    if (v === null) return;
+    acc[figure] = (acc[figure] ?? 0) + v;
+  };
+  const sums: Record<Figure, number | null> = { input: null, cached: null, output: null };
+  turns.forEach((t, i) => {
+    const ms = turnMs[i] ?? null;
+    if (ms !== null) {
+      const acc = slotOf(ms);
+      add(acc, "input", t.input);
+      add(acc, "cached", t.cached);
+      add(acc, "output", t.output);
+      if (rebuiltTurns !== null && rebuilt.has(i)) acc.rebuilt += 1;
+    }
+    for (const figure of FIGURES) {
+      const v = t[figure];
+      if (v !== null) sums[figure] = (sums[figure] ?? 0) + v;
+    }
+  });
+  // The end's figure is what the whole run used; the part of it no turn reported goes in the slot
+  // of the end's time.
+  const lastTurnMs = turnMs.length > 0 ? (turnMs[turnMs.length - 1] ?? null) : null;
+  const endSlotMs = endAt ?? lastTurnMs ?? startAt;
+  const totals: Record<Figure, number | null> = { input: null, cached: null, output: null };
+  for (const figure of FIGURES) {
+    const reported = end[END_KEY[figure]];
+    const endFigure = typeof reported === "number" ? reported : null;
+    const sum = sums[figure];
+    if (endFigure !== null && (sum === null || endFigure > sum)) {
+      const remainder = endFigure - (sum ?? 0);
+      if (endSlotMs !== null) add(slotOf(endSlotMs), figure, remainder);
+      totals[figure] = (sum ?? 0) + remainder;
+    } else {
+      totals[figure] = sum;
+    }
+  }
+  const slots: Slot[] = [...bySlot.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([start, acc]): Slot => [start, acc.input, acc.cached, acc.output, rebuiltTurns === null ? null : acc.rebuilt]);
+  return { slots, inputTokens: totals.input, cachedTokens: totals.cached, outputTokens: totals.output };
 }
 
 export function summariseRun(name: string, size: number, lines: string[], now: Date): RunRecord | null {
   const s = newStreamState();
   for (const line of lines) applyLine(s, line);
   if (s.end === null) return null;
+  const end = s.end;
   const outcome = stateOf(s, now.getTime(), 0) as Outcome;
   const { asks, questions } = countQuestions(lines);
   const { messages, undelivered, messageWaits } = countMessages(lines);
-  const rebuiltTurns = countRebuilt(lines);
+  const { rebuiltTurns, turns: rebuilt } = countRebuilt(lines);
+  const startedAt = parseAt(s.start?.at);
+  const { slots, inputTokens, cachedTokens, outputTokens } = buildSlots(lines, end, startedAt, rebuilt, rebuiltTurns);
   return {
     name,
     size,
-    startedAt: parseAt(s.start?.at),
+    startedAt,
     outcome,
-    reason: reasonOf(outcome, s.end),
+    reason: reasonOf(outcome, end),
     repo: typeof s.start?.workspace === "string" ? s.start.workspace : null,
     repoFromPaths: false,
     model: typeof s.start?.model_key === "string" ? s.start.model_key : null,
     mcpTask: typeof s.start?.mcp_task === "boolean" ? s.start.mcp_task : null,
-    elapsedSeconds: typeof s.end.elapsed_seconds === "number" ? s.end.elapsed_seconds : null,
-    inputTokens: typeof s.end.input_tokens === "number" ? s.end.input_tokens : null,
-    outputTokens: typeof s.end.output_tokens === "number" ? s.end.output_tokens : null,
-    cachedTokens: typeof s.end.cached_tokens === "number" ? s.end.cached_tokens : null,
+    elapsedSeconds: typeof end.elapsed_seconds === "number" ? end.elapsed_seconds : null,
+    inputTokens,
+    outputTokens,
+    cachedTokens,
     rebuiltTurns,
+    slots,
     asks,
     questions,
     messages,
@@ -186,6 +300,8 @@ const OUTCOMES: readonly string[] = ["ok", "failed", "stopped", "timed out", "cu
 const numberOrNull = (v: unknown) => v === null || typeof v === "number";
 const stringOrNull = (v: unknown) => v === null || typeof v === "string";
 const numbersOrNull = (v: unknown): v is number[] | null => v === null || (Array.isArray(v) && v.every((x) => typeof x === "number"));
+const isSlot = (v: unknown): v is Slot => Array.isArray(v) && v.length === 5 && typeof v[0] === "number" && v.slice(1).every(numberOrNull);
+const isSlots = (v: unknown): v is Slot[] => Array.isArray(v) && v.every(isSlot);
 
 function isRecord(v: unknown): v is RunRecord {
   if (typeof v !== "object" || v === null) return false;
@@ -193,7 +309,7 @@ function isRecord(v: unknown): v is RunRecord {
   return typeof r.name === "string" && typeof r.size === "number" && typeof r.outcome === "string" && OUTCOMES.includes(r.outcome)
     && numberOrNull(r.startedAt) && stringOrNull(r.reason) && stringOrNull(r.repo) && typeof r.repoFromPaths === "boolean" && stringOrNull(r.model)
     && numberOrNull(r.elapsedSeconds) && numberOrNull(r.inputTokens) && numberOrNull(r.outputTokens) && numberOrNull(r.cachedTokens)
-    && numberOrNull(r.rebuiltTurns) && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean")
+    && numberOrNull(r.rebuiltTurns) && isSlots(r.slots) && numberOrNull(r.asks) && numberOrNull(r.questions) && (r.mcpTask === null || typeof r.mcpTask === "boolean")
     && numberOrNull(r.messages) && numberOrNull(r.undelivered) && numbersOrNull(r.messageWaits);
 }
 

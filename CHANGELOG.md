@@ -9,6 +9,21 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #102 — 2026-11-11 — fix: count History tokens on the day each turn finished
+
+### Fixed
+
+- **A run that crosses midnight splits its tokens over both days.** History put all of a
+  run's tokens on the day it started, because a run record kept only the `end` totals. A
+  run started at 23:50 that worked until 02:00 showed everything on the first day. A record
+  now keeps its tokens per 15-minute slot, from each `turn`'s `at`. Tokens per day, the
+  tokens and cache reuse totals, the per repo and per model figures, prompts rebuilt and
+  Wh per 1k output tokens all count by those slots. Delegation counts stay on the start day.
+- **Runs whose `end` has no input total now count their input.** Some streams write
+  `end.input_tokens` as null while every turn reports one, and History counted those runs
+  as 0 input. A run's total is now the sum of its turns, or `end`'s figure when higher. The
+  record file's version goes to 3, so the tracker rebuilds every record once from its stream.
+
 ## #101 — 2026-11-11 — fix: drop the round mark beside the delegation's messages
 
 ### Fixed

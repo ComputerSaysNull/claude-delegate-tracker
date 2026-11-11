@@ -3,18 +3,20 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { RunStore, absolutePaths, learnParents, repoFromPaths, summariseRun, type RunRecord } from "../../src/server/runs.ts";
+import { RunStore, SLOT_MS, absolutePaths, learnParents, repoFromPaths, summariseRun, type RunRecord } from "../../src/server/runs.ts";
 
 const NOW = new Date("2026-10-01T13:00:00.000Z");
 // A well-formed record, as the store writes it.
 const GOOD = {
   name: "20261001T120000.000-a.jsonl", size: 100, startedAt: Date.parse("2026-10-01T12:00:00Z"), outcome: "ok", reason: null,
   repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 3, inputTokens: 10, outputTokens: 2, cachedTokens: 5,
-  asks: null, questions: null, mcpTask: null, messages: null, undelivered: null, messageWaits: null, rebuiltTurns: null,
+  asks: null, questions: null, mcpTask: null, messages: null, undelivered: null, messageWaits: null, rebuiltTurns: null, slots: [],
 };
 const START_AT = "2026-10-01T12:00:00.000000+00:00";
 const END_AT = "2026-10-01T12:01:00.000000+00:00";
 const START_MS = Date.parse("2026-10-01T12:00:00.000Z");
+const END_MS = Date.parse("2026-10-01T12:01:00.000Z");
+const END_SLOT = Math.floor(END_MS / SLOT_MS) * SLOT_MS;
 
 const toLine = (v: unknown): string => JSON.stringify(v);
 const lines = (events: unknown[]): string[] => events.map(toLine);
@@ -78,6 +80,7 @@ function okRecord(name: string, size: number): RunRecord {
     name, size, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
     model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
     asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [], rebuiltTurns: null,
+    slots: [[END_SLOT, 100, 20, 50, null]],
   };
 }
 
@@ -93,6 +96,7 @@ describe("summariseRun", () => {
       name: "a.jsonl", size: 1200, startedAt: START_MS, outcome: "ok", reason: null, repo: "C:\\proj", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
       asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [], rebuiltTurns: null,
+      slots: [[END_SLOT, 100, 20, 50, null]],
     });
   });
 
@@ -253,6 +257,98 @@ describe("rebuiltTurns", () => {
     ]);
     expect(unreported.rebuiltTurns).toBeNull();
     expect(recordOf([startEvent(), endEvent()]).rebuiltTurns).toBeNull();
+  });
+});
+
+describe("slots", () => {
+  // A local wall-clock time as a stream carries it.
+  const local = (y: number, m: number, d: number, h: number, min: number): string => new Date(y, m, d, h, min).toISOString();
+  const slotOf = (iso: string): number => Math.floor(Date.parse(iso) / SLOT_MS) * SLOT_MS;
+
+  it("puts each turn's tokens in the slot of the local day it finished", () => {
+    const at1 = local(2026, 9, 1, 23, 55);
+    const at2 = local(2026, 9, 2, 0, 20);
+    const r = recordOf([
+      startEvent({ at: local(2026, 9, 1, 23, 50) }),
+      turnEvent({ turn: 1, at: at1, input_tokens: 1000, cached_tokens: 0, output_tokens: 100 }),
+      turnEvent({ turn: 2, at: at2, input_tokens: 3000, cached_tokens: 900, output_tokens: 200 }),
+      endEvent({ input_tokens: 4000, cached_tokens: 900, output_tokens: 300 }),
+    ]);
+    expect(r.slots).toEqual([
+      [slotOf(at1), 1000, 0, 100, 0],
+      [slotOf(at2), 3000, 900, 200, 0],
+    ]);
+    // The two slots sit on two different local days, as the turns did.
+    expect(r.slots.map((s) => new Date(s[0]).getDate())).toEqual([1, 2]);
+    expect([r.inputTokens, r.cachedTokens, r.outputTokens]).toEqual([4000, 900, 300]);
+  });
+
+  it("puts what the end reported beyond the turns' sum in the slot of the end's time", () => {
+    const at1 = local(2026, 9, 1, 10, 0);
+    const endAt = local(2026, 9, 1, 11, 0);
+    const r = recordOf([
+      startEvent({ at: local(2026, 9, 1, 9, 55) }),
+      turnEvent({ turn: 1, at: at1, input_tokens: 1000, cached_tokens: 0, output_tokens: 0 }),
+      endEvent({ at: endAt, input_tokens: 1500, cached_tokens: 0, output_tokens: 0 }),
+    ]);
+    expect(r.slots).toEqual([
+      [slotOf(at1), 1000, 0, 0, 0],
+      [slotOf(endAt), 500, null, null, 0],
+    ]);
+    expect(r.inputTokens).toBe(1500);
+  });
+
+  it("takes the turns' sum when the end reports no input tokens", () => {
+    const at1 = local(2026, 9, 1, 10, 0);
+    const r = recordOf([
+      startEvent(),
+      turnEvent({ turn: 1, at: at1, input_tokens: 710, cached_tokens: undefined, output_tokens: undefined }),
+      endEvent({ input_tokens: undefined, cached_tokens: undefined, output_tokens: undefined }),
+    ]);
+    expect(r.inputTokens).toBe(710);
+    expect(r.slots).toEqual([[slotOf(at1), 710, null, null, null]]);
+  });
+
+  it("keeps every figure null when nothing reported tokens", () => {
+    const at1 = local(2026, 9, 1, 10, 0);
+    const at2 = local(2026, 9, 1, 10, 20);
+    const r = recordOf([
+      startEvent(),
+      turnEvent({ turn: 1, at: at1, input_tokens: undefined, cached_tokens: undefined, output_tokens: undefined }),
+      turnEvent({ turn: 2, at: at2, input_tokens: undefined, cached_tokens: undefined, output_tokens: undefined }),
+      endEvent({ input_tokens: undefined, cached_tokens: undefined, output_tokens: undefined }),
+    ]);
+    expect([r.inputTokens, r.cachedTokens, r.outputTokens]).toEqual([null, null, null]);
+    expect(r.slots).toEqual([
+      [slotOf(at1), null, null, null, null],
+      [slotOf(at2), null, null, null, null],
+    ]);
+  });
+
+  it("counts the rebuilding turns in the slot each rebuilt in", () => {
+    const at1 = local(2026, 9, 1, 10, 0);
+    const at2 = local(2026, 9, 1, 10, 30);
+    const r = recordOf([
+      startEvent(),
+      turnEvent({ turn: 1, at: at1, input_tokens: 100000, cached_tokens: 99000 }),
+      turnEvent({ turn: 2, at: at2, input_tokens: 102000, cached_tokens: 0 }),
+      endEvent(),
+    ]);
+    expect(r.rebuiltTurns).toBe(1);
+    expect(r.slots.map((s) => [s[0], s[4]])).toEqual([[slotOf(at1), 0], [slotOf(at2), 1]]);
+  });
+
+  it("gives every slot a null rebuilt count when no turn reported cached tokens", () => {
+    const at1 = local(2026, 9, 1, 10, 0);
+    const at2 = local(2026, 9, 1, 10, 30);
+    const r = recordOf([
+      startEvent(),
+      turnEvent({ turn: 1, at: at1, cached_tokens: undefined }),
+      turnEvent({ turn: 2, at: at2, cached_tokens: undefined }),
+      endEvent({ cached_tokens: undefined }),
+    ]);
+    expect(r.rebuiltTurns).toBeNull();
+    expect(r.slots.map((s) => s[4])).toEqual([null, null]);
   });
 });
 
@@ -431,12 +527,12 @@ describe("RunStore", () => {
     expect(store.status().records).toBe(0);
     expect(store.status().writeError).toBeNull();
 
-    writeFileSync(file, JSON.stringify({ version: 3, runs: [GOOD] }));
+    writeFileSync(file, JSON.stringify({ version: 4, runs: [GOOD] }));
     store = new RunStore(file, dir, () => NOW);
     store.load();
     expect(store.records()).toEqual([]);
 
-    writeFileSync(file, JSON.stringify({ version: 2, runs: {} }));
+    writeFileSync(file, JSON.stringify({ version: 3, runs: {} }));
     store = new RunStore(file, dir, () => NOW);
     store.load();
     expect(store.records()).toEqual([]);
@@ -460,15 +556,47 @@ describe("RunStore", () => {
     expect(store.status().records).toBe(0);
 
     store.checkAll();
-    expect(store.records()).toEqual([{ ...okRecord("a.jsonl", statSync(path).size), rebuiltTurns: 1 }]);
-    expect(JSON.parse(readFileSync(file, "utf8")).version).toBe(2);
+    expect(store.records()).toEqual([{
+      ...okRecord("a.jsonl", statSync(path).size),
+      inputTokens: 202000, cachedTokens: 99000, outputTokens: 1000, rebuiltTurns: 1,
+      slots: [[END_SLOT, 202000, 99000, 1000, 1]],
+    }]);
+    expect(JSON.parse(readFileSync(file, "utf8")).version).toBe(3);
+  });
+
+  it("a version-2 runs file is now stale: discarded and the records rebuilt from the streams", () => {
+    const dir = makeDir();
+    const path = writeStream(dir, "a.jsonl", [startEvent(), endEvent()]);
+    const file = join(dir, "runs.json");
+    // A version-2 record of the same run, with a figure the stream contradicts.
+    writeFileSync(file, JSON.stringify({ version: 2, runs: [{ ...GOOD, name: "a.jsonl", outputTokens: 999 }] }));
+
+    const store = new RunStore(file, dir, () => NOW);
+    store.load();
+    expect(store.records()).toEqual([]);
+    expect(store.status().records).toBe(0);
+
+    store.checkAll();
+    expect(store.records()).toEqual([okRecord("a.jsonl", statSync(path).size)]);
+    expect(JSON.parse(readFileSync(file, "utf8")).version).toBe(3);
   });
 
   it("drops a record of the wrong shape and keeps the good ones", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const bad = [{ ...GOOD, name: 7 }, { ...GOOD, outcome: "exploded" }, { ...GOOD, inputTokens: "many" }, { ...GOOD, repoFromPaths: "yes" }, null, "x"];
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [GOOD, ...bad] }));
+    const bad = [
+      { ...GOOD, name: 7 },
+      { ...GOOD, outcome: "exploded" },
+      { ...GOOD, inputTokens: "many" },
+      { ...GOOD, repoFromPaths: "yes" },
+      { ...GOOD, slots: "no" },
+      { ...GOOD, slots: [[1, 2, 3, 4]] },
+      { ...GOOD, slots: [[1, 2, 3, 4, "x"]] },
+      { ...GOOD, slots: [["1", 2, 3, 4, 5]] },
+      null,
+      "x",
+    ];
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [GOOD, ...bad] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([GOOD]);
@@ -477,8 +605,8 @@ describe("RunStore", () => {
   it("keeps a record saved before asks/questions existed, with both null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20 };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [old] }));
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, slots: [] };
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([{ ...old, asks: null, questions: null, mcpTask: null, messages: null, undelivered: null, messageWaits: null, rebuiltTurns: null }]);
@@ -487,8 +615,8 @@ describe("RunStore", () => {
   it("keeps a record saved before mcpTask existed, with it null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0 };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [old] }));
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, slots: [] };
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([{ ...old, mcpTask: null, messages: null, undelivered: null, messageWaits: null, rebuiltTurns: null }]);
@@ -497,22 +625,22 @@ describe("RunStore", () => {
   it("keeps a record saved before messages existed, with them null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [old] }));
+    const old = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null, slots: [] };
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([{ ...old, messages: null, undelivered: null, messageWaits: null, rebuiltTurns: null }]);
   });
 
-  it("keeps a version-2 record saved before rebuiltTurns existed, with it null", () => {
+  it("keeps a record saved before rebuiltTurns existed, with it null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
     const old = {
       name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false,
       model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20,
-      asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [],
+      asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [], slots: [],
     };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [old] }));
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [old] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([{ ...old, rebuiltTurns: null }]);
@@ -521,9 +649,9 @@ describe("RunStore", () => {
   it("drops a saved record whose rebuiltTurns is not a number or null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [] };
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null, messages: 0, undelivered: 0, messageWaits: [], slots: [] };
     for (const bad of [{ rebuiltTurns: "many" }, { rebuiltTurns: true }]) {
-      writeFileSync(file, JSON.stringify({ version: 2, runs: [{ ...base, ...bad }] }));
+      writeFileSync(file, JSON.stringify({ version: 3, runs: [{ ...base, ...bad }] }));
       const store = new RunStore(file, null, () => NOW);
       store.load();
       expect(store.records()).toEqual([]);
@@ -533,9 +661,9 @@ describe("RunStore", () => {
   it("drops a saved record whose message counts or waits have the wrong type", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null };
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, mcpTask: null, slots: [] };
     for (const bad of [{ messages: "2" }, { undelivered: true }, { messageWaits: ["2"] }, { messageWaits: 2 }]) {
-      writeFileSync(file, JSON.stringify({ version: 2, runs: [{ ...base, messages: 1, undelivered: 0, messageWaits: [1], ...bad }] }));
+      writeFileSync(file, JSON.stringify({ version: 3, runs: [{ ...base, messages: 1, undelivered: 0, messageWaits: [1], ...bad }] }));
       const store = new RunStore(file, null, () => NOW);
       store.load();
       expect(store.records()).toEqual([]);
@@ -545,8 +673,8 @@ describe("RunStore", () => {
   it("drops a saved record whose mcpTask is not a boolean or null", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0 };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [{ ...base, mcpTask: "yes" }] }));
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, asks: 0, questions: 0, slots: [] };
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [{ ...base, mcpTask: "yes" }] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([]);
@@ -555,8 +683,8 @@ describe("RunStore", () => {
   it("drops a saved record whose question counts are not numbers", () => {
     const dir = makeDir();
     const file = join(dir, "runs.json");
-    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20 };
-    writeFileSync(file, JSON.stringify({ version: 2, runs: [{ ...base, asks: "2", questions: 4 }, { ...base, name: "b.jsonl", asks: 1, questions: [1] }] }));
+    const base = { name: "a.jsonl", size: 100, startedAt: START_MS, outcome: "ok", reason: null, repo: "web-shop", repoFromPaths: false, model: "flash", elapsedSeconds: 60, inputTokens: 100, outputTokens: 50, cachedTokens: 20, slots: [] };
+    writeFileSync(file, JSON.stringify({ version: 3, runs: [{ ...base, asks: "2", questions: 4 }, { ...base, name: "b.jsonl", asks: 1, questions: [1] }] }));
     const store = new RunStore(file, null, () => NOW);
     store.load();
     expect(store.records()).toEqual([]);

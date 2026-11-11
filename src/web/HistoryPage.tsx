@@ -465,12 +465,12 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
   const now = new Date();
   const span = spanOf(range, data.runs, now);
   const runs = inRange(data.runs, span);
-  const t = totals(runs);
-  const days = perDay(runs, span);
+  const t = totals(runs, span, data.runs);
+  const days = perDay(runs, span, data.runs);
   const why = reasons(runs);
   const whyMax = Math.max(1, ...why.map((r) => r.count));
-  const repoGroups = groupBy(runs, "repo");
-  const modelGroups = groupBy(runs, "model");
+  const repoGroups = groupBy(runs, "repo", span, data.runs);
+  const modelGroups = groupBy(runs, "model", span, data.runs);
   const kvBuckets = busy === null ? [] : busyIn(busy.buckets, span);
   const kv = busy === null ? [] : kvPerDay(busy.buckets, span);
   const busyLoad = load(runs, span);
@@ -589,6 +589,7 @@ function HistoryBody({ data, busy, power, range, onOpenList }: { data: RunsRespo
               <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent/65" aria-hidden="true" />input, new</span>
               <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-sm bg-accent" aria-hidden="true" />output</span>
             </div>
+            <p className="text-xs text-muted">Counted on the day each turn finished</p>
             <DayChart
               days={days}
               pct={tokenPct}
