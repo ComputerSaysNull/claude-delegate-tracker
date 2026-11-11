@@ -10,6 +10,7 @@ export interface FileView {
   skipped: string | null;       // a skipped file's `reason`; null for a file that was read
   lines: { start: number; end: number } | null; // a file read as a line range; null otherwise
   images: number | null;        // files_read[].images (format 1.13): how many images the file was sent as; null for a text file
+  imageRef: string | null;      // "f<i>" for a file read as an image, by which the page asks for it; null otherwise
 }
 
 export interface CallView {
@@ -22,6 +23,7 @@ export interface CallView {
   result: string | null;        // "40 lines, 1.2 KB" from result_lines/result_bytes, or "8 images" from result_images; null when neither
   exitCode: number | null;
   time: string | null;          // from the call's `ms`: "<1s" under 1 s, else formatDuration
+  imageRef: string | null;      // "t<turn>c<i>" for a finished call that returned an image from its `path`; null otherwise
 }
 
 export type AnswerView = { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null };
@@ -219,9 +221,19 @@ function sizeOf(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function sentAsImages(n: unknown): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n >= 1;
+}
+
+// The path an image came from: a call's `path` argument, or a read file's `path`.
+function imageSourceOf(rec: Record<string, unknown>, images: unknown): string | null {
+  if (!sentAsImages(images)) return null;
+  return typeof rec.path === "string" && rec.path !== "" ? rec.path : null;
+}
+
 function resultOf(call: Record<string, unknown>): string | null {
   const images = call.result_images;
-  if (typeof images === "number" && Number.isInteger(images) && images >= 1) {
+  if (sentAsImages(images)) {
     return images === 1 ? "1 image" : `${images} images`;
   }
   const lines = typeof call.result_lines === "number" ? call.result_lines : null;
@@ -249,7 +261,7 @@ function statusAt(running: unknown[], index: number, name: string): string | nul
   return typeof e.status === "string" ? e.status : null;
 }
 
-function callView(call: Record<string, unknown>, status: string | null): CallView {
+function callView(call: Record<string, unknown>, status: string | null, ref: string | null = null): CallView {
   const outcome = call.outcome;
   let ok: boolean | null = null;
   if (outcome === "ran" || outcome === "repeat") ok = true;
@@ -264,14 +276,15 @@ function callView(call: Record<string, unknown>, status: string | null): CallVie
     result: resultOf(call),
     exitCode: typeof call.exit_code === "number" ? call.exit_code : null,
     time: timeOf(call.ms),
+    imageRef: ref !== null && imageSourceOf(recordOf(call.arguments), call.result_images) !== null ? ref : null,
   };
 }
 
-function callsOf(slot: TurnSlot, closed: boolean): CallView[] {
+function callsOf(n: number, slot: TurnSlot, closed: boolean): CallView[] {
   if (closed) {
     const calls = slot.turn?.tool_calls;
     if (!Array.isArray(calls)) return [];
-    return calls.map((c) => callView(recordOf(c), null));
+    return calls.map((c, i) => callView(recordOf(c), null, `t${n}c${i}`));
   }
   const fromTools = slot.tools?.tool_calls;
   const running = Array.isArray(slot.alive?.running) ? (slot.alive as Record<string, unknown>).running as unknown[] : [];
@@ -388,7 +401,7 @@ function buildTurn(n: number, slot: TurnSlot, servedModelId: string | null): Tur
     n,
     heading: of === null ? `turn ${n}` : `turn ${n} of ${of}`,
     budget: budgetOf(slot.priced),
-    calls: callsOf(slot, closed),
+    calls: callsOf(n, slot, closed),
     reply: typeof reply === "string" ? reply : null,
     closed,
     heartbeat: closed ? null : heartbeatOf(slot),
@@ -455,7 +468,7 @@ function answerOf(evt: Record<string, unknown> | null): AnswerView | null {
   return { text: evt.text, waited: formatDuration(evt.waited_seconds), bestReading: evt.best_reading === true, by };
 }
 
-function fileView(e: unknown, skipped = false): FileView | null {
+function fileView(e: unknown, skipped = false, index = -1): FileView | null {
   if (typeof e !== "object" || e === null || Array.isArray(e)) return null;
   const rec = e as Record<string, unknown>;
   const path = typeof rec.given === "string" ? rec.given : (typeof rec.path === "string" ? rec.path : null);
@@ -474,7 +487,8 @@ function fileView(e: unknown, skipped = false): FileView | null {
     size: typeof rec.bytes === "number" ? sizeOf(rec.bytes) : null,
     skipped: typeof rec.reason === "string" ? rec.reason : null,
     lines,
-    images: typeof images === "number" && Number.isInteger(images) && images >= 1 ? images : null,
+    images: sentAsImages(images) ? images : null,
+    imageRef: !skipped && index >= 0 && imageSourceOf(rec, images) !== null ? `f${index}` : null,
   };
 }
 
@@ -483,7 +497,7 @@ function filesOf(start: Record<string, unknown> | null): FileView[] {
   if (start === null) return out;
   const read = Array.isArray(start.files_read) ? start.files_read : [];
   const skipped = Array.isArray(start.files_skipped) ? start.files_skipped : [];
-  for (const e of read) { const f = fileView(e); if (f !== null) out.push(f); }
+  read.forEach((e, i) => { const f = fileView(e, false, i); if (f !== null) out.push(f); });
   for (const e of skipped) { const f = fileView(e, true); if (f !== null) out.push(f); }
   return out;
 }
@@ -610,6 +624,25 @@ export function buildView(name: string, v: ViewState, s: StreamState, row: ListR
     turns,
     summary: buildSummary(s, closedTurns),
   };
+}
+
+// The path of an image the model was given or read, by the ref the view gave it: f<i> for the
+// i-th read file, t<n>c<i> for call i of finished turn n. Null unless the stream says that file
+// or call carried images and names the path; the path is then the stream's, never the URL's.
+const IMAGE_REF = /^(?:f(0|[1-9][0-9]{0,4})|t([1-9][0-9]{0,5})c(0|[1-9][0-9]{0,4}))$/;
+
+export function imagePath(start: Record<string, unknown> | null, v: ViewState, ref: string): string | null {
+  const m = IMAGE_REF.exec(ref);
+  if (m === null) return null;
+  if (m[1] !== undefined) {
+    const read = Array.isArray(start?.files_read) ? start.files_read : [];
+    const rec = recordOf(read[Number(m[1])]);
+    return imageSourceOf(rec, rec.images);
+  }
+  const calls = v.turns.get(Number(m[2]))?.turn?.tool_calls;
+  if (!Array.isArray(calls)) return null;
+  const call = recordOf(calls[Number(m[3])]);
+  return imageSourceOf(recordOf(call.arguments), call.result_images);
 }
 
 // A finished turn's thinking text, from the slot the view kept for turn n; null when the

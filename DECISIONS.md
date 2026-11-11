@@ -5,6 +5,20 @@ Structural decisions only: ones that shape how the tracker is built and would be
 reverse. Newest first; the headings are the index. A decision's body is never edited. When
 it stops being true, only its heading changes, to say what replaced it.
 
+## ADR-0006 — 2026-11-11 — The tracker reads images the streams name — Accepted
+
+### Context
+
+Delegations can run for hours on work with images, and the reader wants to see them while the run goes on. The streams record each image's absolute path (a prefetched file, or a `read_file` call that returned an image) but not the image itself. Until now the tracker opened only the stream files it listed.
+
+### Decision
+
+On request, the backend reads an image from the path the stream recorded, never a path from the URL. It reads only inside the folders `IMAGE_ROOTS` names, after links are resolved, only raster types, only a regular file under a size cap. The file the open holds is checked again, because a delegation can change its workspace between the check and the open. With no roots set, images are off.
+
+### Consequences
+
+The page shows the file as it is on disk now, which a script may have changed since. It works only where the tracker can see the delegations' files, so not through the feed. A path in a stream is trusted as far as the roots allow.
+
 ## ADR-0005 — 2026-10-07 — The tracker keeps its own records on disk — Accepted
 
 ### Context
