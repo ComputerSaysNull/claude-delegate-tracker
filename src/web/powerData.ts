@@ -9,11 +9,11 @@ export interface PowerDay {
   byNode: { node: string; wh: number | null; averageW: number | null; maxW: number | null }[];
   wh: number | null;                              // all nodes' Wh that day; null when no node has a figure
   whPerKiloToken: number | null;                  // wh ÷ (that day's output tokens ÷ 1000)
-  outputTokens: number;                           // output tokens of the runs that started that day
+  outputTokens: number;                           // output tokens of the turns that finished that day
 }
 
 // One entry per span bucket, oldest first: each bucket's per-node Wh, whole-watt average and peak,
-// and the bucket's Wh per 1k output tokens of the runs that started in it.
+// and the bucket's Wh per 1k output tokens of the turns that finished in it.
 export function powerPerDay(buckets: PowerBucket[], runs: RunRecord[], span: Span): PowerDay[] {
   const result: PowerDay[] = span.buckets.map((b) => ({
     label: b.label, byNode: [], wh: null, whPerKiloToken: null, outputTokens: 0,
@@ -33,13 +33,16 @@ export function powerPerDay(buckets: PowerBucket[], runs: RunRecord[], span: Spa
     a.seconds += b.seconds;
     if (b.maxW !== null && (a.maxW === null || b.maxW > a.maxW)) a.maxW = b.maxW;
   }
-  // The output tokens per bucket: the runs that started in it; a null figure adds nothing.
+  // The output tokens per bucket: the turns whose slot finished in it; a null figure adds nothing.
   const tokens = span.buckets.map(() => 0);
   for (const r of runs) {
-    if (r.startedAt === null || r.outputTokens === null) continue;
-    const index = bucketIndex(span, r.startedAt);
-    if (index === undefined) continue;
-    tokens[index] += r.outputTokens;
+    for (const slot of r.slots) {
+      const output = slot[3];
+      if (output === null) continue;
+      const index = bucketIndex(span, slot[0]);
+      if (index === undefined) continue;
+      tokens[index] += output;
+    }
   }
   const nodeList = [...nodes].sort();
   for (let i = 0; i < result.length; i++) {

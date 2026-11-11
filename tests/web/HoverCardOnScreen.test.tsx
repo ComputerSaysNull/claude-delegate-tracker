@@ -41,6 +41,7 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     messages: null,
     undelivered: null,
     messageWaits: null,
+    slots: [],
     ...overrides,
   };
 }

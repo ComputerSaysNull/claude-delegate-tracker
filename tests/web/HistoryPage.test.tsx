@@ -18,7 +18,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const CHECKED_AT = Date.parse("2026-10-04T12:00:00.000Z");
 
 function run(overrides: Partial<RunRecord> = {}): RunRecord {
-  return {
+  const base: RunRecord = {
     name: "s.jsonl",
     size: 100,
     repoFromPaths: false,
@@ -38,8 +38,14 @@ function run(overrides: Partial<RunRecord> = {}): RunRecord {
     messages: null,
     undelivered: null,
     messageWaits: null,
+    slots: [],
     ...overrides,
   };
+  // A slot at the run's start when it has tokens, so token figures land on the day it started.
+  if (overrides.slots === undefined && base.startedAt !== null && (base.inputTokens !== null || base.outputTokens !== null || base.cachedTokens !== null)) {
+    base.slots = [[Math.floor(base.startedAt / 900000) * 900000, base.inputTokens, base.cachedTokens, base.outputTokens, base.rebuiltTurns]];
+  }
+  return base;
 }
 
 // Three runs: two in the last week, one 20 days ago (inside 30 days, outside 7).
@@ -190,6 +196,18 @@ describe("HistoryPage", () => {
     expect(tileText("Did not finish")).toContain("1 stopped · 0 limits · 1 failed");
     expect(tileText("Tokens processed")).toContain("2k");
     expect(tileText("Cache reuse")).toContain("50%");
+  });
+
+  it("counts the tokens a run used inside the range even when it started before it", async () => {
+    const early = run({
+      name: "early", startedAt: NOW - 40 * DAY, inputTokens: 8000, outputTokens: 800, cachedTokens: 0,
+      slots: [[Math.floor((NOW - 2 * DAY) / 900000) * 900000, 8000, 0, 800, null]],
+    });
+    mockFetch(api([run({ name: "recent" }), early]));
+    render(<HistoryPage />);
+    await waitFor(() => expect(tileText("Delegations")).toContain("1"));
+    expect(tileText("Tokens processed")).toContain("10k");
+    expect(screen.getByText(/^peak /).textContent).toBe("peak 8.8k on 2 Oct");
   });
 
   it("defaults to 30 days and switching the range changes the tiles", async () => {
