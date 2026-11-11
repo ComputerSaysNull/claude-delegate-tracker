@@ -9,6 +9,25 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #98 — 2026-11-11 — feat: render Markdown tables, and thinking as Markdown while its fold is open
+
+### Added
+
+- **Tables, strikethrough and task lists render in the task, replies and thinking.** A table
+  in a reply showed as a paragraph of pipe characters, because Markdown was read without
+  GitHub's extensions; `remark-gfm` adds them. A wide table scrolls inside its own box with
+  its words kept whole, since the page's break-anywhere rule squeezed columns to a letter a
+  line.
+- **Thinking renders as Markdown.** It was plain text. It renders only while its fold is
+  open, live or finished, so a folded thinking costs nothing. A thinking reached 353 KB
+  (p99 80 KB), and parsing 350 KB whole took 1.4 s, so it renders in blocks split at blank
+  lines, each parsed once: a new partial parses only the block it lands in.
+
+### Changed
+
+- **A Markdown image shows as a link and is never loaded.** An image made the browser fetch
+  whatever address the model wrote, the same risk as running its raw HTML.
+
 ## #97 — 2026-11-11 — fix: the decode speed chart draws its line in blue
 
 ### Fixed

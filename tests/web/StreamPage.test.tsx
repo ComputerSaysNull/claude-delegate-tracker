@@ -303,11 +303,13 @@ describe("StreamViewBody", () => {
     render(<StreamViewBody view={v} />);
 
     expect(screen.getByText("The loop retries")).toBeTruthy();
-    const reasoning = screen.getByText("thinking hard");
-    const details = reasoning.closest("details");
-    expect(details).not.toBeNull();
-    expect((details as HTMLDetailsElement).open).toBe(false);
-    expect(screen.getByText(/^Thinking · /).closest("details")).toBe(details);
+    const details = screen.getByText(/^Thinking · /).closest("details")!;
+    expect(details.open).toBe(false);
+    // Folded, the reasoning is not rendered; opening the fold shows it inside.
+    expect(screen.queryByText("thinking hard")).toBeNull();
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    expect(screen.getByText("thinking hard").closest("details")).toBe(details);
   });
 
   it("shows the final reply and no writing label for a closed turn", () => {

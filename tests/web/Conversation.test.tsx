@@ -71,6 +71,10 @@ describe("the conversation", () => {
     render(<StreamViewBody view={view({ turns: [turn(1, { closed: false, partial: { reasoning: "weighing the wrappers", answer: "" } })] })} />);
     const fold = screen.getByText(/^Thinking · /).closest("details")!;
     expect(fold.open).toBe(false);
+    // Folded, the thinking is not rendered at all; it renders when the fold opens.
+    expect(fold.textContent).not.toContain("weighing the wrappers");
+    fold.open = true;
+    fireEvent(fold, new Event("toggle"));
     expect(fold.textContent).toContain("weighing the wrappers");
   });
 

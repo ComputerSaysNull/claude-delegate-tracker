@@ -12,7 +12,7 @@ import { useStreamView } from "./useStreamView.ts";
 import { StateBadge, StateIcon, STATE_TEXT } from "./states.tsx";
 import { localTime } from "./time.ts";
 import { compactCount } from "./format.ts";
-import { Markdown } from "./Markdown.tsx";
+import { Markdown, MarkdownBlocks } from "./Markdown.tsx";
 import { DetailsFigures, useDetailsFolded } from "./DetailsBar.tsx";
 
 export function StreamPage({ name, onClose }: { name: string; onClose: () => void }) {
@@ -458,7 +458,7 @@ function DelegationMessage({
               <ThinkingFold name={name} turn={turn} label={thinkingLabel} />
             ) : (
               <ThinkingDetails label={thinkingLabel}>
-                <pre className="whitespace-pre-wrap text-sm text-muted">{turn.partial?.reasoning ?? ""}</pre>
+                <Thinking text={turn.partial?.reasoning ?? ""} />
               </ThinkingDetails>
             )
           ) : null}
@@ -531,7 +531,7 @@ function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; lab
   return (
     <ThinkingDetails label={label} onToggle={onToggle}>
       {state.kind === "loading" && <p className="text-sm text-muted">Loading…</p>}
-      {state.kind === "loaded" && <pre className="whitespace-pre-wrap text-sm text-muted">{state.text}</pre>}
+      {state.kind === "loaded" && <Thinking text={state.text} />}
       {state.kind === "failed" && <p className="text-sm text-muted">Could not load the thinking.</p>}
       {turn.thinking !== null && !turn.thinking.complete && (
         <p className="text-xs text-muted">The last moments of thinking before the turn ended may be missing.</p>
@@ -540,7 +540,17 @@ function ThinkingFold({ name, turn, label }: { name: string; turn: TurnView; lab
   );
 }
 
-// A thinking fold. A long text folds again without scrolling back to its top: on a wide
+// Thinking as Markdown, muted, keeping its single line breaks as the model wrote them.
+function Thinking({ text }: { text: string }) {
+  return (
+    <div className="text-muted [&_p]:whitespace-pre-line">
+      <MarkdownBlocks text={text} />
+    </div>
+  );
+}
+
+// A thinking fold. Its text renders only while the fold is open, so a folded thinking costs
+// nothing however long it grows. A long text folds again without scrolling back to its top: on a wide
 // screen the fold's line stays in sight under the 57px header while it is open, and a button
 // after the text folds it. Folded once its top was scrolled past, the page scrolls back so
 // the fold's line sits just under the header, where the reader last saw it. A click on the
@@ -555,12 +565,14 @@ function ThinkingDetails({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDetailsElement | null>(null);
+  const [open, setOpen] = useState(false);
   const fold = () => {
     if (ref.current !== null) ref.current.open = false;
   };
   const toggled = (e: SyntheticEvent<HTMLDetailsElement>) => {
     onToggle?.(e);
     const details = e.currentTarget;
+    setOpen(details.open);
     if (details.open) return;
     const header = details.closest("section")?.querySelector(":scope > header");
     if (header === null || header === undefined) return;
@@ -573,7 +585,7 @@ function ThinkingDetails({
         <ChevronRight size={14} aria-hidden="true" className="shrink-0 transition-transform group-open:rotate-90" />
         {label}
       </summary>
-      {children}
+      {open && children}
       <button
         type="button"
         onClick={fold}
