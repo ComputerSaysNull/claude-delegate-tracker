@@ -9,6 +9,15 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #97 — 2026-11-11 — fix: the decode speed chart draws its line in blue
+
+### Fixed
+
+- **The decode speed line is blue, like the lines beside it.** It was the only grey line in
+  the model server block: it passed no colour, so the chart fell back to the muted grey.
+  It now draws in the pair's first colour, the blue of "running" and "reserved". The
+  one-line KV-cache chart on vLLM had the same gap and gets the same blue.
+
 ## #96 — 2026-11-11 — fix: list tests wait for the scroll observer a page makes
 
 ### Fixed

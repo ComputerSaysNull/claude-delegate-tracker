@@ -255,12 +255,12 @@ describe("ModelPanel", () => {
     expect(kids[0].contains(img)).toBe(false);
   });
 
-  it("Decode speed draws one line in the default colour", () => {
+  // A one-line chart draws in the pair's first colour, the blue of the charts beside it.
+  it("Decode speed draws one line in the pair's blue", () => {
     render(<ModelPanel model={figures({ decodeTokensPerSecond: 41.2 })} history={SERIES} windowSeconds={3600} />);
     const drawn = screen.getByRole("img", { name: /^Decode speed over/ });
     expect(drawn.getAttribute("data-lines")).toBe("1");
-    // The default colour, whether left to Sparkline or named as the muted token.
-    expect(["", "--muted"]).toContain(drawn.getAttribute("data-colors"));
+    expect(drawn.getAttribute("data-colors")).toBe("--chart-pair-a");
     expect(drawn.getAttribute("data-fixed")).toBe("");
   });
 
@@ -338,7 +338,7 @@ describe("ModelPanel", () => {
     expect(classes).not.toContain("text-state-failed");
     const drawn = screen.getByRole("img", { name: /^KV-cache/ });
     expect(drawn.getAttribute("data-lines")).toBe("1");
-    expect(["", "--muted"]).toContain(drawn.getAttribute("data-colors"));
+    expect(drawn.getAttribute("data-colors")).toBe("--chart-pair-a");
     expect(drawn.getAttribute("data-fixed")).toBe("0,100");
   });
 
