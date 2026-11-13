@@ -69,6 +69,7 @@ function call(overrides: Partial<CallView> = {}): CallView {
     exitCode: null,
     time: null,
     imageRef: null,
+    kept: 0,
     ...overrides,
   };
 }
@@ -341,7 +342,7 @@ describe("long values on a phone", () => {
   });
 
   it("a file path is clamped to two lines, with the full path on hover and focus", () => {
-    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: LONG, size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null, kept: 0 }] })} />);
     const summary = screen.getByText(LONG);
     expect(summary.className).toMatch(/\bline-clamp-2\b/);
     expect(summary.className).toMatch(/\bbreak-all\b/);
@@ -350,12 +351,12 @@ describe("long values on a phone", () => {
   });
 
   it("shows the read range after a ranged file's path", () => {
-    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: { start: 596, end: 630 }, images: null, imageRef: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: { start: 596, end: 630 }, images: null, imageRef: null, kept: 0 }] })} />);
     expect(screen.getByText(/lines 596–630/)).toBeTruthy();
   });
 
   it("shows no range text on a whole file's chip", () => {
-    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null }] })} />);
+    render(<StreamViewBody view={view({ files: [{ path: "/w/proj/backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null, kept: 0 }] })} />);
     expect(screen.queryByText(/lines \d/)).toBeNull();
   });
 
@@ -364,9 +365,9 @@ describe("long values on a phone", () => {
       <StreamViewBody
         view={view({
           files: [
-            { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8, imageRef: null },
-            { path: "/w/proj/one.png", size: null, skipped: null, lines: null, images: 1, imageRef: null },
-            { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
+            { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8, imageRef: null, kept: 0 },
+            { path: "/w/proj/one.png", size: null, skipped: null, lines: null, images: 1, imageRef: null, kept: 0 },
+            { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
           ],
         })}
       />,
@@ -383,8 +384,8 @@ describe("long values on a phone", () => {
       <StreamViewBody
         view={view({
           files: [
-            { path: "/w/short.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
-            { path: LONG, size: null, skipped: null, lines: null, images: null, imageRef: null },
+            { path: "/w/short.py", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+            { path: LONG, size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
           ],
         })}
       />,

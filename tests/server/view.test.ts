@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { applyLine, listRow, newStreamState, type StreamState } from "../../src/server/streams.ts";
-import { applyViewEvent, buildView, diffView, imagePath, newViewState, turnThinking, type StreamView, type ViewState } from "../../src/server/view.ts";
+import { applyViewEvent, buildView, diffView, imageSource, newViewState, turnThinking, type StreamView, type ViewState } from "../../src/server/view.ts";
 
 const NOW = new Date("2026-10-01T13:00:09.000Z");
 const QUIET = 120;
@@ -975,9 +975,9 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null },
-      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null, images: null, imageRef: null },
-      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null, images: null, imageRef: null },
+      { path: "C:\\w\\proj\\backoff.py", size: "1.2 KB", skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+      { path: "/w/proj/only-path.py", size: "310 B", skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+      { path: "C:\\w\\proj\\.env", size: null, skipped: "the filename '.env' is not on the extension allowlist.", lines: null, images: null, imageRef: null, kept: 0 },
     ]);
   });
 
@@ -990,7 +990,7 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 }, images: null, imageRef: null },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: { start: 596, end: 630 }, images: null, imageRef: null, kept: 0 },
     ]);
     const single = viewOf([start({ files_read: [{ path: "/w/a", start_line: 7, end_line: 7 }] })]);
     expect(single.files[0].lines).toEqual({ start: 7, end: 7 });
@@ -999,7 +999,7 @@ describe("files", () => {
   it("leaves lines null for a whole-file entry with neither bound", () => {
     const v = viewOf([start({ files_read: [{ path: "/w/proj/backoff.py" }] })]);
     expect(v.files).toEqual([
-      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
+      { path: "/w/proj/backoff.py", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
     ]);
   });
 
@@ -1030,7 +1030,7 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null, images: null, imageRef: null },
+      { path: "/w/proj/.env", size: null, skipped: "not allowed", lines: null, images: null, imageRef: null, kept: 0 },
     ]);
   });
 
@@ -1046,10 +1046,10 @@ describe("files", () => {
       }),
     ]);
     expect(v.files).toEqual([
-      { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8, imageRef: "f0" },
-      { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null, imageRef: null },
-      { path: "/w/proj/str.png", size: null, skipped: null, lines: null, images: null, imageRef: null },
-      { path: "/w/proj/zero.png", size: null, skipped: null, lines: null, images: null, imageRef: null },
+      { path: "/w/proj/photo.png", size: null, skipped: null, lines: null, images: 8, imageRef: "f0", kept: 0 },
+      { path: "/w/proj/text.py", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+      { path: "/w/proj/str.png", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+      { path: "/w/proj/zero.png", size: null, skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
     ]);
   });
 });
@@ -1549,8 +1549,12 @@ describe("which model answered (format 1.15)", () => {
 });
 
 // An image the model was given or read can be shown on request. The view marks each with a ref
-// the page asks for it by; the backend turns a ref back into the path the stream recorded.
+// the page asks for it by; the backend turns a ref back into the disk path the stream recorded,
+// or into the name of a copy the server kept beside the stream.
 describe("images the model was given or read", () => {
+  const sha = (c: string): string => c.repeat(64);
+  const keptName = (c: string, ext = "png"): string => `${sha(c)}.${ext}`;
+
   const events = [
     start({ format: "1.13", files_read: [
       { path: "/w/proj/notes.md", bytes: 10, est_tokens: 3 },
@@ -1566,6 +1570,19 @@ describe("images the model was given or read", () => {
     { t: "tools", at: at(0), turn: 2, of_turns: 4, tool_calls: [{ name: "read_file", arguments: { path: "/w/proj/views/back.png" } }] },
   ];
 
+  // The same stream with kept copies: file 1 was sent as one image and the server kept two
+  // copies of it; the finished call returned two images and kept both.
+  const keptEvents = [
+    start({ format: "1.17", files_read: [
+      { path: "/w/proj/notes.md", bytes: 10, est_tokens: 3 },
+      { path: "/w/proj/views/front.png", given: "views/front.png", bytes: 120, images: 1, image_files: [keptName("a"), keptName("b", "webp")] },
+    ] }),
+    { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+    { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+      { name: "look", outcome: "ran", arguments: { path: "/w/proj/views/side.png" }, result_images: 2, result_image_files: [keptName("c"), keptName("d", "jpeg")] },
+    ], text: "" },
+  ];
+
   it("gives a prefetched image file a ref, and a text or skipped file none", () => {
     const v = viewOf(events);
     expect(v.files.map((f) => f.imageRef)).toEqual([null, "f1", null]);
@@ -1577,17 +1594,104 @@ describe("images the model was given or read", () => {
     expect(v.turns[1].calls.map((c) => c.imageRef)).toEqual([null]);
   });
 
-  it("turns a ref back into the path the stream recorded", () => {
-    const { state, view } = build(events);
-    expect(imagePath(state.start, view, "f1")).toBe("/w/proj/views/front.png");
-    expect(imagePath(state.start, view, "t1c1")).toBe("/w/proj/views/side.png");
+  it("gives a skipped file no ref even when the server kept copies of it", () => {
+    const v = viewOf([
+      start({ format: "1.17", files_skipped: [
+        { path: "/w/proj/big.png", reason: "too large", images: 1, image_files: [keptName("a")] },
+      ] }),
+    ]);
+    expect(v.files[0].kept).toBe(0);
+    expect(v.files[0].imageRef).toBeNull();
   });
 
-  it.each(["f0", "f2", "f9", "t1c0", "t1c2", "t2c0", "t9c0", "f01", "t0c0", "t1c01", "x", "f-1", "../f1", ""])(
+  it("counts only the valid kept names a file lists", () => {
+    const v = viewOf([
+      start({ format: "1.17", files_read: [{
+        path: "/w/proj/views/tile.png",
+        images: 9,
+        image_files: [
+          keptName("a"),
+          "B".repeat(64) + ".png",     // uppercase hex
+          "../x.png",
+          "a/b.png",
+          sha("c") + ".svg",
+          "d".repeat(63) + ".png",     // 63 hex digits
+          42,                          // not a string
+          keptName("e", "gif"),
+        ],
+      }] }),
+    ]);
+    expect(v.files[0].kept).toBe(2);
+  });
+
+  it("counts only the valid kept names a finished call lists", () => {
+    const v = viewOf([
+      start({ format: "1.17" }),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+        { name: "look", outcome: "ran", arguments: { file: "/w/proj/views/top.png" }, result_images: 3, result_image_files: [keptName("a"), keptName("b", "jpeg"), "A".repeat(64) + ".png", null] },
+        { name: "read_file", outcome: "ran", arguments: { path: "/w/proj/notes.md" }, result_lines: 1, result_bytes: 10 },
+      ], text: "" },
+    ]);
+    expect(v.turns[0].calls.map((c) => c.kept)).toEqual([2, 0]);
+  });
+
+  it("indexes only the valid kept names, in list order", () => {
+    const { state, view } = build([
+      start({ format: "1.17", files_read: [{
+        path: "/w/proj/views/tile.png",
+        images: 9,
+        image_files: ["../x.png", keptName("a"), keptName("b", "webp"), "a/b.png"],
+      }] }),
+    ]);
+    expect(imageSource(state.start, view, "f0k0")).toEqual({ kind: "kept", name: keptName("a") });
+    expect(imageSource(state.start, view, "f0k1")).toEqual({ kind: "kept", name: keptName("b", "webp") });
+    expect(imageSource(state.start, view, "f0k2")).toBeNull();
+  });
+
+  it("gives a finished call kept copies a ref even when it names no path", () => {
+    const v = viewOf([
+      start({ format: "1.17" }),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 1, tool_calls: [
+        { name: "screenshot", outcome: "ran", arguments: {}, result_images: 1, result_image_files: [keptName("a")] },
+      ], text: "" },
+    ]);
+    expect(v.turns[0].calls[0].kept).toBe(1);
+    expect(v.turns[0].calls[0].imageRef).toBe("t1c0");
+  });
+
+  it("returns the kept copy a k suffix names, in the order the stream listed the valid ones", () => {
+    const { state, view } = build(keptEvents);
+    expect(imageSource(state.start, view, "f1k0")).toEqual({ kind: "kept", name: keptName("a") });
+    expect(imageSource(state.start, view, "f1k1")).toEqual({ kind: "kept", name: keptName("b", "webp") });
+    expect(imageSource(state.start, view, "t1c0k0")).toEqual({ kind: "kept", name: keptName("c") });
+    expect(imageSource(state.start, view, "t1c0k1")).toEqual({ kind: "kept", name: keptName("d", "jpeg") });
+  });
+
+  it("returns the disk path for a ref with no k suffix, even when the item lists kept copies", () => {
+    const kept = build(keptEvents);
+    expect(imageSource(kept.state.start, kept.view, "f1")).toEqual({ kind: "disk", path: "/w/proj/views/front.png" });
+    expect(imageSource(kept.state.start, kept.view, "t1c0")).toEqual({ kind: "disk", path: "/w/proj/views/side.png" });
+    const diskOnly = build(events);
+    expect(imageSource(diskOnly.state.start, diskOnly.view, "f1")).toEqual({ kind: "disk", path: "/w/proj/views/front.png" });
+    expect(imageSource(diskOnly.state.start, diskOnly.view, "t1c1")).toEqual({ kind: "disk", path: "/w/proj/views/side.png" });
+  });
+
+  it("is null past the last kept copy, and for an item that lists none", () => {
+    const { state, view } = build(keptEvents);
+    expect(imageSource(state.start, view, "f1k2")).toBeNull();
+    expect(imageSource(state.start, view, "t1c0k2")).toBeNull();
+    expect(imageSource(state.start, view, "f1k9999")).toBeNull();
+    expect(imageSource(state.start, view, "f0k0")).toBeNull();
+    expect(imageSource(state.start, view, "t1c1k0")).toBeNull();
+  });
+
+  it.each(["f0", "f2", "f9", "t1c0", "t1c2", "t2c0", "t9c0", "f01", "t0c0", "t1c01", "x", "f-1", "../f1", "", "f1k", "f1k01", "t1c0k"])(
     "finds no image for the ref %s",
     (ref) => {
       const { state, view } = build(events);
-      expect(imagePath(state.start, view, ref)).toBeNull();
+      expect(imageSource(state.start, view, ref)).toBeNull();
     },
   );
 });

@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #104 — 2026-11-13 — feat: show the server's kept copy of an image, so a rewritten file shows what the model saw
+
+### Added
+
+- **An image shows as the model saw it.** The page read an image from the path the stream
+  recorded, so a file a script rewrote or deleted after the model read it showed its new
+  version, or nothing. The server now keeps a copy of each image it sends, beside the
+  stream (format 1.17). When the stream lists copies, the page shows them, in order, as the
+  image sent to the model. Without one, or when a copy cannot be read, it shows the file on
+  disk and says so, as before. Copies are read only by a name the stream listed, from that
+  stream's own folder, and show even with `IMAGE_ROOTS` unset (ADR-0007).
+
 ## #103 — 2026-11-13 — feat: vendor server v0.18.0 and say in plain words why a turn was retried
 
 ### Changed

@@ -6,6 +6,10 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
 
+// Where an image is read from: a copy the server kept in a stream's own <stem>.images folder,
+// or the path the stream recorded.
+export type ImageSource = { kind: "kept"; file: string; folder: string } | { kind: "disk"; file: string };
+
 export type ImageResult =
   | { kind: "ok"; type: string; bytes: Uint8Array<ArrayBuffer> }
   | { kind: "off" }                       // no image roots configured
@@ -109,4 +113,11 @@ export async function readImage(
   } finally {
     await handle.close();
   }
+}
+
+// A kept copy is read with its own folder as the only root, so it is served without IMAGE_ROOTS
+// (it lives beside the stream, which the tracker already reads) and a link out of that folder is
+// refused. A recorded path is read inside IMAGE_ROOTS as before.
+export function readSource(src: ImageSource, imageRoots: string[], maxBytes: number): Promise<ImageResult> {
+  return src.kind === "kept" ? readImage(src.file, [src.folder], maxBytes) : readImage(src.file, imageRoots, maxBytes);
 }

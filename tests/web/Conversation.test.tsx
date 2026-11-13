@@ -26,7 +26,7 @@ function turn(n: number, overrides: Partial<TurnView> = {}): TurnView {
 }
 
 function call(overrides: Partial<CallView> = {}): CallView {
-  return { name: "read_file", ok: true, outcome: null, status: null, args: [], message: null, result: null, exitCode: null, time: null, imageRef: null, ...overrides };
+  return { name: "read_file", ok: true, outcome: null, status: null, args: [], message: null, result: null, exitCode: null, time: null, imageRef: null, kept: 0, ...overrides };
 }
 
 function summary(overrides: Partial<SummaryView> = {}): SummaryView {
@@ -50,8 +50,8 @@ describe("the conversation", () => {
       <StreamViewBody
         view={view({
           files: [
-            { path: "deploy/settings.py", size: "6.8 KB", skipped: null, lines: null, images: null, imageRef: null },
-            { path: "secrets/.env", size: null, skipped: "refused: not allowed", lines: null, images: null, imageRef: null },
+            { path: "deploy/settings.py", size: "6.8 KB", skipped: null, lines: null, images: null, imageRef: null, kept: 0 },
+            { path: "secrets/.env", size: null, skipped: "refused: not allowed", lines: null, images: null, imageRef: null, kept: 0 },
           ],
         })}
       />,

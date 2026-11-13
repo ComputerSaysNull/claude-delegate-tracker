@@ -11,6 +11,7 @@ export interface FileView {
   lines: { start: number; end: number } | null; // a file read as a line range; null otherwise
   images: number | null;        // files_read[].images (format 1.13): how many images the file was sent as; null for a text file
   imageRef: string | null;      // "f<i>" for a file read as an image, by which the page asks for it; null otherwise
+  kept: number;                 // how many copies of its images the server kept (files_read[].image_files, format 1.17); 0 when none
 }
 
 export interface CallView {
@@ -23,7 +24,8 @@ export interface CallView {
   result: string | null;        // "40 lines, 1.2 KB" from result_lines/result_bytes, or "8 images" from result_images; null when neither
   exitCode: number | null;
   time: string | null;          // from the call's `ms`: "<1s" under 1 s, else formatDuration
-  imageRef: string | null;      // "t<turn>c<i>" for a finished call that returned an image from its `path`; null otherwise
+  imageRef: string | null;      // "t<turn>c<i>" for a finished call that returned an image from its `path` or kept a copy; null otherwise
+  kept: number;                 // how many copies of its images the server kept (result_image_files, format 1.17); 0 when none
 }
 
 export type AnswerView = { text: string; waited: string; bestReading: boolean; by: "caller" | "person" | null };
@@ -231,6 +233,16 @@ function imageSourceOf(rec: Record<string, unknown>, images: unknown): string | 
   return typeof rec.path === "string" && rec.path !== "" ? rec.path : null;
 }
 
+// A kept copy's name is the sha256 of the bytes sent and a raster image suffix. Any other entry
+// is left out, so no name the page can reach carries a separator, `..` or a scriptable type.
+const KEPT_NAME = /^[0-9a-f]{64}\.(?:png|jpg|jpeg|gif|webp)$/;
+
+// The copies the server kept of the images a file or call sent, in the order sent (format 1.17).
+function keptOf(list: unknown): string[] {
+  if (!Array.isArray(list)) return [];
+  return list.filter((n): n is string => typeof n === "string" && KEPT_NAME.test(n));
+}
+
 function resultOf(call: Record<string, unknown>): string | null {
   const images = call.result_images;
   if (sentAsImages(images)) {
@@ -276,7 +288,8 @@ function callView(call: Record<string, unknown>, status: string | null, ref: str
     result: resultOf(call),
     exitCode: typeof call.exit_code === "number" ? call.exit_code : null,
     time: timeOf(call.ms),
-    imageRef: ref !== null && imageSourceOf(recordOf(call.arguments), call.result_images) !== null ? ref : null,
+    imageRef: ref !== null && (imageSourceOf(recordOf(call.arguments), call.result_images) !== null || keptOf(call.result_image_files).length > 0) ? ref : null,
+    kept: ref !== null ? keptOf(call.result_image_files).length : 0,
   };
 }
 
@@ -491,13 +504,15 @@ function fileView(e: unknown, skipped = false, index = -1): FileView | null {
         start >= 1 && end >= 1 && end >= start) lines = { start, end };
   }
   const images = rec.images;
+  const kept = skipped ? 0 : keptOf(rec.image_files).length;
   return {
     path,
     size: typeof rec.bytes === "number" ? sizeOf(rec.bytes) : null,
     skipped: typeof rec.reason === "string" ? rec.reason : null,
     lines,
     images: sentAsImages(images) ? images : null,
-    imageRef: !skipped && index >= 0 && imageSourceOf(rec, images) !== null ? `f${index}` : null,
+    imageRef: !skipped && index >= 0 && (imageSourceOf(rec, images) !== null || kept > 0) ? `f${index}` : null,
+    kept,
   };
 }
 
@@ -635,23 +650,35 @@ export function buildView(name: string, v: ViewState, s: StreamState, row: ListR
   };
 }
 
-// The path of an image the model was given or read, by the ref the view gave it: f<i> for the
-// i-th read file, t<n>c<i> for call i of finished turn n. Null unless the stream says that file
-// or call carried images and names the path; the path is then the stream's, never the URL's.
-const IMAGE_REF = /^(?:f(0|[1-9][0-9]{0,4})|t([1-9][0-9]{0,5})c(0|[1-9][0-9]{0,4}))$/;
+// Where an image the model was given or read comes from, by the ref the view gave it: f<i> for
+// the i-th read file, t<n>c<i> for call i of finished turn n, either followed by k<j> for the
+// j-th copy the server kept. Without k it is the path the stream recorded, when the stream says
+// that file or call carried images; with k it is a kept name. Both are the stream's, never the URL's.
+export type ImageSourceRef = { kind: "kept"; name: string } | { kind: "disk"; path: string };
 
-export function imagePath(start: Record<string, unknown> | null, v: ViewState, ref: string): string | null {
+const IMAGE_REF = /^(?:f(0|[1-9][0-9]{0,4})|t([1-9][0-9]{0,5})c(0|[1-9][0-9]{0,4}))(?:k(0|[1-9][0-9]{0,3}))?$/;
+
+export function imageSource(start: Record<string, unknown> | null, v: ViewState, ref: string): ImageSourceRef | null {
   const m = IMAGE_REF.exec(ref);
   if (m === null) return null;
+  let rec: Record<string, unknown>;
+  let path: string | null;
+  let kept: string[];
   if (m[1] !== undefined) {
     const read = Array.isArray(start?.files_read) ? start.files_read : [];
-    const rec = recordOf(read[Number(m[1])]);
-    return imageSourceOf(rec, rec.images);
+    rec = recordOf(read[Number(m[1])]);
+    path = imageSourceOf(rec, rec.images);
+    kept = keptOf(rec.image_files);
+  } else {
+    const calls = v.turns.get(Number(m[2]))?.turn?.tool_calls;
+    if (!Array.isArray(calls)) return null;
+    rec = recordOf(calls[Number(m[3])]);
+    path = imageSourceOf(recordOf(rec.arguments), rec.result_images);
+    kept = keptOf(rec.result_image_files);
   }
-  const calls = v.turns.get(Number(m[2]))?.turn?.tool_calls;
-  if (!Array.isArray(calls)) return null;
-  const call = recordOf(calls[Number(m[3])]);
-  return imageSourceOf(recordOf(call.arguments), call.result_images);
+  if (m[4] === undefined) return path === null ? null : { kind: "disk", path };
+  const name = kept[Number(m[4])];
+  return name === undefined ? null : { kind: "kept", name };
 }
 
 // A finished turn's thinking text, from the slot the view kept for turn n; null when the
