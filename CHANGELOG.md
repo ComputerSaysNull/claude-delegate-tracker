@@ -9,6 +9,18 @@ nothing in it is left out. Each entry gives the **why**: the symptom, the cause,
 
 **A merged section is never edited afterwards.** A correction is a new section.
 
+## #103 — 2026-11-13 — feat: vendor server v0.18.0 and say in plain words why a turn was retried
+
+### Changed
+
+- **The contract is server v0.18.0 (transcript format 1.18).** It adds two retry kinds and
+  the kept copies of images sent to the model.
+- **A retried turn says in words why it was sent again.** Only "the model server was
+  unavailable" had its own words; every other kind was split from its raw name, so a turn
+  read "final turn tool call" or "length under shrunk budget". Each kind the contract lists
+  now has its own sentence, and a test fails when a newly vendored kind has none. A kind the
+  tracker does not know is still split into words.
+
 ## #102 — 2026-11-11 — fix: count History tokens on the day each turn finished
 
 ### Fixed

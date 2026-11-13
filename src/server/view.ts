@@ -435,9 +435,18 @@ function buildTurn(n: number, slot: TurnSlot, servedModelId: string | null): Tur
   };
 }
 
-// A retry kind like "RateLimited" reads as a phrase once split before each capital letter.
+// The words for each retry kind the contract lists; a test fails when a vendored kind has none.
+export const RETRY_REASONS: Readonly<Record<string, string>> = {
+  BackendUnavailable: "the model server was unavailable",
+  BackendRefused: "the model server refused the request",
+  EmptyAtLength: "the reply came back empty at its length limit",
+  FinalTurnToolCall: "the last turn called a tool, so it was asked again without tools",
+  LengthUnderShrunkBudget: "a shortened reply limit cut the reply off, so it was sent again at full size",
+};
+
+// An unknown kind like "RateLimited" reads as a phrase once split before each capital letter.
 function retryReason(kind: string): string {
-  if (kind === "BackendUnavailable") return "the model server was unavailable";
+  if (Object.hasOwn(RETRY_REASONS, kind)) return RETRY_REASONS[kind];
   return kind.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase();
 }
 
