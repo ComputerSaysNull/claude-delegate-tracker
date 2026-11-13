@@ -648,6 +648,29 @@ describe("a turn's retries", () => {
     expect(v.turns[0].retries).toEqual([{ reason: "rate limited", status: 429, wait: "12s" }]);
   });
 
+  it.each([
+    ["BackendRefused", "the model server refused the request"],
+    ["EmptyAtLength", "the reply came back empty at its length limit"],
+    ["FinalTurnToolCall", "the last turn called a tool, so it was asked again without tools"],
+    ["LengthUnderShrunkBudget", "a shortened reply limit cut the reply off, so it was sent again at full size"],
+  ])("says in words why a %s attempt was sent again", (kind, reason) => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "", retries: [{ kind, status: null, wait: 1 }] },
+    ]);
+    expect(v.turns[0].retries.map((r) => r.reason)).toEqual([reason]);
+  });
+
+  it("splits a kind named like an inherited property, instead of reading the prototype", () => {
+    const v = viewOf([
+      start(),
+      { t: "priced", at: at(0), turn: 1, of_turns: 4 },
+      { t: "turn", at: at(0), turn: 1, of_turns: 4, attempts: 2, text: "", retries: [{ kind: "toString", status: null, wait: 1 }] },
+    ]);
+    expect(v.turns[0].retries.map((r) => r.reason)).toEqual(["to string"]);
+  });
+
   it("leaves out an item whose kind is not a string", () => {
     const v = viewOf([
       start(),
