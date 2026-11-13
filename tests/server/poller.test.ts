@@ -904,18 +904,45 @@ describe("a running delegation past the newest 20", () => {
 
 describe("an image a stream names", () => {
   const NAME = "20261001T120000.000-a.jsonl";
+  const FOLDER = "20261001T120000.000-a.images";
+  const KEPT = "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b.png";
+
+  // A stream that sent /w/views/front.png as one image; format 1.17 also lists the copy kept
+  // beside it.
   const stream = (): Record<string, unknown>[] => [
     { ...startEvent("2026-10-01T12:00:00.000Z"), files_read: [{ path: "/w/views/front.png", bytes: 1, est_tokens: 1, images: 1 }] },
   ];
+  const keptStream = (): Record<string, unknown>[] => [
+    { ...startEvent("2026-10-01T12:00:00.000Z"), files_read: [{ path: "/w/views/front.png", bytes: 1, est_tokens: 1, images: 1, image_files: [KEPT] }] },
+  ];
 
-  it("gives the path the stream recorded for a ref", () => {
+  it("gives the folder beside the stream and the listed name for a kept ref", () => {
+    const dir = makeDir();
+    try {
+      writeStream(dir, NAME, keptStream());
+      mkdirSync(join(dir, FOLDER));
+      writeFileSync(join(dir, FOLDER, KEPT), "PNG");
+      const poller = makePoller(dir);
+      poller.pass();
+      expect(poller.imageSource(NAME, "f0k0")).toEqual({
+        kind: "kept",
+        file: join(dir, FOLDER, KEPT),
+        folder: join(dir, FOLDER),
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("gives the path the stream recorded for a ref without a kept index", () => {
     const dir = makeDir();
     try {
       writeStream(dir, NAME, stream());
       const poller = makePoller(dir);
       poller.pass();
-      expect(poller.imagePath(NAME, "f0")).toBe("/w/views/front.png");
-      expect(poller.imagePath(NAME, "f1")).toBeNull();
+      expect(poller.imageSource(NAME, "f0")).toEqual({ kind: "disk", file: "/w/views/front.png" });
+      expect(poller.imageSource(NAME, "f1")).toBeNull();
+      expect(poller.imageSource(NAME, "f1k0")).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -924,11 +951,15 @@ describe("an image a stream names", () => {
   it("returns null for a name the poller did not list", () => {
     const dir = makeDir();
     try {
-      writeStream(dir, NAME, stream());
+      writeStream(dir, NAME, keptStream());
+      mkdirSync(join(dir, FOLDER));
+      writeFileSync(join(dir, FOLDER, KEPT), "PNG");
       const poller = makePoller(dir);
       poller.pass();
-      expect(poller.imagePath("../x.jsonl", "f0")).toBeNull();
-      expect(poller.imagePath("unknown.jsonl", "f0")).toBeNull();
+      expect(poller.imageSource("../x.jsonl", "f0")).toBeNull();
+      expect(poller.imageSource("../x.jsonl", "f0k0")).toBeNull();
+      expect(poller.imageSource("unknown.jsonl", "f0")).toBeNull();
+      expect(poller.imageSource("unknown.jsonl", "f0k0")).toBeNull();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

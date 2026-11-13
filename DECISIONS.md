@@ -5,6 +5,20 @@ Structural decisions only: ones that shape how the tracker is built and would be
 reverse. Newest first; the headings are the index. A decision's body is never edited. When
 it stops being true, only its heading changes, to say what replaced it.
 
+## ADR-0007 — 2026-11-13 — The tracker shows the copies the server kept of images — Accepted
+
+### Context
+
+ADR-0006 shows an image from the path a stream recorded, so a file a script rewrote after the model read it shows its new version. Since transcript format 1.17 the server keeps a copy of every image it sent, in a folder beside the stream, named by the sha256 of the bytes, and lists those names in the stream.
+
+### Decision
+
+When a stream lists kept copies, the page shows them, not the file on disk. The backend reads a copy only by a name the stream listed that is 64 lowercase hex digits and a raster suffix, only from that stream's own `<stem>.images` folder (the stream found by its own listing, never from the URL), with that folder as the only root, through the same checks as ADR-0006. Copies are shown even when `IMAGE_ROOTS` is unset: they sit beside the stream the tracker already reads and hold nothing the stream did not send. A copy that cannot be read falls back to the file on disk, which says so.
+
+### Consequences
+
+Older streams, and images past the server's cap, still show the file as it is on disk now. The tracker reads the folder, not the feed, so the feed's image route goes unused.
+
 ## ADR-0006 — 2026-11-11 — The tracker reads images the streams name — Accepted
 
 ### Context

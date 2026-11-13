@@ -9,7 +9,7 @@ import { buildHealth, makeSchemaCheck, type Health } from "./health.ts";
 import { ClusterHistoryStore } from "./history.ts";
 import { MetricsPoller } from "./metrics.ts";
 import { NodesPoller, sshRunner } from "./nodes.ts";
-import { readImage } from "./images.ts";
+import { readSource } from "./images.ts";
 import { Poller } from "./poller.ts";
 import { PowerStore } from "./power.ts";
 import { RunStore } from "./runs.ts";
@@ -129,8 +129,8 @@ const app = createApp({
   follow: (name, listener) => poller.follow(name, listener),
   thinking: (name, turn) => poller.thinking(name, turn),
   image: async (name, ref) => {
-    const file = poller.imagePath(name, ref);
-    return file === null ? { kind: "missing" } : readImage(file, settings.imageRoots, settings.imageMaxBytes);
+    const src = poller.imageSource(name, ref);
+    return src === null ? { kind: "missing" } : readSource(src, settings.imageRoots, settings.imageMaxBytes);
   },
   history: (before, filter) => poller.history(before, filter),
   cluster: () => ({ model: metrics.figures(), nodes: nodes.figures(), limits: settings.limits }),

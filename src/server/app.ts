@@ -134,7 +134,7 @@ export function createApp(deps: AppDeps): Hono {
   // never sniffed, never cached (a script may rewrite the file), and run nothing if opened.
   app.get("/api/streams/:name/image/:ref", async (c) => {
     const ref = c.req.param("ref");
-    if (!/^(?:f(?:0|[1-9][0-9]{0,4})|t[1-9][0-9]{0,5}c(?:0|[1-9][0-9]{0,4}))$/.test(ref)) {
+    if (!/^(?:f(?:0|[1-9][0-9]{0,4})|t[1-9][0-9]{0,5}c(?:0|[1-9][0-9]{0,4}))(?:k(?:0|[1-9][0-9]{0,3}))?$/.test(ref)) {
       return c.json({ error: "not found" }, 404);
     }
     const got = await image(c.req.param("name"), ref);

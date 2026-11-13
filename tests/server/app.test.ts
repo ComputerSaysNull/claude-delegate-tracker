@@ -612,7 +612,18 @@ describe("image route", () => {
     expect(await res.json()).toEqual({ error });
   });
 
-  it.each(["f01", "t0c1", "t1c", "x", "f-1", "t1c1x", "f1.png"])(
+  it.each(["f0k0", "t1c0k12"])("passes the kept ref %s to deps.image", async (ref) => {
+    const image = vi.fn(async (name: string, r: string) =>
+      name === "s.jsonl" && r === ref ? { kind: "ok" as const, type: "image/png", bytes: PNG } : { kind: "missing" as const },
+    );
+    const app = makeApp({ image });
+    const res = await app.request(`/api/streams/s.jsonl/image/${ref}`, goodHost);
+    expect(res.status).toBe(200);
+    expect(new Uint8Array(await res.arrayBuffer())).toEqual(PNG);
+    expect(image).toHaveBeenCalledWith("s.jsonl", ref);
+  });
+
+  it.each(["f01", "t0c1", "t1c", "x", "f-1", "t1c1x", "f1.png", "f0k", "f0k01", "f0k10000", "f0k-1", "k0"])(
     "rejects a bad ref %s without calling deps.image",
     async (ref) => {
       const image = vi.fn(async () => ({ kind: "ok" as const, type: "image/png", bytes: PNG }));

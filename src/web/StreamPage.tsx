@@ -608,17 +608,40 @@ function FileChip({ file, name, shown }: { file: FileView; name: string; shown: 
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-left">
         {line}
       </button>
-      {open && <StreamImage key={`${name}/${file.imageRef}`} name={name} imageRef={file.imageRef} label={file.path} />}
+      {open && <ItemImages key={`${name}/${file.imageRef}`} name={name} imageRef={file.imageRef} kept={file.kept} label={file.path} />}
     </span>
   );
 }
 
 type ImageState = { kind: "loading" } | { kind: "ok"; url: string } | { kind: "failed"; why: string };
 
+// The images a file or call sent. The copies the server kept are what the model saw, so they are
+// shown when the stream lists any; when one cannot be read, or none was kept, the file as it is
+// on disk now is shown instead, and says so.
+function ItemImages({ name, imageRef, kept, label }: { name: string; imageRef: string; kept: number; label: string }) {
+  const [fallback, setFallback] = useState(false);
+  if (kept === 0 || fallback) return <StreamImage name={name} imageRef={imageRef} label={label} kept={false} />;
+  return (
+    <>
+      {Array.from({ length: kept }, (_, j) => (
+        <StreamImage
+          key={j}
+          name={name}
+          imageRef={`${imageRef}k${j}`}
+          label={kept === 1 ? label : `${label}, ${j + 1} of ${kept}`}
+          kept
+          onFail={setFallback}
+        />
+      ))}
+    </>
+  );
+}
+
 // An image the delegation was given or read, fetched when shown and let go when hidden: the
 // download stops and the image is released. Its callers key it by stream and ref, so another
-// image starts afresh. It is the file as it is on disk now: a script may have rewritten it.
-function StreamImage({ name, imageRef, label }: { name: string; imageRef: string; label: string }) {
+// image starts afresh. A kept copy is what the model was sent; otherwise it is the file as it is
+// on disk now, which a script may have rewritten.
+function StreamImage({ name, imageRef, label, kept, onFail }: { name: string; imageRef: string; label: string; kept: boolean; onFail?: (failed: boolean) => void }) {
   const src = `/api/streams/${encodeURIComponent(name)}/image/${imageRef}`;
   const [state, setState] = useState<ImageState>({ kind: "loading" });
   useEffect(() => {
@@ -639,21 +662,23 @@ function StreamImage({ name, imageRef, label }: { name: string; imageRef: string
         setState({ kind: "ok", url });
       })
       .catch((e: unknown) => {
-        if (!gone) setState({ kind: "failed", why: e instanceof Error ? e.message : "not found" });
+        if (gone) return;
+        if (onFail !== undefined) onFail(true);
+        else setState({ kind: "failed", why: e instanceof Error ? e.message : "not found" });
       });
     return () => {
       gone = true;
       stop.abort();
       if (url !== null) URL.revokeObjectURL(url);
     };
-  }, [src]);
+  }, [src, onFail]);
   if (state.kind === "loading") return <p className="font-sans text-xs text-muted">Loading the image…</p>;
   if (state.kind === "failed") return <p className="font-sans text-xs text-warn">Could not load the image: {state.why}.</p>;
   return (
     <figure className="flex flex-col gap-1">
       <img src={state.url} alt={`The image ${label}`} className="max-h-[32rem] max-w-full self-start rounded border border-line object-contain" />
       <figcaption className="font-sans text-xs text-muted">
-        The file as it is on disk now; a script may have changed it since the model read it.{" "}
+        {kept ? "The image as it was sent to the model." : "The file as it is on disk now; a script may have changed it since the model read it."}{" "}
         <a href={src} target="_blank" rel="noopener noreferrer">Open full size</a>
       </figcaption>
     </figure>
@@ -709,7 +734,7 @@ function CallViewItem({ call, name }: { call: CallView; name: string }) {
           {call.args.map(([key, value], i) => (
             <p key={i} className="break-all">{key}: {value}</p>
           ))}
-          {call.imageRef !== null && <StreamImage key={`${name}/${call.imageRef}`} name={name} imageRef={call.imageRef} label={summary?.full ?? call.name} />}
+          {call.imageRef !== null && <ItemImages key={`${name}/${call.imageRef}`} name={name} imageRef={call.imageRef} kept={call.kept} label={summary?.full ?? call.name} />}
         </div>
       )}
       {call.message !== null && (

@@ -20,7 +20,7 @@ export interface Settings {
   dataDir: string | null;       // DATA_DIR; where the run records are kept; default from LOCALAPPDATA/XDG_DATA_HOME/HOME
   runsScanSeconds: number;      // RUNS_SCAN_SECONDS; how often the runs folder is checked for runs that ended
   limits: Limits;               // LOAD_WARN_PERCENT, LOAD_HOT_PERCENT, TEMP_WARN_C, TEMP_HOT_C
-  imageRoots: string[];         // IMAGE_ROOTS; comma-separated absolute folders images may be read from; default none (images off)
+  imageRoots: string[];         // IMAGE_ROOTS; comma-separated absolute folders images may be read from; default none (only kept copies show)
   imageMaxBytes: number;        // IMAGE_MAX_BYTES; the largest image file served
 }
 

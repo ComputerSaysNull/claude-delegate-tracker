@@ -9,7 +9,8 @@ import { newStreamState, applyLine, listRow, parseAt, stateOf } from "./streams.
 import type { StreamState, ListRow } from "./streams.ts";
 import { NO_FILTER, rowMatches, slimState } from "./catalog.ts";
 import type { RowFilter } from "./catalog.ts";
-import { newViewState, applyViewEvent, buildView, diffView, turnThinking, imagePath } from "./view.ts";
+import type { ImageSource } from "./images.ts";
+import { newViewState, applyViewEvent, buildView, diffView, turnThinking, imageSource } from "./view.ts";
 import type { ViewState, StreamView, ViewPatch } from "./view.ts";
 
 export const PICK_BY_NAME = 25; // names listed before ordering by start.at
@@ -271,12 +272,18 @@ export class Poller {
     return turnThinking(entry.view, turn);
   }
 
-  // The path an image ref names in a stream, as the stream recorded it; null for a name the
-  // folder listing did not hold or a ref with no image. Looked up like thinking() is.
-  imagePath(name: string, ref: string): string | null {
+  // Where an image ref in a stream points: the path the stream recorded, or a kept copy in the
+  // stream's own <stem>.images folder beside it. Null for a name the folder listing did not
+  // hold or a ref with no image. Looked up like thinking() is, so the name is one we listed.
+  imageSource(name: string, ref: string): ImageSource | null {
     const entry = this.entryFor(name);
-    if (entry === null) return null;
-    return imagePath(entry.state.start, entry.view, ref);
+    const { dir } = this.deps;
+    if (entry === null || dir === null) return null;
+    const src = imageSource(entry.state.start, entry.view, ref);
+    if (src === null) return null;
+    if (src.kind === "disk") return { kind: "disk", file: src.path };
+    const folder = join(dir, name.replace(/\.jsonl$/, "") + ".images");
+    return { kind: "kept", file: join(folder, src.name), folder };
   }
 
   start(intervalSeconds: number, followSeconds: number): void {

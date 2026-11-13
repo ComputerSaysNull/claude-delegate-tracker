@@ -5,7 +5,8 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readImage } from "../../src/server/images.ts";
+import { readImage, readSource } from "../../src/server/images.ts";
+import type { ImageSource } from "../../src/server/images.ts";
 
 const PNG = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
 let base = "";
@@ -130,5 +131,46 @@ describe("reading an image the stream names", () => {
 
   it("says a file that is gone is missing", async () => {
     expect(await read(join(root, "views", "gone.png"))).toEqual({ kind: "missing" });
+  });
+});
+
+describe("reading a kept copy the stream named", () => {
+  // The folder beside a stream, <dir>/<stem>.images, holds each copy under its hash name.
+  const KEPT = "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b.png";
+  const LINKED = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08.png";
+  const GONE = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855.png";
+  let folder = "";
+
+  const kept = (name: string): ImageSource => ({ kind: "kept", file: join(folder, name), folder });
+
+  beforeAll(() => {
+    folder = join(base, "20261001T120000.000-a.images");
+    mkdirSync(folder);
+    writeFileSync(join(folder, KEPT), PNG);
+    // A kept copy that is a link to an image outside its own folder.
+    symlinkSync(join(base, "outside", "secret.png"), join(folder, LINKED));
+  });
+
+  it("serves a kept copy even when no image root is configured", async () => {
+    const got = await readSource(kept(KEPT), [], 1024);
+    expect(got).toEqual({ kind: "ok", type: "image/png", bytes: new Uint8Array(PNG) });
+  });
+
+  it("refuses a kept copy that is a link to an image outside its folder", async () => {
+    const got = await readSource(kept(LINKED), [], 1024);
+    expect(got).toEqual({ kind: "refused", reason: "outside the image roots" });
+  });
+
+  it("says a kept copy that is gone is missing", async () => {
+    expect(await readSource(kept(GONE), [], 1024)).toEqual({ kind: "missing" });
+  });
+
+  it("is off for a disk source when no root is configured", async () => {
+    expect(await readSource({ kind: "disk", file: join(root, "views", "front.png") }, [], 1024)).toEqual({ kind: "off" });
+  });
+
+  it("serves a disk source inside a root as before", async () => {
+    const got = await readSource({ kind: "disk", file: join(root, "views", "front.png") }, [root], 1024);
+    expect(got).toEqual({ kind: "ok", type: "image/png", bytes: new Uint8Array(PNG) });
   });
 });
